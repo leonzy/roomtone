@@ -14,27 +14,25 @@
   <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/social-preview.png" alt="Songloft" width="640">
 </p>
 
-[![GitHub License](https://img.shields.io/github/license/songloft-org/songloft)](https://github.com/songloft-org/songloft)
-[![Docker Image Version](https://img.shields.io/docker/v/songloft/songloft?sort=semver&label=docker%20image)](https://hub.docker.com/r/songloft/songloft)
-[![Docker Pulls](https://img.shields.io/docker/pulls/songloft/songloft)](https://hub.docker.com/r/songloft/songloft)
-[![GitHub Release](https://img.shields.io/github/v/release/songloft-org/songloft)](https://github.com/songloft-org/songloft/releases)
-[![Visitors](https://api.visitorbadge.io/api/daily?path=songloft-org%2Fsongloft&label=daily%20visitor&countColor=%232ccce4&style=flat)](https://visitorbadge.io/status?path=songloft-org%2Fsongloft)
-[![Visitors](https://api.visitorbadge.io/api/visitors?path=songloft-org%2Fsongloft&label=total%20visitor&countColor=%232ccce4&style=flat)](https://visitorbadge.io/status?path=songloft-org%2Fsongloft)
+[![GitHub License](https://img.shields.io/github/license/leonzy/roomtone)](https://github.com/leonzy/roomtone)
+[![Docker Image Version](https://img.shields.io/docker/v/roomtone/roomtone?sort=semver&label=docker%20image)](https://hub.docker.com/r/roomtone/roomtone)
+[![Docker Pulls](https://img.shields.io/docker/pulls/roomtone/roomtone)](https://hub.docker.com/r/roomtone/roomtone)
+[![GitHub Release](https://img.shields.io/github/v/release/leonzy/roomtone)](https://github.com/leonzy/roomtone/releases)
 
 <p align="center">
   <strong>🎵 A self-hosted music server for personal use — manage only the music you legally own</strong>
 </p>
 
-> 📣 **About the rename**: As of v2.0, this project has been renamed from **MiMusic** to **Songloft** (the core and features remain unchanged — this is only a brand upgrade). The old `mimusic-org` GitHub organization and the `hanxi/mimusic` Docker image will be kept as redirects for at least one year but will no longer be updated. See the [GitHub Releases](https://github.com/songloft-org/songloft/releases) for details.
+> 📣 **About the rename**: Upstream renamed the project from **MiMusic** to **Songloft** as of v2.0 (core and features unchanged — a brand upgrade only). This repository is a fork of Songloft with the brand name changed to **Roomtone**; the `songloft` identifiers inside the code stay as they are.
 
 <p align="center">
-  <a href="https://github.com/songloft-org/songloft">🏠 GitHub</a> •
-  <a href="https://github.com/songloft-org/songloft/releases">📥 Downloads</a> •
+  <a href="https://github.com/leonzy/roomtone">🏠 GitHub</a> •
+  <a href="https://github.com/leonzy/roomtone/releases">📥 Downloads</a> •
   <a href="https://songloft.hanxi.cc">📖 Docs</a> •
-  <a href="https://github.com/songloft-org/songloft/issues">💬 Issues</a> •
-  <a href="https://github.com/songloft-org/songloft/issues/2">👥 WeChat Group</a> •
-  <a href="https://t.me/songloft_dev">💬 Telegram Group</a> •
-  <a href="https://t.me/songloft">📣 Telegram Channel</a> •
+  <a href="https://github.com/leonzy/roomtone/issues">💬 Issues</a> •
+  <a href="https://github.com/songloft-org/songloft/issues/2">👥 Upstream WeChat Group</a> •
+  <a href="https://t.me/songloft_dev">💬 Upstream Telegram Group</a> •
+  <a href="https://t.me/songloft">📣 Upstream Telegram Channel</a> •
   <a href="#screenshots">📸 Screenshots</a>
 </p>
 
@@ -45,7 +43,7 @@
 > - ✅ **Free forever** —— no paid features, in-app purchases, or subscriptions
 > - ✅ **No ads** —— no advertising or commercial promotion of any kind
 > - ✅ **No sponsorship / donations** —— there is no payment channel at all
-> - ⚠️ **Beware of scams** —— the only official channels are the [GitHub repository](https://github.com/songloft-org/songloft), the [docs site](https://songloft.hanxi.cc), the [official WeChat group](https://github.com/songloft-org/songloft/issues/2), the [Telegram group](https://t.me/songloft_dev), and the [Telegram channel](https://t.me/songloft). Anyone charging fees, selling "paid versions", offering paid deployment, or soliciting donations in Songloft's name is unrelated to this project; we never charge anyone, not even inside the group. Please stay alert to scams.
+> - ⚠️ **Beware of scams** —— the only channel of this fork (Roomtone) is this [GitHub repository](https://github.com/leonzy/roomtone); the docs site, WeChat group and Telegram channels belong to the upstream Songloft project and are not official channels of this fork. Anyone charging fees, selling "paid versions", offering paid deployment, or soliciting donations in the name of Songloft or Roomtone is unrelated to this fork.
 
 
 ## ✨ Core Features
@@ -89,7 +87,7 @@ Songloft is a **self-hosted tool for personal use**, designed to help users mana
 - 🔌 **Third-party plugin disclaimer** — JS plugins are maintained by the third-party community. **The main repository does not bundle or distribute any finished third-party audio-source plugins**. The copyright of any network audio sources, metadata, or lyrics accessed by plugins belongs to their respective rights holders. **When using features such as network audio sources, users must bear responsibility for copyright compliance themselves** and comply with the laws and regulations of their country/region
 - 🏠 **For personal, non-commercial use only** — Using this project for commercial purposes, publicly distributing copyrighted content, or building public services aimed at an unspecified general audience is strictly prohibited
 - ⚠️ **Use at your own risk** — Any legal liability, disputes, or losses arising from improper use of this project (including but not limited to infringement of third-party copyrights) are borne solely by the user. The authors and contributors of this project assume no responsibility
-- 📩 **Infringement reports** — If you are a copyright holder and believe that this project's code, documentation, or officially distributed plugins infringe your legitimate rights, please contact us via [GitHub Issues](https://github.com/songloft-org/songloft/issues) or email (im.hanxi@gmail.com), and we will handle it promptly after verification. For infringement issues concerning third-party community plugins, please contact the maintainer of that plugin directly
+- 📩 **Infringement reports** — If you are a copyright holder and believe that this project's code, documentation, or officially distributed plugins infringe your legitimate rights, please contact the maintainers of this fork via [GitHub Issues](https://github.com/leonzy/roomtone/issues) (issues in upstream code itself can also go to the upstream author, im.hanxi@gmail.com), and we will handle it promptly after verification. For infringement issues concerning third-party community plugins, please contact the maintainer of that plugin directly
 - ™️ **Trademark notice** — All brands, protocols, and product names mentioned in this project and its built-in plugins (including but not limited to "MIoT", "Bluetooth", "Android", "iOS", "macOS", "Windows", "Docker", etc.) belong to their respective trademark owners. These names appear solely for interoperability and nominative fair use purposes. **Songloft is not affiliated with the aforementioned trademark holders, nor has it received any form of authorization or endorsement from them**. See [NOTICE](./NOTICE) for details
 - 🔒 **Privacy** — No user data is ever collected. Official builds report only anonymous operational stats (version, crash traces); self-compiled builds have zero telemetry. See [PRIVACY.md](./PRIVACY.md) for details
 
@@ -118,13 +116,13 @@ Includes the web frontend, works out of the box:
 
 | Platform | Architecture | Download |
 |------|------|--------|
-| 🐧 Linux | x86_64 | [songloft-linux-amd64](https://github.com/songloft-org/songloft/releases/latest/download/songloft-linux-amd64) |
-| 🐧 Linux | ARM64 | [songloft-linux-arm64](https://github.com/songloft-org/songloft/releases/latest/download/songloft-linux-arm64) |
-| 🐧 Linux | ARMv7 | [songloft-linux-armv7](https://github.com/songloft-org/songloft/releases/latest/download/songloft-linux-armv7) |
-| 🍎 macOS | x86_64 (Intel) | [songloft-darwin-amd64](https://github.com/songloft-org/songloft/releases/latest/download/songloft-darwin-amd64) |
-| 🍎 macOS | ARM64 (Apple Silicon) | [songloft-darwin-arm64](https://github.com/songloft-org/songloft/releases/latest/download/songloft-darwin-arm64) |
-| 🪟 Windows | x86_64 | [songloft-windows-amd64.exe](https://github.com/songloft-org/songloft/releases/latest/download/songloft-windows-amd64.exe) |
-| 🪟 Windows | ARM64 | [songloft-windows-arm64.exe](https://github.com/songloft-org/songloft/releases/latest/download/songloft-windows-arm64.exe) |
+| 🐧 Linux | x86_64 | [roomtone-linux-amd64](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-amd64) |
+| 🐧 Linux | ARM64 | [roomtone-linux-arm64](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-arm64) |
+| 🐧 Linux | ARMv7 | [roomtone-linux-armv7](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-armv7) |
+| 🍎 macOS | x86_64 (Intel) | [roomtone-darwin-amd64](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-darwin-amd64) |
+| 🍎 macOS | ARM64 (Apple Silicon) | [roomtone-darwin-arm64](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-darwin-arm64) |
+| 🪟 Windows | x86_64 | [roomtone-windows-amd64.exe](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-windows-amd64.exe) |
+| 🪟 Windows | ARM64 | [roomtone-windows-arm64.exe](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-windows-arm64.exe) |
 
 #### 📦 Lite Edition
 
@@ -132,13 +130,13 @@ Does not include the web frontend, smaller in size:
 
 | Platform | Architecture | Download |
 |------|------|--------|
-| 🐧 Linux | x86_64 | [songloft-linux-amd64-lite](https://github.com/songloft-org/songloft/releases/latest/download/songloft-linux-amd64-lite) |
-| 🐧 Linux | ARM64 | [songloft-linux-arm64-lite](https://github.com/songloft-org/songloft/releases/latest/download/songloft-linux-arm64-lite) |
-| 🐧 Linux | ARMv7 | [songloft-linux-armv7-lite](https://github.com/songloft-org/songloft/releases/latest/download/songloft-linux-armv7-lite) |
-| 🍎 macOS | x86_64 (Intel) | [songloft-darwin-amd64-lite](https://github.com/songloft-org/songloft/releases/latest/download/songloft-darwin-amd64-lite) |
-| 🍎 macOS | ARM64 (Apple Silicon) | [songloft-darwin-arm64-lite](https://github.com/songloft-org/songloft/releases/latest/download/songloft-darwin-arm64-lite) |
-| 🪟 Windows | x86_64 | [songloft-windows-amd64-lite.exe](https://github.com/songloft-org/songloft/releases/latest/download/songloft-windows-amd64-lite.exe) |
-| 🪟 Windows | ARM64 | [songloft-windows-arm64-lite.exe](https://github.com/songloft-org/songloft/releases/latest/download/songloft-windows-arm64-lite.exe) |
+| 🐧 Linux | x86_64 | [roomtone-linux-amd64-lite](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-amd64-lite) |
+| 🐧 Linux | ARM64 | [roomtone-linux-arm64-lite](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-arm64-lite) |
+| 🐧 Linux | ARMv7 | [roomtone-linux-armv7-lite](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-armv7-lite) |
+| 🍎 macOS | x86_64 (Intel) | [roomtone-darwin-amd64-lite](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-darwin-amd64-lite) |
+| 🍎 macOS | ARM64 (Apple Silicon) | [roomtone-darwin-arm64-lite](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-darwin-arm64-lite) |
+| 🪟 Windows | x86_64 | [roomtone-windows-amd64-lite.exe](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-windows-amd64-lite.exe) |
+| 🪟 Windows | ARM64 | [roomtone-windows-arm64-lite.exe](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-windows-arm64-lite.exe) |
 
 #### 📱 Bundle Edition (Embedded Backend, No Server Required)
 
@@ -146,11 +144,11 @@ The client embeds the Go backend — on first launch, click "Use local mode" and
 
 | Platform | Architecture | Download |
 |------|------|--------|
-| 🤖 Android | ARM64 + ARMv7 | [songloft-bundled-android-arm64-v8a.apk](https://github.com/songloft-org/songloft/releases/latest/download/songloft-bundled-android-arm64-v8a.apk) |
-| 🐧 Linux | x86_64 | [songloft-bundled-linux-x64.tar.gz](https://github.com/songloft-org/songloft/releases/latest/download/songloft-bundled-linux-x64.tar.gz) |
-| 🍎 macOS | ARM64 (Apple Silicon) | [songloft-bundled-macos-arm64.dmg](https://github.com/songloft-org/songloft/releases/latest/download/songloft-bundled-macos-arm64.dmg) |
-| 🪟 Windows | x86_64 | [songloft-bundled-windows-x64.zip](https://github.com/songloft-org/songloft/releases/latest/download/songloft-bundled-windows-x64.zip) |
-| 🍎 iOS | ARM64 | [songloft-bundled-ios-arm64.ipa](https://github.com/songloft-org/songloft/releases/latest/download/songloft-bundled-ios-arm64.ipa) |
+| 🤖 Android | ARM64 + ARMv7 | [songloft-bundled-android-arm64-v8a.apk](https://github.com/leonzy/roomtone/releases/latest/download/songloft-bundled-android-arm64-v8a.apk) |
+| 🐧 Linux | x86_64 | [songloft-bundled-linux-x64.tar.gz](https://github.com/leonzy/roomtone/releases/latest/download/songloft-bundled-linux-x64.tar.gz) |
+| 🍎 macOS | ARM64 (Apple Silicon) | [songloft-bundled-macos-arm64.dmg](https://github.com/leonzy/roomtone/releases/latest/download/songloft-bundled-macos-arm64.dmg) |
+| 🪟 Windows | x86_64 | [songloft-bundled-windows-x64.zip](https://github.com/leonzy/roomtone/releases/latest/download/songloft-bundled-windows-x64.zip) |
+| 🍎 iOS | ARM64 | [songloft-bundled-ios-arm64.ipa](https://github.com/leonzy/roomtone/releases/latest/download/songloft-bundled-ios-arm64.ipa) |
 
 ### 🐳 Docker Images
 
@@ -158,17 +156,17 @@ The client embeds the Go backend — on first launch, click "Use local mode" and
 
 | Platform | Download |
 |------|--------|
-| 🐧 Linux x86_64 | [songloft-docker-linux-amd64.tar](https://github.com/songloft-org/songloft/releases/latest/download/songloft-docker-linux-amd64.tar) |
-| 🐧 Linux ARM64 | [songloft-docker-linux-arm64.tar](https://github.com/songloft-org/songloft/releases/latest/download/songloft-docker-linux-arm64.tar) |
-| 🐧 Linux ARMv7 | [songloft-docker-linux-arm-v7.tar](https://github.com/songloft-org/songloft/releases/latest/download/songloft-docker-linux-arm-v7.tar) |
+| 🐧 Linux x86_64 | [roomtone-docker-linux-amd64.tar](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-amd64.tar) |
+| 🐧 Linux ARM64 | [roomtone-docker-linux-arm64.tar](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-arm64.tar) |
+| 🐧 Linux ARMv7 | [roomtone-docker-linux-arm-v7.tar](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-arm-v7.tar) |
 
 #### 📦 Lite Edition
 
 | Platform | Download |
 |------|--------|
-| 🐧 Linux x86_64 | [songloft-docker-linux-amd64-lite.tar](https://github.com/songloft-org/songloft/releases/latest/download/songloft-docker-linux-amd64-lite.tar) |
-| 🐧 Linux ARM64 | [songloft-docker-linux-arm64-lite.tar](https://github.com/songloft-org/songloft/releases/latest/download/songloft-docker-linux-arm64-lite.tar) |
-| 🐧 Linux ARMv7 | [songloft-docker-linux-arm-v7-lite.tar](https://github.com/songloft-org/songloft/releases/latest/download/songloft-docker-linux-arm-v7-lite.tar) |
+| 🐧 Linux x86_64 | [roomtone-docker-linux-amd64-lite.tar](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-amd64-lite.tar) |
+| 🐧 Linux ARM64 | [roomtone-docker-linux-arm64-lite.tar](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-arm64-lite.tar) |
+| 🐧 Linux ARMv7 | [roomtone-docker-linux-arm-v7-lite.tar](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-arm-v7-lite.tar) |
 
 ### 📱 Flutter Client
 
@@ -177,7 +175,7 @@ Beyond the web interface, Songloft also offers a more powerful cross-platform Fl
 🔗 **GitHub repository**: [songloft-org/songloft-player](https://github.com/songloft-org/songloft-player)
 
 - **Standard edition** (requires connecting to a server): [songloft-player Releases](https://github.com/songloft-org/songloft-player/releases/latest)
-- **Bundle edition** (embedded backend, no server required): [songloft Releases](https://github.com/songloft-org/songloft/releases/latest) (download the `songloft-bundled-*` files)
+- **Bundle edition** (embedded backend, no server required): [songloft Releases](https://github.com/leonzy/roomtone/releases/latest) (download the `songloft-bundled-*` files)
 
 > 🪟 **Windows users**: Install & update via [Scoop](https://scoop.sh). This bucket provides three apps, pick as needed:
 > ```powershell
@@ -252,8 +250,8 @@ The following third-party clients are independently maintained by community deve
 ```bash
 # 1️⃣ Download the binary for your platform (the default is the full edition)
 # For example, Linux x86_64:
-wget https://github.com/songloft-org/songloft/releases/latest/download/songloft-linux-amd64
-mv songloft-linux-amd64 songloft
+wget https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-amd64
+mv roomtone-linux-amd64 songloft
 
 # 2️⃣ Add execute permission
 chmod +x songloft
@@ -274,7 +272,7 @@ ADMIN_USERNAME=admin ADMIN_PASSWORD='your_strong_password' ./roomtone
 
 ```powershell
 # 1️⃣ Download the binary for your platform (the default is the full edition) and rename it to songloft.exe
-# For example, Windows x86_64: songloft-windows-amd64.exe
+# For example, Windows x86_64: roomtone-windows-amd64.exe
 
 # 2️⃣ Create the required directories
 mkdir music
@@ -294,10 +292,10 @@ $env:ADMIN_PASSWORD = "your_strong_password"
 
 ```bash
 # 🌟 Full edition (recommended, includes the web frontend; :latest is the full edition)
-docker pull songloft/songloft:latest
+docker pull roomtone/roomtone:latest
 
 # 📦 Lite edition (no web frontend, must be paired with the Flutter client)
-docker pull songloft/songloft:lite
+docker pull roomtone/roomtone:lite
 
 # Run the container
 docker run -d \
@@ -308,7 +306,7 @@ docker run -d \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD='your_strong_password' \
   -e PUID=$(id -u) -e PGID=$(id -g) \
-  songloft/songloft:latest
+  roomtone/roomtone:latest
 ```
 
 > 👤 **Run as non-root (optional)**: adding `-e PUID=$(id -u) -e PGID=$(id -g)` makes the container's main process run as your current host user, so newly created files under the mounted directories are no longer owned by root. Omit it to keep the container's default root-based startup — existing deployments are unaffected.
@@ -319,10 +317,10 @@ Suitable for environments that cannot access Docker Hub directly:
 
 ```bash
 # 1️⃣ Download the Docker image tar file for your platform (the default is the full edition)
-wget https://github.com/songloft-org/songloft/releases/latest/download/songloft-docker-linux-amd64.tar
+wget https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-amd64.tar
 
 # 2️⃣ Import the image
-docker load -i songloft-docker-linux-amd64.tar
+docker load -i roomtone-docker-linux-amd64.tar
 
 # 3️⃣ List the imported image tags
 docker images | grep songloft
@@ -339,7 +337,7 @@ version: '3.8'
 
 services:
   songloft:
-    image: songloft/songloft:latest
+    image: roomtone/roomtone:latest
     container_name: songloft
     restart: always
     ports:
@@ -476,7 +474,7 @@ docker run -d \
   -e ADMIN_PASSWORD='your_strong_password' \
   -e BASE_PATH=/songloft \
   -e PUID=$(id -u) -e PGID=$(id -g) \
-  songloft/songloft:latest
+  roomtone/roomtone:latest
 ```
 
 **2. Configure the Nginx reverse proxy:**
@@ -507,7 +505,7 @@ version: '3.8'
 
 services:
   songloft:
-    image: songloft/songloft:latest
+    image: roomtone/roomtone:latest
     container_name: songloft
     restart: always
     ports:
@@ -537,7 +535,7 @@ Each Release includes a `checksums.txt` file for verifying the integrity of down
 
 ```bash
 # Download the checksums file
-wget https://github.com/songloft-org/songloft/releases/latest/download/checksums.txt
+wget https://github.com/leonzy/roomtone/releases/latest/download/checksums.txt
 
 # Verify the files
 sha256sum -c checksums.txt
@@ -588,8 +586,8 @@ To develop custom plugins, refer to the following resources:
 
 The full API documentation (Swagger/OpenAPI format) is available at:
 
-- **Swagger API doc**: [swagger.json](https://github.com/songloft-org/songloft/blob/main/docs/swagger.json)
-- **View Swagger UI online**: [petstore.swagger.io](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/songloft-org/songloft/refs/heads/main/docs/swagger.json)
+- **Swagger API doc**: [swagger.json](https://github.com/leonzy/roomtone/blob/main/docs/swagger.json)
+- **View Swagger UI online**: [petstore.swagger.io](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/leonzy/roomtone/refs/heads/main/docs/swagger.json)
 - **View locally**: After starting the service, visit `http://localhost:58091/swagger/index.html`
 
 ### Main API Overview
@@ -616,11 +614,11 @@ Running into problems? See [Frequently Asked Questions and Solutions](https://so
 
 ## 🛠️ Support
 
-- **GitHub**: [songloft-org/songloft](https://github.com/songloft-org/songloft)
-- **Issues**: [Issues and feedback](https://github.com/songloft-org/songloft/issues)
-- 💬 Join the WeChat group: [WeChat group QR code](https://github.com/songloft-org/songloft/issues/2)
-- 💬 Join the Telegram group: [songloft_dev](https://t.me/songloft_dev)
-- 📣 Subscribe to the Telegram channel: [Songloft](https://t.me/songloft)
+- **GitHub**: [leonzy/roomtone](https://github.com/leonzy/roomtone)
+- **Issues**: [Issues and feedback](https://github.com/leonzy/roomtone/issues)
+- 💬 Upstream WeChat group: [WeChat group QR code](https://github.com/songloft-org/songloft/issues/2)
+- 💬 Upstream Telegram group: [songloft_dev](https://t.me/songloft_dev)
+- 📣 Upstream Telegram channel: [Songloft](https://t.me/songloft)
 - 🐧 QQ group: 220515636 (if full, search for a new group)
 
 ## 📝 Changelog

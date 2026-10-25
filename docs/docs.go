@@ -11,7 +11,7 @@ const docTemplate = `{
         "title": "{{.Title}}",
         "contact": {
             "name": "API Support",
-            "url": "https://github.com/songloft-org/songloft",
+            "url": "https://github.com/leonzy/roomtone",
             "email": "im.hanxi@gmail.com"
         },
         "license": {

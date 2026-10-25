@@ -47,7 +47,7 @@ func TestDownloadBinaryUsesRuntimePlatformAndBaseImageBuildType(t *testing.T) {
 	}
 	for _, buildType := range []string{"full", "lite"} {
 		t.Run(buildType, func(t *testing.T) {
-			wantPath := "/songloft-linux-" + arch
+			wantPath := "/roomtone-linux-" + arch
 			if buildType == "lite" {
 				wantPath += "-lite"
 			}
@@ -63,7 +63,7 @@ func TestDownloadBinaryUsesRuntimePlatformAndBaseImageBuildType(t *testing.T) {
 			svc := NewUpgradeService()
 			svc.baseImageBuildTypeOnce.Do(func() { svc.baseImageBuildType = buildType })
 			target := filepath.Join(t.TempDir(), "songloft.new")
-			if err := svc.DownloadBinary(server.URL+"/songloft", target, ""); err != nil {
+			if err := svc.DownloadBinary(server.URL+"/roomtone", target, ""); err != nil {
 				t.Fatal(err)
 			}
 			data, err := os.ReadFile(target)

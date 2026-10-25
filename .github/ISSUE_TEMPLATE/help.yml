@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         遇到问题了？没关系，我们来帮你排查。
-        提交前建议先搜索 [已有 issue](https://github.com/songloft-org/songloft/issues?q=is%3Aissue)，也许已经有了答案。
+        提交前建议先搜索 [已有 issue](https://github.com/leonzy/roomtone/issues?q=is%3Aissue)，也许已经有了答案。
 
   - type: textarea
     id: description

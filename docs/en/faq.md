@@ -15,7 +15,7 @@ A: **No, it is free, and it does not accept any sponsorship or donations.** Song
 ### Q: How should I download Songloft?
 
 A:
-- **Backend server**: Download the build for your system from [GitHub Releases](https://github.com/songloft-org/songloft/releases). Linux, macOS, and Windows are supported, with both binary and Docker image deployment options.
+- **Backend server**: Download the build for your system from [GitHub Releases](https://github.com/leonzy/roomtone/releases). Linux, macOS, and Windows are supported, with both binary and Docker image deployment options.
 - **Flutter client**: Download the prebuilt installers from [Flutter client Releases](https://github.com/songloft-org/songloft-player/releases). Android, iOS, macOS, Windows, Linux, and Web are supported.
 
 - **Electron desktop client**: [Songloft Desktop Releases](https://github.com/songloft-org/songloft-desktop/releases/latest), connecting to an existing server.
@@ -90,7 +90,7 @@ A: Make sure you mount volumes using absolute paths:
 docker run -d \
   -v /absolute/path/to/music:/app/music \
   -v /absolute/path/to/data:/app/data \
-  songloft/songloft:latest
+  roomtone/roomtone:latest
 ```
 
 ### Q: What should I do if scheduled task times are wrong (incorrect timezone) during Docker deployment?
@@ -102,7 +102,7 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -v /absolute/path/to/music:/app/music \
   -v /absolute/path/to/data:/app/data \
-  songloft/songloft:latest
+  roomtone/roomtone:latest
 ```
 
 Add it in Docker Compose as well:
@@ -169,7 +169,7 @@ The scanner automatically follows symlinks and scans recursively, and detects ci
 ```yaml
 services:
   songloft:
-    image: songloft/songloft:latest
+    image: roomtone/roomtone:latest
     volumes:
       - /path/to/data:/app/data
       - /mnt/nas/music:/app/music/nas-music
@@ -207,14 +207,14 @@ docker run -d \
   -v /path/to/data:/app/data \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD=your_secure_password \
-  songloft/songloft:latest
+  roomtone/roomtone:latest
 ```
 
 **Docker Compose startup**: Modify `ADMIN_PASSWORD` in `docker-compose.yml`:
 ```yaml
 services:
   songloft:
-    image: songloft/songloft:latest
+    image: roomtone/roomtone:latest
     container_name: songloft
     restart: always
     ports:
@@ -330,7 +330,7 @@ The database migrates automatically at startup. Back up the data directory befor
 
 A: Every Release includes a `checksums.txt` file:
 ```bash
-wget https://github.com/songloft-org/songloft/releases/latest/download/checksums.txt
+wget https://github.com/leonzy/roomtone/releases/latest/download/checksums.txt
 sha256sum -c checksums.txt
 ```
 

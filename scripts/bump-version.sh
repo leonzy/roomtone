@@ -282,7 +282,7 @@ main() {
     fi
 
     echo "" >&2
-    log_info "Release URL: https://github.com/songloft-org/songloft/releases/tag/${tag}"
+    log_info "Release URL: https://github.com/leonzy/roomtone/releases/tag/${tag}"
 
     # 最后一行 stdout 输出新版本号（带 v 前缀），方便链式调用
     echo "$tag"

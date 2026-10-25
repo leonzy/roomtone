@@ -3,9 +3,9 @@ name: Release
 on:
   push:
     tags:
-      - "v*" # 自动发正式版（songloft/songloft:X.Y.Z / :latest / :X.Y.Z-full / :full + 写 CHANGELOG）
+      - "v*" # 自动发正式版（roomtone/roomtone:X.Y.Z / :latest / :X.Y.Z-full / :full + 写 CHANGELOG）
     branches:
-      - main # push 到 main 自动打测试包（songloft/songloft:dev / :dev-full + dev 的 prerelease）
+      - main # push 到 main 自动打测试包（roomtone/roomtone:dev / :dev-full + dev 的 prerelease）
     paths-ignore:
       - "docs/**"
       - "**.md"
@@ -26,15 +26,15 @@ on:
 # main 就会把等待中的 tag run 直接顶成 cancelled，正式版彻底不发。
 # 正常发版时 dev 通道会被下方 should_run 整轮跳过，两把锁不会真的并发。
 concurrency:
-  group: songloft-release-${{ github.ref_type == 'tag' && 'tag' || 'dev' }}
+  group: roomtone-release-${{ github.ref_type == 'tag' && 'tag' || 'dev' }}
   cancel-in-progress: false
 
 env:
   GO_VERSION: "1.26"
   # Flutter 原生 bundle（桌面/移动）；完整版 Web 单独使用 Lynx。
   FLUTTER_VERSION: "3.44.6"
-  DOCKER_USERNAME: songloft
-  IMAGE_NAME: songloft
+  DOCKER_USERNAME: roomtone
+  IMAGE_NAME: roomtone
   RELEASE_REPO: ${{ github.repository }}
 
 jobs:
@@ -368,7 +368,7 @@ jobs:
             GOARM=${{ matrix.goarm }} OUTPUT="roomtone-${SUFFIX}-lite${EXT}" \
             EXTRA_TAGS=lite BUILD_TYPE=lite
 
-          ls -lh songloft-${SUFFIX}*
+          ls -lh roomtone-${SUFFIX}*
 
       - name: Generate version.json
         if: matrix.gen_version_json == true
@@ -385,7 +385,7 @@ jobs:
             "version": "${VERSION}",
             "git_commit": "${GIT_COMMIT}",
             "build_time": "${BUILD_TIME}",
-            "download_url_prefix": "https://github.com/${{ env.RELEASE_REPO }}/releases/download/${RELEASE_TAG}/songloft",
+            "download_url_prefix": "https://github.com/${{ env.RELEASE_REPO }}/releases/download/${RELEASE_TAG}/roomtone",
             "release_notes": "Release ${VERSION}"
           }
           EOF
@@ -396,8 +396,8 @@ jobs:
         with:
           name: binary-${{ matrix.suffix }}
           path: |
-            songloft-${{ matrix.suffix }}${{ matrix.ext }}
-            songloft-${{ matrix.suffix }}-lite${{ matrix.ext }}
+            roomtone-${{ matrix.suffix }}${{ matrix.ext }}
+            roomtone-${{ matrix.suffix }}-lite${{ matrix.ext }}
             version.json
           retention-days: 1
 
@@ -526,7 +526,7 @@ jobs:
             --load \
             .
           docker save ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-amd64 \
-            -o docker-tars/songloft-docker-linux-amd64.tar
+            -o docker-tars/roomtone-docker-linux-amd64.tar
           docker rmi ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-amd64 2>/dev/null || true
 
       - name: Build & save full linux/arm64
@@ -545,7 +545,7 @@ jobs:
             --load \
             .
           docker save ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-arm64 \
-            -o docker-tars/songloft-docker-linux-arm64.tar
+            -o docker-tars/roomtone-docker-linux-arm64.tar
           docker rmi ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-arm64 2>/dev/null || true
 
       - name: Build & save full linux/arm/v7
@@ -564,7 +564,7 @@ jobs:
             --load \
             .
           docker save ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-armv7 \
-            -o docker-tars/songloft-docker-linux-arm-v7.tar
+            -o docker-tars/roomtone-docker-linux-arm-v7.tar
           docker rmi ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-armv7 2>/dev/null || true
 
       # ---------- 推送完整版多架构 manifest（命中上面的 GHA cache，无需重新编译）----------
@@ -608,7 +608,7 @@ jobs:
             --load \
             .
           docker save ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-amd64 \
-            -o docker-tars/songloft-docker-linux-amd64-lite.tar
+            -o docker-tars/roomtone-docker-linux-amd64-lite.tar
           docker rmi ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-amd64 2>/dev/null || true
 
       - name: Build & save lite linux/arm64
@@ -628,7 +628,7 @@ jobs:
             --load \
             .
           docker save ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-arm64 \
-            -o docker-tars/songloft-docker-linux-arm64-lite.tar
+            -o docker-tars/roomtone-docker-linux-arm64-lite.tar
           docker rmi ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-arm64 2>/dev/null || true
 
       - name: Build & save lite linux/arm/v7
@@ -648,7 +648,7 @@ jobs:
             --load \
             .
           docker save ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-armv7 \
-            -o docker-tars/songloft-docker-linux-arm-v7-lite.tar
+            -o docker-tars/roomtone-docker-linux-arm-v7-lite.tar
           docker rmi ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-armv7 2>/dev/null || true
 
       # ---------- 推送精简版多架构 manifest（命中上面的 GHA cache）----------
@@ -1295,7 +1295,7 @@ jobs:
           ${{ toJSON(steps.changelog.outputs.changes) }}
           CHANGELOG_JSON
           NOTES_FILE="$RUNNER_TEMP/release-notes.md"
-          printf 'Songloft %s\n\n' "$VERSION" > "$NOTES_FILE"
+          printf 'Roomtone %s\n\n' "$VERSION" > "$NOTES_FILE"
           cat .github/release-notes.md >> "$NOTES_FILE"
           # 用文件传给 gh，保留 Markdown 并支持长 changelog。
           if [ -s "$RUNNER_TEMP/changelog.md" ]; then

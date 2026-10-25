@@ -158,7 +158,7 @@ log_info ""
 log_info "=== 发布完成 ===" >&2
 echo "Flutter: ${flutter_ver}  https://github.com/songloft-org/songloft-player/releases/tag/${flutter_ver}" >&2
 echo "Lynx:    ${lynx_ver}  https://github.com/songloft-org/songloft-player-lynx/releases/tag/${lynx_ver}" >&2
-echo "后端:    ${parent_ver}  https://github.com/songloft-org/songloft/releases/tag/${parent_ver}" >&2
+echo "后端:    ${parent_ver}  https://github.com/leonzy/roomtone/releases/tag/${parent_ver}" >&2
 
 # 最后一行 stdout 输出父仓库新版本号，方便链式调用
 echo "$parent_ver"

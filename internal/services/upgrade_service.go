@@ -22,8 +22,8 @@ import (
 
 const (
 	// GitHub Release 版本文件 URL
-	stableVersionURL = "https://github.com/songloft-org/songloft/releases/latest/download/version.json"
-	devVersionURL    = "https://github.com/songloft-org/songloft/releases/download/dev/version.json"
+	stableVersionURL = "https://github.com/leonzy/roomtone/releases/latest/download/version.json"
+	devVersionURL    = "https://github.com/leonzy/roomtone/releases/download/dev/version.json"
 
 	versionTypeStable = "stable"
 	versionTypeDev    = "dev"

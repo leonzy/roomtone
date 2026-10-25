@@ -15,7 +15,7 @@ A: **不收费，也不接受任何赞助或捐款。** Songloft 是纯粹出于
 ### Q: 我应该如何下载 Songloft？
 
 A: 
-- **后端服务器**：从 [GitHub Releases](https://github.com/songloft-org/songloft/releases) 下载适合您系统的版本，支持 Linux、macOS 和 Windows 平台，提供二进制文件和 Docker 镜像两种部署方式。
+- **后端服务器**：从 [GitHub Releases](https://github.com/leonzy/roomtone/releases) 下载适合您系统的版本，支持 Linux、macOS 和 Windows 平台，提供二进制文件和 Docker 镜像两种部署方式。
 - **Flutter 客户端**：从 [Flutter 客户端 Releases](https://github.com/songloft-org/songloft-player/releases) 下载预编译安装包，支持 Android、iOS、macOS、Windows、Linux 和 Web。
 
 - **Electron 桌面客户端**：[Songloft Desktop Releases](https://github.com/songloft-org/songloft-desktop/releases/latest)，连接已有服务器。
@@ -90,7 +90,7 @@ A: 确保使用绝对路径挂载卷：
 docker run -d \
   -v /absolute/path/to/music:/app/music \
   -v /absolute/path/to/data:/app/data \
-  songloft/songloft:latest
+  roomtone/roomtone:latest
 ```
 
 ### Q: Docker 部署时定时任务时间不对（时区错误）怎么办？
@@ -102,7 +102,7 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -v /absolute/path/to/music:/app/music \
   -v /absolute/path/to/data:/app/data \
-  songloft/songloft:latest
+  roomtone/roomtone:latest
 ```
 
 Docker Compose 中同样添加：
@@ -169,7 +169,7 @@ ln -s /home/user/downloads/music /app/music/downloads
 ```yaml
 services:
   songloft:
-    image: songloft/songloft:latest
+    image: roomtone/roomtone:latest
     volumes:
       - /path/to/data:/app/data
       - /mnt/nas/music:/app/music/nas-music
@@ -207,14 +207,14 @@ docker run -d \
   -v /path/to/data:/app/data \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD=your_secure_password \
-  songloft/songloft:latest
+  roomtone/roomtone:latest
 ```
 
 **Docker Compose 启动**：修改 `docker-compose.yml` 中的 `ADMIN_PASSWORD`：
 ```yaml
 services:
   songloft:
-    image: songloft/songloft:latest
+    image: roomtone/roomtone:latest
     container_name: songloft
     restart: always
     ports:
@@ -330,7 +330,7 @@ A:
 
 A: 每个 Release 都包含 `checksums.txt` 文件：
 ```bash
-wget https://github.com/songloft-org/songloft/releases/latest/download/checksums.txt
+wget https://github.com/leonzy/roomtone/releases/latest/download/checksums.txt
 sha256sum -c checksums.txt
 ```
 

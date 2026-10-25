@@ -1529,7 +1529,7 @@ info:
   contact:
     email: im.hanxi@gmail.com
     name: API Support
-    url: https://github.com/songloft-org/songloft
+    url: https://github.com/leonzy/roomtone
   description: 轻量级音乐服务器 API 文档，支持本地音乐管理、网络歌曲、电台和歌单功能
   license:
     name: Apache 2.0
