@@ -52,6 +52,8 @@ type Event struct {
 	Preset    string `json:"preset,omitempty"`
 	OffsetMs  int    `json:"offset_ms,omitempty"`
 	Corrected *bool  `json:"corrected,omitempty"`
+	// Unaligned 连续校正失败、已放弃重试（前端应把该组标成"未对齐"）。
+	Unaligned *bool `json:"unaligned,omitempty"`
 }
 
 // EventBus 事件广播：单调 seq + 订阅者。

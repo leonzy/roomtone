@@ -62,6 +62,7 @@ func (m *Manager) CreateParty(ctx context.Context, name string, groupIDs []strin
 		}
 	}
 	m.ensurePartyEngine(ctx, snapshot)
+	m.startPartySync(pid)
 	if m.deps.Bus != nil {
 		for _, gid := range groupIDs {
 			m.deps.Bus.Publish(Event{Type: EventPartyChanged, PartyID: pid, GroupID: gid, Action: "joined"})
@@ -145,6 +146,7 @@ func (m *Manager) LeaveParty(ctx context.Context, partyID, groupID, mode string)
 		m.deps.Bus.Publish(Event{Type: EventPartyChanged, PartyID: partyID, GroupID: groupID, Action: "left"})
 	}
 	if empty {
+		m.stopPartySync(partyID)
 		if e := m.engine("party", partyID); e != nil {
 			e.Close()
 			m.mu.Lock()
@@ -180,6 +182,7 @@ func (m *Manager) EndParty(ctx context.Context, partyID string) error {
 			e.Stop()
 		}
 	}
+	m.stopPartySync(partyID)
 	if e := m.engine("party", partyID); e != nil {
 		e.Close()
 		m.mu.Lock()
@@ -276,12 +279,15 @@ type PartyMember struct {
 	OffsetMs int    `json:"offset_ms"`
 	State    string `json:"state"`
 	Drifting bool   `json:"drifting"`
+	// Unaligned 连续校正失败，已停止重试；前端应显示"未对齐"而不是"正在对齐"。
+	Unaligned bool `json:"unaligned"`
 }
 
 // Status 计算派对状态与漂移。
 //
-// 漂移 = 成员组位置 - 主控组位置。超过容忍值标记 drifting 并发 group_drift；
-// 校正（重新 seek 对齐）只在漂移持续超过容忍值时才做，避免频繁可听断点。
+// 漂移 = 成员组位置 - 主控组位置。超过容忍值标记 drifting；
+// 校正与 group_drift 事件都在 party_sync.go 的 950ms 采样里做，
+// 这里只读，保证"查状态"不会产生副作用。
 func (m *Manager) Status(ctx context.Context, partyID string) (PartyStatus, error) {
 	p, err := m.GetParty(partyID)
 	if err != nil {
@@ -302,17 +308,17 @@ func (m *Manager) Status(ctx context.Context, partyID string) (PartyStatus, erro
 		st := e.Status()
 		offset := int((st.Position - lst.Position) * 1000)
 		drifting := offset > tol || offset < -tol
-		out.Members = append(out.Members, PartyMember{GroupID: gid, OffsetMs: offset, State: string(st.State), Drifting: drifting})
-		if drifting && m.deps.Bus != nil {
-			corrected := false
-			m.deps.Bus.Publish(Event{
-				Type:      EventGroupDrift,
-				PartyID:   partyID,
-				GroupID:   gid,
-				OffsetMs:  offset,
-				Corrected: &corrected,
-			})
+		pm := PartyMember{GroupID: gid, OffsetMs: offset, State: string(st.State), Drifting: drifting}
+		// unaligned 由同步环维护：这里只读，不在这里发事件——
+		// 事件由 party_sync.go 的 950ms 采样统一广播，避免一次 API 调用刷一串。
+		if st := m.syncState(partyID); st != nil {
+			st.mu.Lock()
+			if ms, ok := st.members[gid]; ok {
+				pm.Unaligned = ms.unaligned
+			}
+			st.mu.Unlock()
 		}
+		out.Members = append(out.Members, pm)
 	}
 	return out, nil
 }

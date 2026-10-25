@@ -22,9 +22,13 @@ const (
 // ErrInvalidTransition 非法状态迁移。
 var ErrInvalidTransition = errors.New("invalid transport transition")
 
-// DefaultBufferWatermark buffering→playing 的判据：环形缓冲水位达到 2s。
+// DefaultBufferWatermark buffering→playing 的判据：环形缓冲水位达到 1s。
 // **不是**"第一帧到达"——那会让组内各设备从不同水位起播，同步从一开始就散。
-const DefaultBufferWatermark = 2 * time.Second
+//
+// 必须**严格小于**分发器的推送深度（pipeline.BufferDepth，默认 2s）：水位是
+// "已推送但还没到播放时刻"的时长，推送深度把它压在 2s 以内，判据一旦取到
+// 2s 就永远差一点点顶不到，播放会一直卡在 buffering（实测停在 1.9998s）。
+const DefaultBufferWatermark = time.Second
 
 // MinBufferWatermark 最低水位，低于这个值起播必然立刻欠载。
 const MinBufferWatermark = 500 * time.Millisecond

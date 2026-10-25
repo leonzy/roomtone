@@ -85,6 +85,8 @@ type Manager struct {
 	parties map[string]*Party
 	// eqChains 每台设备一条独立的均衡器链（按 playerID 缓存，改参数不重建）。
 	eqChains map[string]*dsp.EQ
+	// partySync 每个派对一个同步环（各自 950ms 采样）。
+	partySync map[string]*partySyncState
 }
 
 // NewManager 创建管理器。
@@ -102,13 +104,14 @@ func NewManager(deps ManagerDeps) *Manager {
 		deps.PartyDriftToleranceMs = 1500
 	}
 	return &Manager{
-		deps:     deps,
-		players:  make(map[string]*Player),
-		groups:   make(map[string]*Group),
-		engines:  make(map[string]*Engine),
-		sinks:    make(map[string]sink.Sink),
-		parties:  make(map[string]*Party),
-		eqChains: make(map[string]*dsp.EQ),
+		deps:      deps,
+		players:   make(map[string]*Player),
+		groups:    make(map[string]*Group),
+		engines:   make(map[string]*Engine),
+		sinks:     make(map[string]sink.Sink),
+		parties:   make(map[string]*Party),
+		eqChains:  make(map[string]*dsp.EQ),
+		partySync: make(map[string]*partySyncState),
 	}
 }
 
