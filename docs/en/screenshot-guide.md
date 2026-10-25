@@ -1,6 +1,6 @@
 # Landing Page Screenshot Update Guide
 
-The product UI screenshots shown on the documentation site's home page (landing page) are captured by driving the system Chrome with [Playwright](https://playwright.dev/), automatically logging into a locally running Songloft instance. The script is [`docs/scripts/capture-screenshots.mjs`](https://github.com/songloft-org/songloft/blob/main/docs/scripts/capture-screenshots.mjs), and its output lands in `docs/public/screenshots/`, committed alongside the repository.
+The product UI screenshots shown on the documentation site's home page (landing page) are captured by driving the system Chrome with [Playwright](https://playwright.dev/), automatically logging into a locally running Songloft instance. The script is [`docs/scripts/capture-screenshots.mjs`](https://github.com/leonzy/roomtone/blob/main/docs/scripts/capture-screenshots.mjs), and its output lands in `docs/public/screenshots/`, committed alongside the repository.
 
 > When you need to update the UI screenshots (e.g., after a UI redesign), just re-run the script following this guide — no manual screenshotting required.
 

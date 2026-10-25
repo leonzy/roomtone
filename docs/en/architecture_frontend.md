@@ -604,4 +604,4 @@ make build-go-desktop-macos-arm64  # → clients/player/macos/Runner/songloft-se
 
 Prebuilt installer downloads:
 - Standard edition (requires connecting to a server): [https://github.com/songloft-org/songloft-player/releases](https://github.com/songloft-org/songloft-player/releases)
-- Bundle edition (backend embedded): [https://github.com/songloft-org/songloft/releases](https://github.com/songloft-org/songloft/releases) (`songloft-bundled-*` files)
+- Bundle edition (backend embedded): [https://github.com/leonzy/roomtone/releases](https://github.com/leonzy/roomtone/releases) (`songloft-bundled-*` files)

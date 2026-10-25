@@ -1,6 +1,6 @@
 # 落地页截图更新指南
 
-文档站首页（落地页）中展示的产品界面截图，是用 [Playwright](https://playwright.dev/) 驱动系统 Chrome、自动登录本地运行的 Songloft 实例后抓取的。脚本为 [`docs/scripts/capture-screenshots.mjs`](https://github.com/songloft-org/songloft/blob/main/docs/scripts/capture-screenshots.mjs)，产物落在 `docs/public/screenshots/`，随仓库提交。
+文档站首页（落地页）中展示的产品界面截图，是用 [Playwright](https://playwright.dev/) 驱动系统 Chrome、自动登录本地运行的 Songloft 实例后抓取的。脚本为 [`docs/scripts/capture-screenshots.mjs`](https://github.com/leonzy/roomtone/blob/main/docs/scripts/capture-screenshots.mjs)，产物落在 `docs/public/screenshots/`，随仓库提交。
 
 > 需要更新界面截图（如 UI 改版）时，按本文重跑脚本即可，无需手动截图。
 

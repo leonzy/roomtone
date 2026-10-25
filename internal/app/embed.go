@@ -121,7 +121,7 @@ const litePageHTML = `<!DOCTYPE html>
   <p>客户端配置服务器地址：<code id="server-addr"></code></p>
   <div class="links">
     <a href="https://github.com/songloft-org/songloft-player/releases" target="_blank" rel="noopener">下载客户端</a>
-    <a href="https://github.com/songloft-org/songloft" target="_blank" rel="noopener">项目主页</a>
+    <a href="https://github.com/leonzy/roomtone" target="_blank" rel="noopener">项目主页</a>
   </div>
   <script>
     document.getElementById('server-addr').textContent = window.location.origin + '%s';

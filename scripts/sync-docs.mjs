@@ -14,7 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const repoRoot = resolve(__dirname, '..');
 
-const REPO_BLOB_BASE = 'https://github.com/songloft-org/songloft/blob/main';
+const REPO_BLOB_BASE = 'https://github.com/leonzy/roomtone/blob/main';
 
 // 子模块 → 其【独立仓库】的 blob 基址。
 // subdir 类同步项里未映射的相对链接，算出来的是「主仓库根视角」的路径

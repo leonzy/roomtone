@@ -97,5 +97,5 @@ push tag 后，[`release.yml`](../.github/workflows/release.yml) 会自动：
 
 ## 📍 仓库说明
 
-- **代码 & 发布仓库**：https://github.com/songloft-org/songloft
+- **代码 & 发布仓库**：https://github.com/leonzy/roomtone
 - **Docker 镜像**：[ghcr.io/leonzy/roomtone](https://github.com/leonzy/roomtone/pkgs/container/roomtone)

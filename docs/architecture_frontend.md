@@ -604,4 +604,4 @@ make build-go-desktop-macos-arm64  # → clients/player/macos/Runner/songloft-se
 
 预编译安装包下载:
 - 标准版（需连接服务器）: [https://github.com/songloft-org/songloft-player/releases](https://github.com/songloft-org/songloft-player/releases)
-- Bundle 版（内嵌后端）: [https://github.com/songloft-org/songloft/releases](https://github.com/songloft-org/songloft/releases)（`songloft-bundled-*` 文件）
+- Bundle 版（内嵌后端）: [https://github.com/leonzy/roomtone/releases](https://github.com/leonzy/roomtone/releases)（`songloft-bundled-*` 文件）

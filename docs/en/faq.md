@@ -396,6 +396,6 @@ A:
 
 ## Getting Help
 
-- **GitHub Issues**: [https://github.com/songloft-org/songloft/issues](https://github.com/songloft-org/songloft/issues)
-- **Project homepage**: [https://github.com/songloft-org/songloft](https://github.com/songloft-org/songloft)
+- **GitHub Issues**: [https://github.com/leonzy/roomtone/issues](https://github.com/leonzy/roomtone/issues)
+- **Project homepage**: [https://github.com/leonzy/roomtone](https://github.com/leonzy/roomtone)
 - **Flutter client**: [https://github.com/songloft-org/songloft-player](https://github.com/songloft-org/songloft-player)

@@ -2,10 +2,10 @@
 
 本文档基于以下源文件编写：
 
-- [internal/handlers/scan.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/scan.go) -- 扫描处理器（扫描动作 + 业务设置端点）
-- [internal/app/routers.go](https://github.com/songloft-org/songloft/blob/main/internal/app/routers.go) -- 路由注册
-- [internal/services/scan_progress.go](https://github.com/songloft-org/songloft/blob/main/internal/services/scan_progress.go) -- 扫描进度模型
-- [internal/services/fingerprint.go](https://github.com/songloft-org/songloft/blob/main/internal/services/fingerprint.go) -- 指纹计算服务
+- [internal/handlers/scan.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/scan.go) -- 扫描处理器（扫描动作 + 业务设置端点）
+- [internal/app/routers.go](https://github.com/leonzy/roomtone/blob/main/internal/app/routers.go) -- 路由注册
+- [internal/services/scan_progress.go](https://github.com/leonzy/roomtone/blob/main/internal/services/scan_progress.go) -- 扫描进度模型
+- [internal/services/fingerprint.go](https://github.com/leonzy/roomtone/blob/main/internal/services/fingerprint.go) -- 指纹计算服务
 
 ## 目录
 

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/social-preview.png" alt="Songloft" width="640">
+  <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/social-preview.png" alt="Songloft" width="640">
 </p>
 
 [![GitHub License](https://img.shields.io/github/license/leonzy/roomtone)](https://github.com/leonzy/roomtone)
@@ -62,10 +62,10 @@
 ## 🖼️ 界面截图
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/home-desktop.png" alt="首页 · 桌面端" width="600">
+  <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/home-desktop.png" alt="首页 · 桌面端" width="600">
 </p>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/player-mobile.png" alt="沉浸式播放器 · 移动端" width="240">
+  <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/player-mobile.png" alt="沉浸式播放器 · 移动端" width="240">
 </p>
 
 > 📸 更多界面（歌曲库、歌单、设置等，含桌面 / 移动端与亮 / 暗双主题）见 **[界面截图一览](docs/screenshots.md)**。

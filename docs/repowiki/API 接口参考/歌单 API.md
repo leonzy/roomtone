@@ -2,11 +2,11 @@
 
 本文档基于以下源文件编写：
 
-- [internal/handlers/playlist.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/playlist.go) -- 歌单 CRUD、歌曲管理、排序、封面处理器
-- [internal/handlers/backup.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/backup.go) -- 歌单备份导出与导入处理器
-- [internal/app/routers.go](https://github.com/songloft-org/songloft/blob/main/internal/app/routers.go) -- 歌单路由注册（`/api/v1/playlists` 路由组）
-- [internal/models/models.go](https://github.com/songloft-org/songloft/blob/main/internal/models/models.go) -- Playlist / BatchDeletePlaylistsRequest/Response 结构体
-- [internal/models/backup.go](https://github.com/songloft-org/songloft/blob/main/internal/models/backup.go) -- BackupData / ImportResult 结构体
+- [internal/handlers/playlist.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/playlist.go) -- 歌单 CRUD、歌曲管理、排序、封面处理器
+- [internal/handlers/backup.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/backup.go) -- 歌单备份导出与导入处理器
+- [internal/app/routers.go](https://github.com/leonzy/roomtone/blob/main/internal/app/routers.go) -- 歌单路由注册（`/api/v1/playlists` 路由组）
+- [internal/models/models.go](https://github.com/leonzy/roomtone/blob/main/internal/models/models.go) -- Playlist / BatchDeletePlaylistsRequest/Response 结构体
+- [internal/models/backup.go](https://github.com/leonzy/roomtone/blob/main/internal/models/backup.go) -- BackupData / ImportResult 结构体
 
 ## 目录
 

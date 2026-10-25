@@ -6,7 +6,7 @@ export interface L { zh: string; en: string }
 export const pick = (l: L, lang: Lang): string => l[lang] ?? l.zh
 
 export const RELEASE_BASE =
-  'https://github.com/songloft-org/songloft/releases/latest/download'
+  'https://github.com/leonzy/roomtone/releases/latest/download'
 
 export interface Asset {
   arch: string

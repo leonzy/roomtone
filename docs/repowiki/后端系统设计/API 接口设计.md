@@ -2,13 +2,13 @@
 
 本文档基于以下源文件编写：
 
-- [internal/app/routers.go](https://github.com/songloft-org/songloft/blob/main/internal/app/routers.go) -- 完整路由注册（Chi v5 路由树）
-- [internal/handlers/response.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/response.go) -- 响应辅助函数（respondJSON / respondError）
-- [internal/handlers/*.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers) -- 各业务 Handler 定义与 Swagger 注释
-- [internal/middleware/auth.go](https://github.com/songloft-org/songloft/blob/main/internal/middleware/auth.go) -- JWT 认证中间件（Bearer + query param）
-- [internal/jsplugin/routes.go](https://github.com/songloft-org/songloft/blob/main/internal/jsplugin/routes.go) -- JS 插件静态/API 路由注册
-- [docs/api_response.md](https://github.com/songloft-org/songloft/blob/main/docs/api_response.md) -- API 响应格式规范
-- [AGENTS.md](https://github.com/songloft-org/songloft/blob/main/AGENTS.md) -- API 文档规范 + 配置接口规范铁律
+- [internal/app/routers.go](https://github.com/leonzy/roomtone/blob/main/internal/app/routers.go) -- 完整路由注册（Chi v5 路由树）
+- [internal/handlers/response.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/response.go) -- 响应辅助函数（respondJSON / respondError）
+- [internal/handlers/*.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers) -- 各业务 Handler 定义与 Swagger 注释
+- [internal/middleware/auth.go](https://github.com/leonzy/roomtone/blob/main/internal/middleware/auth.go) -- JWT 认证中间件（Bearer + query param）
+- [internal/jsplugin/routes.go](https://github.com/leonzy/roomtone/blob/main/internal/jsplugin/routes.go) -- JS 插件静态/API 路由注册
+- [docs/api_response.md](https://github.com/leonzy/roomtone/blob/main/docs/api_response.md) -- API 响应格式规范
+- [AGENTS.md](https://github.com/leonzy/roomtone/blob/main/AGENTS.md) -- API 文档规范 + 配置接口规范铁律
 
 ## 目录
 

@@ -2,14 +2,14 @@
 
 本文档基于以下源文件编写：
 
-- [internal/handlers/config.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/config.go) -- 通用 KV 配置 CRUD 处理器
-- [internal/handlers/tab_config_setting.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/tab_config_setting.go) -- 底部导航栏 Tab 配置设置端点
-- [internal/handlers/log.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/log.go) -- 日志等级设置端点
-- [internal/handlers/scan.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/scan.go) -- 音乐路径、自动扫描、扫描标题来源等设置端点
-- [internal/handlers/hls.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/hls.go) -- HLS 代理开关设置端点
-- [internal/handlers/jsplugin_registry.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/jsplugin_registry.go) -- 插件订阅源、HTTP 代理设置端点
-- [internal/app/routers.go](https://github.com/songloft-org/songloft/blob/main/internal/app/routers.go) -- 配置与设置路由注册
-- [internal/models/models.go](https://github.com/songloft-org/songloft/blob/main/internal/models/models.go) -- Config / CreateConfigRequest / UpdateConfigRequest 结构体
+- [internal/handlers/config.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/config.go) -- 通用 KV 配置 CRUD 处理器
+- [internal/handlers/tab_config_setting.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/tab_config_setting.go) -- 底部导航栏 Tab 配置设置端点
+- [internal/handlers/log.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/log.go) -- 日志等级设置端点
+- [internal/handlers/scan.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/scan.go) -- 音乐路径、自动扫描、扫描标题来源等设置端点
+- [internal/handlers/hls.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/hls.go) -- HLS 代理开关设置端点
+- [internal/handlers/jsplugin_registry.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/jsplugin_registry.go) -- 插件订阅源、HTTP 代理设置端点
+- [internal/app/routers.go](https://github.com/leonzy/roomtone/blob/main/internal/app/routers.go) -- 配置与设置路由注册
+- [internal/models/models.go](https://github.com/leonzy/roomtone/blob/main/internal/models/models.go) -- Config / CreateConfigRequest / UpdateConfigRequest 结构体
 
 ## 目录
 

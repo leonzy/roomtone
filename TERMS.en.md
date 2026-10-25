@@ -75,4 +75,4 @@ This agreement may be revised with software updates. Significant changes will be
 
 ## 7. Contact
 
-If you have questions about this agreement, please provide feedback via [GitHub Issues](https://github.com/songloft-org/songloft/issues).
+If you have questions about this agreement, please provide feedback via [GitHub Issues](https://github.com/leonzy/roomtone/issues).

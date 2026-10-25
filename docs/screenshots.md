@@ -2,7 +2,7 @@
 
 本页汇总 Songloft 各主要界面的截图，涵盖**桌面端 / 移动端**，并提供**亮色 / 暗色**两套主题。
 
-> 📌 所有截图由脚本自动抓取，随仓库提交在 [`docs/public/screenshots/`](https://github.com/songloft-org/songloft/tree/main/docs/public/screenshots)。
+> 📌 所有截图由脚本自动抓取，随仓库提交在 [`docs/public/screenshots/`](https://github.com/leonzy/roomtone/tree/main/docs/public/screenshots)。
 > 想在 UI 改版后重新生成这些图，请参考 [落地页截图更新指南](./screenshot-guide.md)。
 
 ---
@@ -24,8 +24,8 @@
 
 |  | 亮色 | 暗色 |
 |:--|:--:|:--:|
-| **桌面端** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/home-desktop.png" alt="首页 · 桌面 · 亮色" width="420"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/home-desktop-dark.png" alt="首页 · 桌面 · 暗色" width="420"> |
-| **移动端** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/home-mobile.png" alt="首页 · 移动 · 亮色" width="220"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/home-mobile-dark.png" alt="首页 · 移动 · 暗色" width="220"> |
+| **桌面端** | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/home-desktop.png" alt="首页 · 桌面 · 亮色" width="420"> | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/home-desktop-dark.png" alt="首页 · 桌面 · 暗色" width="420"> |
+| **移动端** | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/home-mobile.png" alt="首页 · 移动 · 亮色" width="220"> | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/home-mobile-dark.png" alt="首页 · 移动 · 暗色" width="220"> |
 
 ---
 
@@ -35,8 +35,8 @@
 
 |  | 亮色 | 暗色 |
 |:--|:--:|:--:|
-| **桌面端** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/library-desktop.png" alt="歌曲库 · 桌面 · 亮色" width="420"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/library-desktop-dark.png" alt="歌曲库 · 桌面 · 暗色" width="420"> |
-| **移动端** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/library-mobile.png" alt="歌曲库 · 移动 · 亮色" width="220"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/library-mobile-dark.png" alt="歌曲库 · 移动 · 暗色" width="220"> |
+| **桌面端** | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/library-desktop.png" alt="歌曲库 · 桌面 · 亮色" width="420"> | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/library-desktop-dark.png" alt="歌曲库 · 桌面 · 暗色" width="420"> |
+| **移动端** | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/library-mobile.png" alt="歌曲库 · 移动 · 亮色" width="220"> | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/library-mobile-dark.png" alt="歌曲库 · 移动 · 暗色" width="220"> |
 
 ---
 
@@ -46,8 +46,8 @@
 
 |  | 亮色 | 暗色 |
 |:--|:--:|:--:|
-| **桌面端** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/playlists-desktop.png" alt="歌单列表 · 桌面 · 亮色" width="420"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/playlists-desktop-dark.png" alt="歌单列表 · 桌面 · 暗色" width="420"> |
-| **移动端** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/playlists-mobile.png" alt="歌单列表 · 移动 · 亮色" width="220"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/playlists-mobile-dark.png" alt="歌单列表 · 移动 · 暗色" width="220"> |
+| **桌面端** | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/playlists-desktop.png" alt="歌单列表 · 桌面 · 亮色" width="420"> | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/playlists-desktop-dark.png" alt="歌单列表 · 桌面 · 暗色" width="420"> |
+| **移动端** | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/playlists-mobile.png" alt="歌单列表 · 移动 · 亮色" width="220"> | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/playlists-mobile-dark.png" alt="歌单列表 · 移动 · 暗色" width="220"> |
 
 ---
 
@@ -57,8 +57,8 @@
 
 |  | 亮色 | 暗色 |
 |:--|:--:|:--:|
-| **桌面端** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/playlist-detail-desktop.png" alt="歌单详情 · 桌面 · 亮色" width="420"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/playlist-detail-desktop-dark.png" alt="歌单详情 · 桌面 · 暗色" width="420"> |
-| **移动端** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/playlist-detail-mobile.png" alt="歌单详情 · 移动 · 亮色" width="220"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/playlist-detail-mobile-dark.png" alt="歌单详情 · 移动 · 暗色" width="220"> |
+| **桌面端** | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/playlist-detail-desktop.png" alt="歌单详情 · 桌面 · 亮色" width="420"> | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/playlist-detail-desktop-dark.png" alt="歌单详情 · 桌面 · 暗色" width="420"> |
+| **移动端** | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/playlist-detail-mobile.png" alt="歌单详情 · 移动 · 亮色" width="220"> | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/playlist-detail-mobile-dark.png" alt="歌单详情 · 移动 · 暗色" width="220"> |
 
 ---
 
@@ -68,7 +68,7 @@
 
 | 亮色 | 暗色 |
 |:--:|:--:|
-| <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/player-mobile.png" alt="沉浸式播放器 · 移动 · 亮色" width="240"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/player-mobile-dark.png" alt="沉浸式播放器 · 移动 · 暗色" width="240"> |
+| <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/player-mobile.png" alt="沉浸式播放器 · 移动 · 亮色" width="240"> | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/player-mobile-dark.png" alt="沉浸式播放器 · 移动 · 暗色" width="240"> |
 
 ---
 
@@ -78,5 +78,5 @@
 
 |  | 亮色 | 暗色 |
 |:--|:--:|:--:|
-| **桌面端** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/settings-desktop.png" alt="设置 · 桌面 · 亮色" width="420"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/settings-desktop-dark.png" alt="设置 · 桌面 · 暗色" width="420"> |
-| **移动端** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/settings-mobile.png" alt="设置 · 移动 · 亮色" width="220"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/settings-mobile-dark.png" alt="设置 · 移动 · 暗色" width="220"> |
+| **桌面端** | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/settings-desktop.png" alt="设置 · 桌面 · 亮色" width="420"> | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/settings-desktop-dark.png" alt="设置 · 桌面 · 暗色" width="420"> |
+| **移动端** | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/settings-mobile.png" alt="设置 · 移动 · 亮色" width="220"> | <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/settings-mobile-dark.png" alt="设置 · 移动 · 暗色" width="220"> |

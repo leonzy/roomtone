@@ -396,6 +396,6 @@ A:
 
 ## 获取帮助
 
-- **GitHub Issues**: [https://github.com/songloft-org/songloft/issues](https://github.com/songloft-org/songloft/issues)
-- **项目主页**: [https://github.com/songloft-org/songloft](https://github.com/songloft-org/songloft)
+- **GitHub Issues**: [https://github.com/leonzy/roomtone/issues](https://github.com/leonzy/roomtone/issues)
+- **项目主页**: [https://github.com/leonzy/roomtone](https://github.com/leonzy/roomtone)
 - **Flutter 客户端**: [https://github.com/songloft-org/songloft-player](https://github.com/songloft-org/songloft-player)

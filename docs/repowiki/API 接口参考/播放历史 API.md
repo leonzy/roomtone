@@ -2,11 +2,11 @@
 
 本文档基于以下源文件编写：
 
-- [internal/handlers/play_history.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/play_history.go) -- 播放历史处理器
-- [internal/services/play_history_service.go](https://github.com/songloft-org/songloft/blob/main/internal/services/play_history_service.go) -- 播放历史服务（事务内 upsert + 裁剪）
-- [internal/database/play_history_repository.go](https://github.com/songloft-org/songloft/blob/main/internal/database/play_history_repository.go) -- 仓储
-- [internal/database/migrations/0030_play_history.sql](https://github.com/songloft-org/songloft/blob/main/internal/database/migrations/0030_play_history.sql) -- 表结构
-- [internal/handlers/music.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/music.go) -- 写入入口（`POST /songs/{id}/played`）
+- [internal/handlers/play_history.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/play_history.go) -- 播放历史处理器
+- [internal/services/play_history_service.go](https://github.com/leonzy/roomtone/blob/main/internal/services/play_history_service.go) -- 播放历史服务（事务内 upsert + 裁剪）
+- [internal/database/play_history_repository.go](https://github.com/leonzy/roomtone/blob/main/internal/database/play_history_repository.go) -- 仓储
+- [internal/database/migrations/0030_play_history.sql](https://github.com/leonzy/roomtone/blob/main/internal/database/migrations/0030_play_history.sql) -- 表结构
+- [internal/handlers/music.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/music.go) -- 写入入口（`POST /songs/{id}/played`）
 
 ## 目录
 

@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/social-preview.png" alt="Songloft" width="640">
+  <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/social-preview.png" alt="Songloft" width="640">
 </p>
 
 [![GitHub License](https://img.shields.io/github/license/leonzy/roomtone)](https://github.com/leonzy/roomtone)
@@ -63,10 +63,10 @@
 ## 🖼️ Screenshots
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/home-desktop.png" alt="Home · Desktop" width="600">
+  <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/home-desktop.png" alt="Home · Desktop" width="600">
 </p>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/player-mobile.png" alt="Immersive Player · Mobile" width="240">
+  <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/screenshots/player-mobile.png" alt="Immersive Player · Mobile" width="240">
 </p>
 
 > 📸 More screens (library, playlists, settings, etc. — desktop / mobile with light / dark themes) are in the **[Screenshot Gallery](docs/en/screenshots.md)**.

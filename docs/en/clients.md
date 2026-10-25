@@ -15,7 +15,7 @@ Songloft offers Flutter, Lynx, Electron desktop, and TV clients connecting to th
 ## Flutter
 
 - [Standalone downloads](https://github.com/songloft-org/songloft-player/releases/latest): connect to a separate server.
-- [Bundle downloads](https://github.com/songloft-org/songloft/releases/latest): choose `songloft-bundled-*` assets.
+- [Bundle downloads](https://github.com/leonzy/roomtone/releases/latest): choose `songloft-bundled-*` assets.
 - [Architecture (Chinese)](../player/architecture.md) · [Build guide (Chinese)](../player/build_guide.md) · [Source](https://github.com/songloft-org/songloft-player).
 
 Full backend images/binaries embed Lynx Web by default. Native Flutter and standalone Web remain available; explicitly build legacy embedded Flutter Web with `make build-frontend-flutter-web-embedded`.

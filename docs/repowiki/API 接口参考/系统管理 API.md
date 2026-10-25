@@ -2,12 +2,12 @@
 
 本文档基于以下源文件编写：
 
-- [internal/handlers/health.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/health.go) -- 健康检查处理器
-- [internal/handlers/version.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/version.go) -- 版本信息处理器
-- [internal/handlers/upgrade.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/upgrade.go) -- 系统升级处理器
-- [internal/handlers/proxy.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/proxy.go) -- 资源代理处理器
-- [internal/app/routers.go](https://github.com/songloft-org/songloft/blob/main/internal/app/routers.go) -- 路由注册
-- [internal/models/models.go](https://github.com/songloft-org/songloft/blob/main/internal/models/models.go) -- 升级进度等数据模型
+- [internal/handlers/health.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/health.go) -- 健康检查处理器
+- [internal/handlers/version.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/version.go) -- 版本信息处理器
+- [internal/handlers/upgrade.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/upgrade.go) -- 系统升级处理器
+- [internal/handlers/proxy.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/proxy.go) -- 资源代理处理器
+- [internal/app/routers.go](https://github.com/leonzy/roomtone/blob/main/internal/app/routers.go) -- 路由注册
+- [internal/models/models.go](https://github.com/leonzy/roomtone/blob/main/internal/models/models.go) -- 升级进度等数据模型
 
 ## 目录
 

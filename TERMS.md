@@ -75,4 +75,4 @@ JS 插件可能通过宿主网络请求能力访问外部服务。第三方插�
 
 ## 7. 联系方式
 
-如对本协议有疑问，请通过 [GitHub Issues](https://github.com/songloft-org/songloft/issues) 反馈。
+如对本协议有疑问，请通过 [GitHub Issues](https://github.com/leonzy/roomtone/issues) 反馈。

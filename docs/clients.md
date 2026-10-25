@@ -15,7 +15,7 @@ Songloft 提供 Flutter、Lynx、Electron 桌面与 TV 客户端，均连接同�
 ## Flutter
 
 - [标准版下载](https://github.com/songloft-org/songloft-player/releases/latest)：连接独立服务器。
-- [Bundle 下载](https://github.com/songloft-org/songloft/releases/latest)：选择 `songloft-bundled-*` 文件。
+- [Bundle 下载](https://github.com/leonzy/roomtone/releases/latest)：选择 `songloft-bundled-*` 文件。
 - [架构](player/architecture.md) · [构建](player/build_guide.md) · [源码](https://github.com/songloft-org/songloft-player)。
 
 后端完整镜像与二进制默认嵌入 Lynx Web。Flutter 原生客户端与独立 Web 保留；旧 Flutter 嵌入版可通过 `make build-frontend-flutter-web-embedded` 显式构建。

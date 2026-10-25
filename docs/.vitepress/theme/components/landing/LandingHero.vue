@@ -9,10 +9,10 @@ const lang = inject<Ref<Lang>>('landingLang')!
 const t = (k: string) => createT(lang.value)(k)
 
 const badges = [
-  { alt: 'GitHub stars', src: 'https://img.shields.io/github/stars/songloft-org/songloft?style=flat&color=E8792B' },
+  { alt: 'GitHub stars', src: 'https://img.shields.io/github/stars/leonzy/roomtone?style=flat&color=E8792B' },
   { alt: 'Release', src: 'https://img.shields.io/github/v/release/songloft-org/songloft?color=E8792B' },
   { alt: 'Docker pulls', src: 'https://img.shields.io/docker/pulls/songloft/songloft?color=E8792B' },
-  { alt: 'License', src: 'https://img.shields.io/github/license/songloft-org/songloft?color=E8792B' },
+  { alt: 'License', src: 'https://img.shields.io/github/license/leonzy/roomtone?color=E8792B' },
 ]
 </script>
 
@@ -27,7 +27,7 @@ const badges = [
         <div class="hero-actions">
           <a class="btn btn-primary" :href="withBase('/quick-start')">{{ t('hero.cta.primary') }}</a>
           <a class="btn btn-ghost" href="#install">{{ t('hero.cta.secondary') }}</a>
-          <a class="btn btn-ghost" href="https://github.com/songloft-org/songloft" target="_blank" rel="noreferrer">
+          <a class="btn btn-ghost" href="https://github.com/leonzy/roomtone" target="_blank" rel="noreferrer">
             {{ t('hero.cta.github') }}
           </a>
         </div>

@@ -2,10 +2,10 @@
 
 本文档基于以下源文件编写：
 
-- [internal/app/routers.go](https://github.com/songloft-org/songloft/blob/main/internal/app/routers.go) -- 完整路由注册（API v1 路由组、中间件挂载、JS 插件路由）
-- [internal/handlers/response.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/response.go) -- respondJSON / respondError 响应辅助函数
-- [internal/middleware/auth.go](https://github.com/songloft-org/songloft/blob/main/internal/middleware/auth.go) -- JWT 认证中间件（Bearer Token + access_token 查询参数回退）
-- [docs/api_response.md](https://github.com/songloft-org/songloft/blob/main/docs/api_response.md) -- API 响应格式规范
+- [internal/app/routers.go](https://github.com/leonzy/roomtone/blob/main/internal/app/routers.go) -- 完整路由注册（API v1 路由组、中间件挂载、JS 插件路由）
+- [internal/handlers/response.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/response.go) -- respondJSON / respondError 响应辅助函数
+- [internal/middleware/auth.go](https://github.com/leonzy/roomtone/blob/main/internal/middleware/auth.go) -- JWT 认证中间件（Bearer Token + access_token 查询参数回退）
+- [docs/api_response.md](https://github.com/leonzy/roomtone/blob/main/docs/api_response.md) -- API 响应格式规范
 
 ## 目录
 

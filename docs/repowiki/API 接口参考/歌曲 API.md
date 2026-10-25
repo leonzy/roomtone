@@ -2,12 +2,12 @@
 
 本文档基于以下源文件编写：
 
-- [internal/handlers/music.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/music.go) -- 歌曲 CRUD、播放流、封面、歌词、标签写入、文件整理、重复检测处理器
-- [internal/handlers/hls.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/hls.go) -- HLS 电台反代处理器（播放列表改写 + 切片透传）
-- [internal/app/routers.go](https://github.com/songloft-org/songloft/blob/main/internal/app/routers.go) -- 歌曲相关路由注册
-- [internal/models/models.go](https://github.com/songloft-org/songloft/blob/main/internal/models/models.go) -- Song / BatchDeleteSongsRequest / BatchDeleteSongsResponse
-- [internal/models/lyric.go](https://github.com/songloft-org/songloft/blob/main/internal/models/lyric.go) -- LyricPayload
-- [internal/services/song_service.go](https://github.com/songloft-org/songloft/blob/main/internal/services/song_service.go) -- OrganizeItem / OrganizeResult / CleanResult
+- [internal/handlers/music.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/music.go) -- 歌曲 CRUD、播放流、封面、歌词、标签写入、文件整理、重复检测处理器
+- [internal/handlers/hls.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/hls.go) -- HLS 电台反代处理器（播放列表改写 + 切片透传）
+- [internal/app/routers.go](https://github.com/leonzy/roomtone/blob/main/internal/app/routers.go) -- 歌曲相关路由注册
+- [internal/models/models.go](https://github.com/leonzy/roomtone/blob/main/internal/models/models.go) -- Song / BatchDeleteSongsRequest / BatchDeleteSongsResponse
+- [internal/models/lyric.go](https://github.com/leonzy/roomtone/blob/main/internal/models/lyric.go) -- LyricPayload
+- [internal/services/song_service.go](https://github.com/leonzy/roomtone/blob/main/internal/services/song_service.go) -- OrganizeItem / OrganizeResult / CleanResult
 
 ## 目录
 

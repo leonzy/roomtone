@@ -65,4 +65,4 @@ JS 插件**可能**通过宿主网络请求能力或其声明的 `permissions` �
 
 ## 6. 联系方式
 
-如发现本文档与实际行为不符，请通过 [GitHub Issues](https://github.com/songloft-org/songloft/issues) 反馈。
+如发现本文档与实际行为不符，请通过 [GitHub Issues](https://github.com/leonzy/roomtone/issues) 反馈。

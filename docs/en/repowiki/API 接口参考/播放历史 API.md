@@ -2,11 +2,11 @@
 
 This document is based on the following source files:
 
-- [internal/handlers/play_history.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/play_history.go) -- Play history handler
-- [internal/services/play_history_service.go](https://github.com/songloft-org/songloft/blob/main/internal/services/play_history_service.go) -- Play history service (in-transaction upsert + trim)
-- [internal/database/play_history_repository.go](https://github.com/songloft-org/songloft/blob/main/internal/database/play_history_repository.go) -- Repository
-- [internal/database/migrations/0030_play_history.sql](https://github.com/songloft-org/songloft/blob/main/internal/database/migrations/0030_play_history.sql) -- Table structure
-- [internal/handlers/music.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/music.go) -- Write entry point (`POST /songs/{id}/played`)
+- [internal/handlers/play_history.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/play_history.go) -- Play history handler
+- [internal/services/play_history_service.go](https://github.com/leonzy/roomtone/blob/main/internal/services/play_history_service.go) -- Play history service (in-transaction upsert + trim)
+- [internal/database/play_history_repository.go](https://github.com/leonzy/roomtone/blob/main/internal/database/play_history_repository.go) -- Repository
+- [internal/database/migrations/0030_play_history.sql](https://github.com/leonzy/roomtone/blob/main/internal/database/migrations/0030_play_history.sql) -- Table structure
+- [internal/handlers/music.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/music.go) -- Write entry point (`POST /songs/{id}/played`)
 
 ## Table of Contents
 

@@ -4,10 +4,10 @@
 
 本文档基于以下源文件编写：
 
-- [internal/handlers/auth.go](https://github.com/songloft-org/songloft/blob/main/internal/handlers/auth.go) -- 登录、登出、令牌刷新、令牌管理处理器
-- [internal/app/routers.go](https://github.com/songloft-org/songloft/blob/main/internal/app/routers.go) -- 认证路由注册（公开端点 + 需授权端点）
-- [internal/models/models.go](https://github.com/songloft-org/songloft/blob/main/internal/models/models.go) -- LoginRequest / LoginResponse / RefreshTokenRequest / RevokeTokenRequest / TokenInfo 结构体
-- [internal/middleware/auth.go](https://github.com/songloft-org/songloft/blob/main/internal/middleware/auth.go) -- JWT 认证中间件（Bearer + query param）
+- [internal/handlers/auth.go](https://github.com/leonzy/roomtone/blob/main/internal/handlers/auth.go) -- 登录、登出、令牌刷新、令牌管理处理器
+- [internal/app/routers.go](https://github.com/leonzy/roomtone/blob/main/internal/app/routers.go) -- 认证路由注册（公开端点 + 需授权端点）
+- [internal/models/models.go](https://github.com/leonzy/roomtone/blob/main/internal/models/models.go) -- LoginRequest / LoginResponse / RefreshTokenRequest / RevokeTokenRequest / TokenInfo 结构体
+- [internal/middleware/auth.go](https://github.com/leonzy/roomtone/blob/main/internal/middleware/auth.go) -- JWT 认证中间件（Bearer + query param）
 
 ## 目录
 

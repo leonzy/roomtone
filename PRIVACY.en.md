@@ -65,4 +65,4 @@ The project maintainers bear **no responsibility** for this; see the [README Cop
 
 ## 6. Contact
 
-If you find any discrepancy between this document and the software's actual behavior, please report it via [GitHub Issues](https://github.com/songloft-org/songloft/issues).
+If you find any discrepancy between this document and the software's actual behavior, please report it via [GitHub Issues](https://github.com/leonzy/roomtone/issues).
