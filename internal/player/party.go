@@ -332,15 +332,16 @@ func (m *Manager) ensurePartyEngine(ctx context.Context, p Party) {
 		return
 	}
 	e := NewEngine("party", p.ID, EngineDeps{
-		Decoder:  m.deps.Decoder,
-		Runners:  m.deps.Runners,
-		Resolver: m.deps.Resolver,
-		Budget:   m.deps.Budget,
-		Bus:      m.deps.Bus,
-		Store:    m.deps.Store,
-		Logger:   m.deps.Logger,
-		Clock:    m.deps.Clock,
-		Latency:  m.deps.Latency,
+		Decoder:    m.deps.Decoder,
+		Runners:    m.deps.Runners,
+		Resolver:   m.deps.Resolver,
+		Budget:     m.deps.Budget,
+		Bus:        m.deps.Bus,
+		Store:      m.deps.Store,
+		Logger:     m.deps.Logger,
+		Clock:      m.deps.Clock,
+		Latency:    m.deps.Latency,
+		ReplayGain: m.deps.ReplayGain,
 	})
 	m.engines[key] = e
 	m.mu.Unlock()

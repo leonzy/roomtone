@@ -89,6 +89,8 @@ type EngineDeps struct {
 	Latency time.Duration
 	// Metrics 运行指标；nil 时静默（测试与 Bundle 精简路径）。
 	Metrics *Metrics
+	// ReplayGain 每首歌的增益来源；nil 或模式为 off 时完全不加增益。
+	ReplayGain ReplayGainSource
 }
 
 // Engine 一个 owner（组或派对）的播放引擎：队列 + 传输状态机 + 解码分发。
@@ -638,6 +640,8 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		runner := e.deps.Runners(timeline, e.targets, sampleBase, func(idx int64, at time.Time) {
 			e.onProgress(idx, at, track.Duration, format.SampleRate)
 		})
+		// ReplayGain：分发器每曲新建，增益跟着曲目走，不跨曲残留。
+		e.applyReplayGain(ctx, runner, track.SongID)
 		// 同步校正环：与分发器同生命周期，ctx 结束即退出。
 		if cr, ok := runner.(CorrectionRunner); ok {
 			loop := &SyncLoop{
@@ -705,6 +709,24 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 
 // DefaultFrameSamples 与 pipeline 保持一致：20ms @ 44.1kHz。
 const DefaultFrameSamples = 882
+
+// applyReplayGain 给本曲设置线性增益。
+//
+// 模式为 off / 没有标签 / 分发器不支持时什么都不做，行为与没有这个功能时一致。
+func (e *Engine) applyReplayGain(ctx context.Context, runner FrameRunner, songID int64) {
+	if e.deps.ReplayGain == nil || runner == nil {
+		return
+	}
+	db, ok := e.deps.ReplayGain.GainDB(ctx, songID)
+	if !ok || db == 0 {
+		return
+	}
+	setter, ok := runner.(gainSetter)
+	if !ok {
+		return
+	}
+	setter.SetGain(GainFactor(db))
+}
 
 func (e *Engine) resolve(ctx context.Context, songID int64) (Track, error) {
 	if e.deps.Resolver == nil {

@@ -75,6 +75,8 @@ type ManagerDeps struct {
 	PartyEnabled bool
 	// PartyDriftToleranceMs 派对漂移容忍（毫秒），默认 1500。
 	PartyDriftToleranceMs int
+	// ReplayGain 每首歌的增益来源；nil 表示不启用。
+	ReplayGain ReplayGainSource
 }
 
 // Manager 设备 / 组 / 派对 / 引擎的编排者。
@@ -1024,16 +1026,17 @@ func (m *Manager) ensureEngine(ctx context.Context, g Group) {
 		return
 	}
 	e := NewEngine("group", g.ID, EngineDeps{
-		Decoder:  m.deps.Decoder,
-		Runners:  m.deps.Runners,
-		Resolver: m.deps.Resolver,
-		Budget:   m.deps.Budget,
-		Bus:      m.deps.Bus,
-		Store:    m.deps.Store,
-		Logger:   m.deps.Logger,
-		Clock:    m.deps.Clock,
-		Latency:  m.deps.Latency,
-		Metrics:  m.metrics,
+		Decoder:    m.deps.Decoder,
+		Runners:    m.deps.Runners,
+		Resolver:   m.deps.Resolver,
+		Budget:     m.deps.Budget,
+		Bus:        m.deps.Bus,
+		Store:      m.deps.Store,
+		Logger:     m.deps.Logger,
+		Clock:      m.deps.Clock,
+		Latency:    m.deps.Latency,
+		Metrics:    m.metrics,
+		ReplayGain: m.deps.ReplayGain,
 	})
 	m.engines[key] = e
 	m.mu.Unlock()

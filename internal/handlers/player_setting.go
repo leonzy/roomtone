@@ -257,3 +257,71 @@ func (h *ConfigHandler) UpdatePlayerOutputAllowlistSetting(w http.ResponseWriter
 	}
 	respondJSON(w, http.StatusOK, req)
 }
+
+// ReplayGainKey ReplayGain 配置的 KV 键（业务端点专用，不接受通用 /configs 写入）。
+const ReplayGainKey = "replaygain"
+
+// ReplayGainSetting ReplayGain 配置。
+type ReplayGainSetting struct {
+	// Mode off / track / album；默认 off。
+	Mode string `json:"mode"`
+	// PreventClipping 按标签峰值压低增益，避免提音量后削波；默认 true。
+	PreventClipping bool `json:"prevent_clipping"`
+}
+
+func defaultReplayGain() ReplayGainSetting {
+	return ReplayGainSetting{Mode: "off", PreventClipping: true}
+}
+
+// GetReplayGainSetting 读取 ReplayGain 配置
+// @Summary 获取 ReplayGain 配置
+// @Description 返回响度均衡模式与防削波开关。mode 为 off（默认，完全不处理）/ track（按单曲增益）/ album（按专辑增益，专辑内响度关系保持不变）；prevent_clipping 开启时按 REPLAYGAIN_*_PEAK 压低增益，宁可少提也不削波。未配置时返回 off + 开启。
+// @Tags 设置
+// @Produce json
+// @Success 200 {object} handlers.ReplayGainSetting "ReplayGain 配置"
+// @Security BearerAuth
+// @Router /settings/replaygain [get]
+func (h *ConfigHandler) GetReplayGainSetting(w http.ResponseWriter, r *http.Request) {
+	cfg := defaultReplayGain()
+	if err := h.configService.GetJSON(ReplayGainKey, &cfg); err != nil {
+		respondJSON(w, http.StatusOK, defaultReplayGain())
+		return
+	}
+	respondJSON(w, http.StatusOK, cfg)
+}
+
+// UpdateReplayGainSetting 保存 ReplayGain 配置
+// @Summary 保存 ReplayGain 配置
+// @Description 保存后下一首开始生效（当前曲目的增益不中途改变，避免播放中音量跳变）。mode 只接受 off / track / album，其他值返回 400。标签在每首歌首次播放时用 ffprobe 读取并缓存，因此存量曲库无需重新扫描。
+// @Tags 设置
+// @Accept json
+// @Produce json
+// @Param request body handlers.ReplayGainSetting true "ReplayGain 配置"
+// @Success 200 {object} handlers.ReplayGainSetting "保存后的配置"
+// @Failure 400 {object} map[string]string "mode 非法或请求格式错误"
+// @Failure 500 {object} map[string]string "保存失败"
+// @Security BearerAuth
+// @Router /settings/replaygain [put]
+func (h *ConfigHandler) UpdateReplayGainSetting(w http.ResponseWriter, r *http.Request) {
+	var req ReplayGainSetting
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	switch req.Mode {
+	case "off", "track", "album":
+	case "":
+		req.Mode = "off"
+	default:
+		respondError(w, http.StatusBadRequest, "mode 只支持 off / track / album", nil)
+		return
+	}
+	if err := h.configService.SetJSON(ReplayGainKey, req); err != nil {
+		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
+		return
+	}
+	if h.onConfigChanged != nil {
+		go h.onConfigChanged(ReplayGainKey)
+	}
+	respondJSON(w, http.StatusOK, req)
+}

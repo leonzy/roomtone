@@ -278,3 +278,35 @@ func TestPerTargetEQ(t *testing.T) {
 		t.Fatal("配了 EQ 的目标没有被处理（EQ 仍是组级一份）")
 	}
 }
+
+// TestDistributorAppliesGain ReplayGain：SetGain 之后的帧按线性增益缩放。
+func TestDistributorAppliesGain(t *testing.T) {
+	clock := newTickClock()
+	rec := newRecSink("a")
+	set := sink.NewSet(sink.Target{PlayerID: "a", Sink: rec})
+	d := newDistributor(clock, set)
+	d.SetGain(0.5)
+
+	// 幅度 0.5 → 峰值约 16383，乘 0.5 后约 8192。
+	_, _ = d.Run(context.Background(), bytes.NewReader(pcmTone(2, 0.5)))
+	if rec.count() == 0 {
+		t.Fatal("未收到任何帧")
+	}
+	rec.mu.Lock()
+	frame := append([]byte(nil), rec.data[0]...)
+	rec.mu.Unlock()
+
+	maxAbs := 0
+	for i := 0; i+1 < len(frame); i += 2 {
+		v := int(int16(binary.LittleEndian.Uint16(frame[i:])))
+		if v < 0 {
+			v = -v
+		}
+		if v > maxAbs {
+			maxAbs = v
+		}
+	}
+	if maxAbs < 7000 || maxAbs > 9000 {
+		t.Fatalf("增益 0.5 后峰值应在 ~8192，实际 %d", maxAbs)
+	}
+}

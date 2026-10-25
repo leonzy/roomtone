@@ -94,6 +94,18 @@ func (a *App) initPlayback() {
 		return song.Title, song.FilePath, song.URL, song.Duration, nil
 	}}
 
+	// ReplayGain：模式每次从配置读（改了立即生效），标签首次播放时读一次并缓存。
+	replayGain := &replayGainSource{
+		mode: func() (player.ReplayGainMode, bool) {
+			var cfg handlers.ReplayGainSetting
+			if err := a.configService.GetJSON(handlers.ReplayGainKey, &cfg); err != nil {
+				return player.ReplayGainOff, false
+			}
+			return player.ReplayGainMode(cfg.Mode), cfg.PreventClipping
+		},
+		probe: a.replayGainProbe,
+	}
+
 	latency := time.Duration(output.DefaultLatencyMs) * time.Millisecond
 	a.playerManager = player.NewManager(player.ManagerDeps{
 		Store:                 store,
@@ -107,6 +119,7 @@ func (a *App) initPlayback() {
 		Latency:               latency,
 		PartyEnabled:          output.PartyEnabled,
 		PartyDriftToleranceMs: output.PartyDriftToleranceMs,
+		ReplayGain:            replayGain,
 	})
 
 	// 恢复上次的设备 / 组 / 队列。失败不阻塞启动，只是没有断点续播。

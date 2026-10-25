@@ -78,6 +78,11 @@ func (e *Engine) maybePrefetch(sampleIndex int64, duration time.Duration, rate i
 		return
 	}
 	go func() {
+		// 预热 ReplayGain 缓存：让读取标签的几十毫秒落在预取窗口里，
+		// 而不是落在曲目交界上（gapless 的交界不允许额外停顿）。
+		if e.deps.ReplayGain != nil {
+			_, _ = e.deps.ReplayGain.GainDB(context.Background(), track.SongID)
+		}
 		d, err := e.deps.Decoder.Open(context.Background(), track, 0, format)
 		if err != nil {
 			// 预取失败不是错误：到点会走正常路径重新开一次。

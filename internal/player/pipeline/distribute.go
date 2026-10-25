@@ -39,6 +39,8 @@ type Distributor struct {
 	OnSinkError func(playerID string, err error)
 	// OnSinkDrop 某一路队列满丢帧。
 	OnSinkDrop func(playerID string, frames int)
+	// Gain 线性增益（ReplayGain），1 或 0 表示不变。Run 之前设置，整个 Run 生效。
+	Gain float64
 	// Clock 注入时钟（测试用）。
 	Clock func() time.Time
 	// Sleep 注入休眠（测试用，默认 time.Sleep）。
@@ -158,6 +160,9 @@ func (d *Distributor) Run(ctx context.Context, r io.Reader) (int, error) {
 			sleep(ahead)
 		}
 		if n > 0 {
+			if gain := d.Gain; gain > 0 && gain != 1 {
+				player.ApplyGain(buf, gain)
+			}
 			push(buf, index, playAt)
 			frames++
 			index += int64(frameSamples)
@@ -169,6 +174,15 @@ func (d *Distributor) Run(ctx context.Context, r io.Reader) (int, error) {
 			return frames, nil
 		}
 	}
+}
+
+// SetGain 设置线性增益（player.gainSetter，由引擎在 Run 之前调用）。
+//
+// 只影响之后的帧；同一 Run 内不变（每曲新建一个分发器）。
+func (d *Distributor) SetGain(factor float64) {
+	d.mu.Lock()
+	d.Gain = factor
+	d.mu.Unlock()
 }
 
 // Skip 让某一路跳过后面的 d 时长（同步校正环用）。

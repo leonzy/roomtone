@@ -7587,6 +7587,86 @@ const docTemplate = `{
                 }
             }
         },
+        "/settings/replaygain": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回响度均衡模式与防削波开关。mode 为 off（默认，完全不处理）/ track（按单曲增益）/ album（按专辑增益，专辑内响度关系保持不变）；prevent_clipping 开启时按 REPLAYGAIN_*_PEAK 压低增益，宁可少提也不削波。未配置时返回 off + 开启。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "获取 ReplayGain 配置",
+                "responses": {
+                    "200": {
+                        "description": "ReplayGain 配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ReplayGainSetting"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保存后下一首开始生效（当前曲目的增益不中途改变，避免播放中音量跳变）。mode 只接受 off / track / album，其他值返回 400。标签在每首歌首次播放时用 ffprobe 读取并缓存，因此存量曲库无需重新扫描。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "保存 ReplayGain 配置",
+                "parameters": [
+                    {
+                        "description": "ReplayGain 配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ReplayGainSetting"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "保存后的配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ReplayGainSetting"
+                        }
+                    },
+                    "400": {
+                        "description": "mode 非法或请求格式错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "保存失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/settings/scan-auto-create-playlists": {
             "get": {
                 "security": [
@@ -12372,6 +12452,19 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "party_enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handlers.ReplayGainSetting": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "description": "Mode off / track / album；默认 off。",
+                    "type": "string"
+                },
+                "prevent_clipping": {
+                    "description": "PreventClipping 按标签峰值压低增益，避免提音量后削波；默认 true。",
                     "type": "boolean"
                 }
             }
