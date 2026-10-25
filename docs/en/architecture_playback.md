@@ -520,6 +520,16 @@ Paths are relative to `/api/v1` (`@BasePath` in `main.go`) and map one-to-one on
 | PUT | `/groups/{id}/queue/reorder` | `{from, to}` or `{remove_index}` | Move semantics; remove and reorder are mutually exclusive |
 | POST | `/groups/{id}/transport` | `{action, position?, repeat?, shuffle?}` | `play\|pause\|stop\|next\|prev\|seek` (seek in seconds); `repeat=off\|all\|one` and `shuffle=bool` also go here; 503 when the decode budget is exhausted |
 
+**Alarms**
+
+| Method | Path | Body / params | Notes |
+|---|---|---|---|
+| GET | `/alarms` | — | Alarms ordered by trigger time; `last_fired_at` is the last minute it fired |
+| POST | `/alarms` | `{name, target_id, time_of_day, days_mask, playlist_id, volume, fade_seconds, enabled}` | 201; `time_of_day` is `HH:MM`, `days_mask` bit0=Mon…bit6=Sun (127=daily, 0=today only) |
+| PUT | `/alarms/{id}` | same | Overwrite update; `id` and `last_fired_at` are preserved |
+| DELETE | `/alarms/{id}` | — | 204; does not affect current playback |
+| POST | `/alarms/{id}/test` | — | Start playback immediately per config (does not write `last_fired_at`), for debugging |
+
 **Global and metrics**
 
 | Method | Path | Body / params | Notes |
@@ -557,6 +567,8 @@ Following the "user-visible switches live on business endpoints" rule:
 
 - `/settings/player-discovery` — `{enabled, protocols:["raop","dlna"], interval_seconds}`; `interval_seconds` ranges 10–600, default 30
 - `/settings/player-output` — `{max_groups, default_latency_ms, dlna_realign_interval_minutes, allow_private_network, network_sinks_enabled, party_enabled, party_drift_tolerance_ms}`
+- `/settings/replaygain` — `{mode: "off"|"track"|"album", prevent_clipping: bool}`; defaults to `off` with clipping prevention on. Tags are read by ffprobe the first time a track plays and cached, not stored at scan time (existing libraries work right after the upgrade)
+- `/settings/replaygain` — `{mode: "off"|"track"|"album", prevent_clipping: bool}`; defaults to `off` with clipping prevention on. Tags are read by ffprobe the first time a track plays and cached, not stored at scan time (existing libraries work right after the upgrade)
 - `/settings/player-output-allowlist` — `{entries:["192.168.1.0/24", …]}`; an empty array does not restrict private networks, otherwise only these ranges are allowed and public addresses are always rejected
 
 `party_drift_tolerance_ms` defaults to 1500 (range 500–5000); with `party_enabled=false` starting a party returns 403 (managed or public deployments may want to forbid "every room at once"). With `network_sinks_enabled=false` manual add and reconnect return 403: iOS Bundle is always false, desktop Bundle requires an explicit opt-in.

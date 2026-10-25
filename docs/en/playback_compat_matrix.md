@@ -19,10 +19,10 @@ Sources for the comparison:
 |---|---|
 | **Better than LMS** | Output protocol coverage (RAOP + DLNA + local client; LMS needs plugin bridges that cannot sync), explicit sync-tier modelling with degradation hints, per-speaker server-side EQ, party mode (coarse sync across groups), REST + WebSocket event contract |
 | **On par with LMS** | Single-decode-source fan-out, sync groups (master/members/per-device delay compensation), gapless, queue and resume, format negotiation and transcoding, seek, group volume |
-| **Still behind** | **crossfade**, **ReplayGain**, **server-side alarm / timed wake** (all three unimplemented, see §4) |
+| **Still behind** | **crossfade / fade in-out** (the only remaining item, see §4) |
 | **Deliberately not done** | AirPlay 2 (no usable open-source sender), accurate DLNA sync (protocol has no shared clock) |
 
-**Verdict: the core sync chain (fan-out → timeline → correction loop → per-device compensation → gapless → resume) meets the bar and can ship v1.0; crossfade / ReplayGain / alarm are recorded as known gaps and are not counted as "passing".**
+**Verdict: the core sync chain (fan-out → timeline → correction loop → per-device compensation → gapless → resume → ReplayGain → scheduled alarms) meets the bar; only crossfade remains a known gap and is not counted as "passing".**
 
 ## 3. Item-by-item comparison
 
@@ -71,7 +71,7 @@ Legend: ✅ on par or better / ⚠️ gap but acceptable / ❌ not implemented /
 
 | Capability | LMS | This project | Verdict |
 |---|---|---|---|
-| ReplayGain (track/album) | ✅ `strm` carries `replay_gain` (16.16 fixed point), applied player-side | ❌ not implemented | ❌ |
+| ReplayGain (track/album) | ✅ `strm` carries `replay_gain` (16.16 fixed point), applied player-side | ✅ applied in the server-side decode path (`player.ApplyGain`), three modes `off/track/album` plus clipping prevention, controlled via `/settings/replaygain` | ✅ |
 | Smart Gain / cross-album loudness | ✅ | ⚠️ streaming-side `loudnorm` normalisation exists (cache/transcode paths) but is **not** ReplayGain tag semantics | ⚠️ |
 | Per-speaker EQ | ❌ none (only what the player offers) | ✅ server-side RBJ biquad + preamp + presets + hot switching | ✅ |
 | Clipping protection | — | ✅ automatic preamp + peak assertion | ✅ |
@@ -80,7 +80,7 @@ Legend: ✅ on par or better / ⚠️ gap but acceptable / ❌ not implemented /
 
 | Capability | LMS | This project | Verdict |
 |---|---|---|---|
-| Server-side alarm (timed playback) | ✅ CLI `alarm`, repeat days / volume / playlist | ❌ not implemented | ❌ |
+| Server-side alarm (timed playback) | ✅ CLI `alarm`, repeat days / volume / playlist | ✅ `alarms` table + 15s scheduler; starts the playlist on the target group and fades the volume in; `/alarms` CRUD + `/alarms/{id}/test` | ✅ |
 | Sleep timer (timed stop) | ✅ | ⚠️ implemented client-side (Flutter `SleepTimer`); per-device, not persisted across clients | ⚠️ |
 | Party / multi-group playback | ❌ no such concept | ✅ coarse alignment across groups (1500ms tolerance, seek-back when exceeded) | ✅ |
 
@@ -107,22 +107,26 @@ Legend: ✅ on par or better / ⚠️ gap but acceptable / ❌ not implemented /
 | Transport and distribution | 7 | 6 | 0 | 0 (1 item is skipped by both) |
 | Synchronisation | 12 | 10 | 2 | 0 |
 | Playback continuity | 5 | 3 | 0 | 2 |
-| Loudness and audio quality | 4 | 2 | 1 | 1 |
-| Scheduling and automation | 3 | 1 | 1 | 1 |
+| Loudness and audio quality | 4 | 3 | 1 | 0 |
+| Scheduling and automation | 3 | 2 | 1 | 0 |
 | Queue / library / interfaces | 11 | 11 | 0 | 0 |
-| **Total** | **42** | **33** | **4** | **4** (1 of them skipped by both) |
+| **Total** | **42** | **35** | **4** | **2** (1 of them skipped by both) |
 
 ## 4. Known gaps (not counted as passing)
 
-None of the three is an architectural limit; each is a scheduling trade-off. Ordered by "cost to close / value to users":
+ReplayGain and alarms were closed in this round (implementation notes in §3.4 / §3.5). The remaining item is likewise **not** an architectural limit but a scheduling trade-off:
 
 | Gap | How LMS does it | What we lack | Path to close | Cost |
 |---|---|---|---|---|
 | **crossfade / fade** | `strm` sends `trans_type` + `trans_period` and the **player** performs the fade; RAOP/DLNA devices ignore the field | no crossfade mixer in the server-side decode path | add a 200ms linear / equal-power mixer in the PCM stage of `pipeline/distribute.go`, open the next track one fade window early on queue advance; the whole group must share one fade duration | small (~3 person-days), but gapless and crossfade become mutually exclusive — needs a product decision |
-| **ReplayGain** | `strm` carries `replay_gain`, the player applies the gain; tags come from the scan stage | the scanner does not read `REPLAYGAIN_*` tags, and the decode path has no gain application point | read the tags at scan time into the DB (`pkg/tag` can already read them), apply a 16.16 fixed-point gain per track/album mode in the decode/distribute stage, expose three modes (off / track / album) in the API | medium (~5 person-days, including UI and clipping regression) |
-| **Server-side alarm** | CLI `alarm`: multiple alarms per player, repeat days, volume, playlist, fade-in | no scheduler and no "start playback at time T" orchestration | add an `alarms` table + scheduler on the existing timer facilities, call `transport` at the scheduled time with volume fade-in | small (~3 person-days), but needs a settings page and timezone handling |
+**Why v1.0 can ship with crossfade open**: LMS implements crossfade **player-side** (`trans_type` in `strm`), while our primary outputs are RAOP / DLNA devices that ignore the field; doing it server-side also makes it mutually exclusive with gapless. Therefore it does not make the sync capability "fail".
 
-**Why v1.0 can ship with these three open**: LMS's crossfade and ReplayGain both depend on **player-side** support, while our primary outputs are RAOP / DLNA devices — neither protocol honours those fields, so not doing it server-side is equivalent to not having it at all. Alarm is a standalone module with no coupling to the sync chain. Therefore none of them makes the sync capability "fail".
+### 4.1 How the closed items are implemented
+
+| Capability | Where | Trade-off |
+|---|---|---|
+| ReplayGain | `internal/player/replaygain.go` (gain computation / scaling), `pipeline/distribute.go` (`Gain`/`SetGain`), `internal/app/replaygain.go` (ffprobe reads `REPLAYGAIN_*` + cache), `/settings/replaygain` | Tags are read **the first time a track plays** and then cached, instead of being written at scan time: existing libraries work right after the upgrade with no full rescan; the prefetch path warms the cache so the few dozen milliseconds of ffprobe land inside the 3s prefetch window and the gapless boundary is unaffected |
+| Server-side alarm | `0042_alarms.sql`, `internal/database/alarm_repository.go`, `internal/app/alarms.go`, `/alarms` | 15s polling plus `last_fired_at` minute-level de-duplication (no catch-up after a restart, no double fire within a minute); `time_of_day` stores a local `HH:MM` rather than an absolute time to avoid DST drift; fade-in is done by stepping the group volume, so the engine needs no extra gain curve |
 
 ## 5. Verification record
 

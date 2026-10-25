@@ -528,6 +528,16 @@ CREATE TABLE playback_states (
 | GET | `/playback` | — | 首屏全量：所有组 + 状态 + 能力 + `party_id` |
 | GET | `/playback/metrics` | — | 运行指标快照：解码槽位 `decode_slots_used/max`、`player_underruns_total`（欠载补静音）、`player_sink_dropped_frames_total`（下游丢帧）、`player_resyncs_total`（偏差重挂）、`player_events_dropped_total`、`player_drift_ms`，以及各 owner（组/派对）明细；判读见 §4.6 |
 
+**闹钟**
+
+| 方法 | 路径 | 请求体 / 参数 | 说明 |
+|---|---|---|---|
+| GET | `/alarms` | — | 按触发时刻排序的闹钟列表；`last_fired_at` 是最近触发到的分钟 |
+| POST | `/alarms` | `{name, target_id, time_of_day, days_mask, playlist_id, volume, fade_seconds, enabled}` | 201；`time_of_day` 为 `HH:MM`，`days_mask` bit0=周一…bit6=周日（127=每天，0=只今天一次） |
+| PUT | `/alarms/{id}` | 同上 | 覆盖式更新，`id` 与 `last_fired_at` 不变 |
+| DELETE | `/alarms/{id}` | — | 204；不影响正在播放的内容 |
+| POST | `/alarms/{id}/test` | — | 立即按配置起播（不写 `last_fired_at`），调试用 |
+
 **派对**
 
 | 方法 | 路径 | 请求体 / 参数 | 说明 |
@@ -558,6 +568,7 @@ CREATE TABLE playback_states (
 
 - `/settings/player-discovery` — `{enabled, protocols:["raop","dlna"], interval_seconds}`；`interval_seconds` 范围 10–600，默认 30
 - `/settings/player-output` — `{max_groups, default_latency_ms, dlna_realign_interval_minutes, allow_private_network, network_sinks_enabled, party_enabled, party_drift_tolerance_ms}`
+- `/settings/replaygain` — `{mode: "off"|"track"|"album", prevent_clipping: bool}`；默认 `off` + 防削波开启。标签在首次播放该曲时由 ffprobe 读取并缓存，不进扫描入库（存量曲库升级后立即可用）
 - `/settings/player-output-allowlist` — `{entries:["192.168.1.0/24", …]}`；空数组表示不限制私网，配置后只允许这些网段，公网地址恒拒绝
 
 `party_drift_tolerance_ms` 默认 1500，下限 500、上限 5000；`party_enabled=false` 时发起派对返回 403（企业/公共部署可能需要关掉"让所有房间一起响"）。`network_sinks_enabled=false` 时手动添加与重连网络音箱返回 403：iOS Bundle 恒为 false，桌面 Bundle 需用户显式开启。
