@@ -131,6 +131,10 @@ export default async () => {
         })),
     },
 
+    // docs/public/design 下是可交互 mockup 与预览图，它们是原样拷贝的静态文件而非
+    // 文档页面，VitePress 的死链检查会误报，只放行这个目录。
+    ignoreDeadLinks: [/\/roomtone\/design\//],
+
     lastUpdated: true,
 
     markdown: {
