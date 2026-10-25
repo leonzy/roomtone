@@ -1,6 +1,6 @@
 # 播放与音箱交互设计（前端）
 
-> **状态：设计提案，尚未实现。** 后端契约见 [播放控制与音箱输出架构](./architecture_playback.md)；本文只描述客户端（`clients/player`，独立仓库）的交互、状态与代码落点。
+> **状态：设计提案，尚未实现。** 后端契约见 [播放控制与音箱输出架构](./architecture_playback.md)；本文只描述客户端（`clients/player`，独立仓库）的交互、状态与代码落点。实施顺序与任务拆分见[开发计划](./playback_development_plan.md)。
 >
 > 适用客户端：Flutter 六端。TV 与 Lynx 的差异见 §8。
 >

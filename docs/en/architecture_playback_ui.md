@@ -1,6 +1,6 @@
 # Playback and Speaker Interaction Design (Frontend)
 
-> **Status: design proposal, not implemented.** For the backend contract see [Playback Control and Speaker Output Architecture](./architecture_playback.md); this document covers only the client (`clients/player`, a separate repository) — interaction, state, and where the code lands.
+> **Status: design proposal, not implemented.** For the backend contract see [Playback Control and Speaker Output Architecture](./architecture_playback.md); this document covers only the client (`clients/player`, a separate repository) — interaction, state, and where the code lands. For delivery order and task breakdown see the [development plan](./playback_development_plan.md).
 >
 > Applies to the six Flutter platforms. TV and Lynx differences are covered in §8.
 >

@@ -2,6 +2,8 @@
 
 > **Status: design proposal, not implemented.** This document describes how Songloft extends from a "client-authoritative media server" into one that owns playback state and pushes audio to speakers on the local network.
 >
+> **For the implementation path see the [development plan](./playback_development_plan.md)** (task breakdown, files touched, gates, and schedule).
+>
 > References: Lyrion Music Server (`../slimserver`, Perl) — `Slim/Player/Source.pm`, `Sync.pm`, `CapabilitiesHelper.pm`; shairport-sync (reverse reference for RAOP receivers); OwnTone (RAOP sender reference).
 
 ## 1. Goals and Non-Goals

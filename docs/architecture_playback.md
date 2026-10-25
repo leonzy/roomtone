@@ -2,6 +2,8 @@
 
 > **状态：设计提案，尚未实现。** 本文描述 Songloft 从"客户端权威的媒体服务器"扩展为"服务端持有播放状态、可推送到局域网音箱"的目标架构。
 >
+> **实施路径见[开发计划](./playback_development_plan.md)**（任务拆分、涉及文件、门禁与排期）。
+>
 > 参考实现：Lyrion Music Server（`../slimserver`，Perl）的 `Slim/Player/Source.pm`、`Sync.pm`、`CapabilitiesHelper.pm`；shairport-sync（RAOP 接收端反向参考）；OwnTone（RAOP 发送端参考）。
 
 ## 1. 目标与非目标

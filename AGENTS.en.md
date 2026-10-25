@@ -12,6 +12,7 @@ This is Songloft's AI development entry point: shared hard rules, common command
 | Database operations | [docs/en/database_migrations.md](docs/en/database_migrations.md) |
 | API response format / Swagger UI | [docs/en/api_response.md](docs/en/api_response.md) / `/swagger/index.html` in dev mode |
 | Frontend gotchas / UI verification | [docs/en/frontend_gotchas.md](docs/en/frontend_gotchas.md) |
+| Playback control / speaker output (design + plan) | [Architecture](docs/en/architecture_playback.md), [Interaction](docs/en/architecture_playback_ui.md), [Development plan](docs/en/playback_development_plan.md) |
 | Docs site maintenance | [docs/en/development.md](docs/en/development.md) |
 | JS plugins / plugin registry | [Plugin development guide](docs/en/js-plugin-development-guide.md), [Plugin registry authoring](docs/en/plugin_registry.md), `plugins/toolchain/README.md` |
 
