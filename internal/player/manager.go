@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"songloft/internal/player/dsp"
 	"songloft/internal/player/sink"
 )
 
@@ -25,7 +26,9 @@ var (
 	ErrPartyDisabled   = errors.New("派对模式已关闭")
 	ErrDuplicateMember = errors.New("设备已在组内")
 	ErrUnsupported     = errors.New("设备不支持该操作")
-	ErrNotifyForbidden = errors.New("事件来源不受信任")
+	// ErrSyncTierMismatch 精确同步组不接受只能对齐起播的设备。
+	ErrSyncTierMismatch = errors.New("设备不支持精确同步")
+	ErrNotifyForbidden  = errors.New("事件来源不受信任")
 )
 
 // Store 播放器域的持久化入口（由 database.PlaybackRepository 适配）。
@@ -80,6 +83,8 @@ type Manager struct {
 	engines map[string]*Engine // key: "<kind>:<id>"
 	sinks   map[string]sink.Sink
 	parties map[string]*Party
+	// eqChains 每台设备一条独立的均衡器链（按 playerID 缓存，改参数不重建）。
+	eqChains map[string]*dsp.EQ
 }
 
 // NewManager 创建管理器。
@@ -97,12 +102,13 @@ func NewManager(deps ManagerDeps) *Manager {
 		deps.PartyDriftToleranceMs = 1500
 	}
 	return &Manager{
-		deps:    deps,
-		players: make(map[string]*Player),
-		groups:  make(map[string]*Group),
-		engines: make(map[string]*Engine),
-		sinks:   make(map[string]sink.Sink),
-		parties: make(map[string]*Party),
+		deps:     deps,
+		players:  make(map[string]*Player),
+		groups:   make(map[string]*Group),
+		engines:  make(map[string]*Engine),
+		sinks:    make(map[string]sink.Sink),
+		parties:  make(map[string]*Party),
+		eqChains: make(map[string]*dsp.EQ),
 	}
 }
 
@@ -531,6 +537,15 @@ func (m *Manager) AddMember(ctx context.Context, groupID, playerID string) (Grou
 		m.mu.Unlock()
 		return GroupView{}, ErrDuplicateMember
 	}
+	// 精确同步组（RAOP / 本机）不能塞进只能对齐起播的设备（DLNA）：
+	// 混进来整组都会降级成"起播对齐、之后随便漂"，用户却以为还在精确组。
+	if joining, ok := m.players[playerID]; ok {
+		if tier := m.groupTierLocked(g); tier == SyncExact && joining.Caps.SyncTier != SyncExact {
+			m.mu.Unlock()
+			return GroupView{}, fmt.Errorf("%w：%s 只能对齐起播，不能加入精确同步组",
+				ErrSyncTierMismatch, joining.Name)
+		}
+	}
 	// 从原组摘出。
 	for _, other := range m.groups {
 		if other.ID == groupID {
@@ -552,6 +567,159 @@ func (m *Manager) AddMember(ctx context.Context, groupID, playerID string) (Grou
 		m.deps.Bus.Publish(Event{Type: EventMemberChanged, GroupID: groupID, PlayerID: playerID, Action: "join"})
 	}
 	return m.GetGroup(snapshot.ID)
+}
+
+// groupTierLocked 组当前同步等级（调用方持锁）。
+func (m *Manager) groupTierLocked(g *Group) SyncTier {
+	tier := SyncExact
+	for _, mem := range g.Members {
+		if p, ok := m.players[mem.PlayerID]; ok && p.Caps.SyncTier > tier {
+			tier = p.Caps.SyncTier
+		}
+	}
+	return tier
+}
+
+// UpdateMember 调整成员的延迟补偿与音量偏移。
+//
+// delay_ms 是"这台设备比主控晚出声多少"：吸顶喇叭走线长、蓝牙箱自带缓冲，
+// 不给这个旋钮就只能整组迁就最慢的那台。volume_offset 让每台设备在自己
+// 的音量基准上做微调（书架箱和吸顶喇叭灵敏度差 6dB 很常见）。
+func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, delayMs, volumeOffset int) (GroupView, error) {
+	if delayMs < -2000 {
+		delayMs = -2000
+	}
+	if delayMs > 2000 {
+		delayMs = 2000
+	}
+	if volumeOffset < -100 {
+		volumeOffset = -100
+	}
+	if volumeOffset > 100 {
+		volumeOffset = 100
+	}
+	m.mu.Lock()
+	g, ok := m.groups[groupID]
+	if !ok {
+		m.mu.Unlock()
+		return GroupView{}, ErrGroupNotFound
+	}
+	found := false
+	for i := range g.Members {
+		if g.Members[i].PlayerID == playerID {
+			g.Members[i].DelayMs = delayMs
+			g.Members[i].VolumeOffset = volumeOffset
+			found = true
+		}
+	}
+	m.mu.Unlock()
+	if !found {
+		return GroupView{}, fmt.Errorf("%w: %s", ErrPlayerNotFound, playerID)
+	}
+	if m.deps.Store != nil {
+		_ = m.deps.Store.SaveMember(ctx, groupID, Member{PlayerID: playerID, DelayMs: delayMs, VolumeOffset: volumeOffset})
+	}
+	// 延迟补偿要立刻生效：重建目标时把新 Delay 带进 sink.Target。
+	m.rebuildSinks(ctx, groupID)
+	if m.deps.Bus != nil {
+		m.deps.Bus.Publish(Event{Type: EventMemberChanged, GroupID: groupID, PlayerID: playerID, Action: "update"})
+	}
+	return m.GetGroup(groupID)
+}
+
+// GroupVolumeMember 组内一台设备的实际音量。
+type GroupVolumeMember struct {
+	PlayerID     string `json:"player_id"`
+	Volume       int    `json:"volume"`
+	VolumeOffset int    `json:"volume_offset"`
+	OK           bool   `json:"ok"`
+	Error        string `json:"error,omitempty"`
+}
+
+// GroupVolume 组音量：base 是"基准"，每台实际值 = clamp(base + offset)。
+type GroupVolume struct {
+	Volume  int                 `json:"volume"`
+	Muted   bool                `json:"muted"`
+	Members []GroupVolumeMember `json:"members"`
+}
+
+// SetGroupVolume 同步下发组音量，各自叠加 volume_offset。
+//
+// 部分失败不回滚已成功的成员（音量不是事务性资源，回滚反而会让已经
+// 调好的音箱再响一下），失败项放进 failed[]。
+func (m *Manager) SetGroupVolume(ctx context.Context, groupID string, volume int, muted bool) (GroupVolume, error) {
+	if volume < 0 {
+		volume = 0
+	}
+	if volume > 100 {
+		volume = 100
+	}
+	m.mu.RLock()
+	g, ok := m.groups[groupID]
+	if !ok {
+		m.mu.RUnlock()
+		return GroupVolume{}, ErrGroupNotFound
+	}
+	members := append([]Member(nil), g.Members...)
+	m.mu.RUnlock()
+
+	out := GroupVolume{Volume: volume, Muted: muted, Members: make([]GroupVolumeMember, 0, len(members))}
+	for _, mem := range members {
+		actual := clampVolume(volume + mem.VolumeOffset)
+		item := GroupVolumeMember{PlayerID: mem.PlayerID, Volume: actual, VolumeOffset: mem.VolumeOffset}
+		if _, err := m.SetVolume(ctx, mem.PlayerID, actual, muted); err != nil {
+			item.Error = err.Error()
+		} else {
+			item.OK = true
+		}
+		out.Members = append(out.Members, item)
+	}
+	return out, nil
+}
+
+// GroupVolume 读组音量：base 由主控反推（主控实际值 - 主控偏移）。
+func (m *Manager) GroupVolumeOf(groupID string) (GroupVolume, error) {
+	m.mu.RLock()
+	g, ok := m.groups[groupID]
+	if !ok {
+		m.mu.RUnlock()
+		return GroupVolume{}, ErrGroupNotFound
+	}
+	members := append([]Member(nil), g.Members...)
+	masterID := g.MasterID
+	m.mu.RUnlock()
+
+	out := GroupVolume{Members: make([]GroupVolumeMember, 0, len(members))}
+	baseSet := false
+	for _, mem := range members {
+		p, err := m.GetPlayer(mem.PlayerID)
+		if err != nil {
+			out.Members = append(out.Members, GroupVolumeMember{PlayerID: mem.PlayerID, VolumeOffset: mem.VolumeOffset, Error: err.Error()})
+			continue
+		}
+		out.Members = append(out.Members, GroupVolumeMember{
+			PlayerID: mem.PlayerID, Volume: p.Volume, VolumeOffset: mem.VolumeOffset, OK: true,
+		})
+		if mem.PlayerID == masterID {
+			out.Volume = clampVolume(p.Volume - mem.VolumeOffset)
+			out.Muted = p.Muted
+			baseSet = true
+		}
+	}
+	if !baseSet && len(out.Members) > 0 {
+		out.Volume = out.Members[0].Volume
+	}
+	return out, nil
+}
+
+func clampVolume(v int) int {
+	if v < 0 {
+		return 0
+	}
+	if v > 100 {
+		return 100
+	}
+	return v
 }
 
 // RemoveMember 移出成员。mode=stop 时该设备停止出声，continue 时它自己继续放。
@@ -609,6 +777,9 @@ func (m *Manager) RemoveMember(ctx context.Context, groupID, playerID, mode stri
 	return nil
 }
 
+// TransferCompensation 转移时给目标组的前置补偿（源位置 + 这个值）。
+const TransferCompensation = 800 * time.Millisecond
+
 // Transfer 把播放从 fromGroup 转移到 toGroup（"播放跟着人走"）。
 //
 // onlyPlayerID 非空时表示"只在这台音箱上播"：把该设备从原组拆出来单独成组。
@@ -659,7 +830,11 @@ func (m *Manager) Transfer(ctx context.Context, fromGroupID, toGroupID, onlyPlay
 	if idx < 0 {
 		idx = 0
 	}
-	if err := to.Load(ctx, songIDs, idx, time.Duration(st.Position*float64(time.Second))); err != nil {
+	// 转移补偿：从"停源"到"目标出声"之间必然有建连/起播的空档（实测约 800ms），
+	// 不补这段就会听出一次明显的停顿。补偿从**源组的实时位置**算，不落库、
+	// 不累加，所以连续转移不会越转越靠后。
+	pos := time.Duration(st.Position*float64(time.Second)) + TransferCompensation
+	if err := to.Load(ctx, songIDs, idx, pos); err != nil {
 		return err
 	}
 	if m.deps.Bus != nil {
@@ -759,17 +934,53 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) {
 		return
 	}
 	e.SetFormat(format)
-	push := make([]sink.PushSink, 0, len(players))
+	targets := make([]sink.Target, 0, len(players))
 	for _, p := range players {
 		s, ok := m.sinkFor(ctx, p)
 		if !ok {
 			continue
 		}
-		if ps, ok := s.(sink.PushSink); ok {
-			push = append(push, ps)
+		ps, ok := s.(sink.PushSink)
+		if !ok {
+			continue
+		}
+		targets = append(targets, sink.Target{
+			PlayerID: p.ID,
+			Sink:     ps,
+			EQ:       m.eqChainFor(p, format.SampleRate),
+			Delay:    memberDelay(*g, p.ID),
+		})
+	}
+	// 播放中增删成员走差异路径：新增的立刻接进时间轴，移除的立刻停。
+	if err := e.SetTargets(ctx, targets); err != nil {
+		m.deps.Logger.Warn("attach playback target failed", "group", groupID, "err", err)
+	}
+}
+
+// eqChainFor 取（或建）某设备的 EQ 链。
+//
+// 每台设备一条独立链：同一组里书架箱和吸顶喇叭的补偿完全不同，
+// 共享一条滤镜链只能有一个声音。采样率变化（组协商结果变了）时重建。
+func (m *Manager) eqChainFor(p *Player, rate int) sink.SampleProcessor {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if chain, ok := m.eqChains[p.ID]; ok {
+		chain.SetBands(p.EQ.Bands, p.EQ.Preamp)
+		return chain
+	}
+	chain := dsp.NewEQ(rate, 2, p.EQ.Bands, p.EQ.Preamp)
+	m.eqChains[p.ID] = chain
+	return chain
+}
+
+// memberDelay 组成员延迟补偿。
+func memberDelay(g Group, playerID string) time.Duration {
+	for _, mem := range g.Members {
+		if mem.PlayerID == playerID {
+			return time.Duration(mem.DelayMs) * time.Millisecond
 		}
 	}
-	e.SetSinks(push)
+	return 0
 }
 
 // sinkFor 取（或建）某设备的 sink。PullSink（DLNA）不进分发列表，

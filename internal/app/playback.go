@@ -44,11 +44,11 @@ func (a *App) initPlayback() {
 	}
 	decoder := pipeline.NewFFmpegDecoderFactory(ffmpegPath, slog.Default())
 
-	runners := func(timeline *player.Timeline, sinks []sink.PushSink, startSample int64, onProgress func(int64, time.Time)) player.FrameRunner {
+	runners := func(timeline *player.Timeline, targets *sink.Set, startSample int64, onProgress func(int64, time.Time)) player.FrameRunner {
 		return &pipeline.Distributor{
 			Rate:         timeline.SampleRate(),
 			FrameSamples: pipeline.DefaultFrameSamples,
-			Sinks:        sinks,
+			Targets:      targets,
 			Timeline:     timeline,
 			StartSample:  startSample,
 			OnProgress:   onProgress,

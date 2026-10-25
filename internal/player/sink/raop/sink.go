@@ -57,6 +57,10 @@ type Sink struct {
 	volume    float64
 	sent      int64 // 已发送采样数，进度上报用
 	lastSync  time.Time
+	// 设备时钟偏移（设备时间 - 本机时间），由 timing 端口实测；用于同步校正环。
+	clockOff  time.Duration
+	clockAt   time.Time
+	clockSeen bool
 
 	aesKey []byte
 	aesIV  []byte
@@ -207,6 +211,7 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 		s.closeConnsLocked()
 		return err
 	}
+	s.startTimingReader(timing)
 	return nil
 }
 
@@ -225,6 +230,63 @@ func (s *Sink) Start(at time.Time) error {
 	}
 	s.emit(sink.Event{Type: sink.EventPlaying})
 	return nil
+}
+
+// startTimingReader 读设备发来的 timing 包，估计设备时钟相对本机的偏移。
+//
+// RAOP 设备会周期性向我们的 timing_port 发 NTP 请求（origin=它的发送时刻），
+// 收到时刻与本机时钟之差就是偏移的粗估（含单向网络时延，局域网内 <1ms）。
+// 没有这个通道就只能假设设备时钟与本机一致，同步校正环也就无从判断漂移。
+func (s *Sink) startTimingReader(conn *net.UDPConn) {
+	if conn == nil {
+		return
+	}
+	go func() {
+		buf := make([]byte, 256)
+		for {
+			n, _, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				return // 连接已关闭
+			}
+			if n < 12 || buf[1] != ControlTiming {
+				continue
+			}
+			recv := time.Now()
+			sec := binary.BigEndian.Uint32(buf[4:8])
+			frac := binary.BigEndian.Uint32(buf[8:12])
+			origin := time.Unix(int64(sec)-NTPEpochOffset, int64(float64(frac)/4294967296.0*1e9))
+			off := origin.Sub(recv)
+			s.mu.Lock()
+			if !s.closed {
+				s.clockOff = off
+				s.clockAt = recv
+				s.clockSeen = true
+			}
+			s.mu.Unlock()
+		}
+	}()
+}
+
+// PlaybackPosition 实现 sink.PositionReporter。
+//
+// RAOP 没有应用层回传，位置靠"设备时钟 + 起播时刻"推算：设备实际按自己的
+// 时钟发声，晶振偏快就会比时间轴跑得快。只有最近 10s 内测到过时钟偏移才可信。
+func (s *Sink) PlaybackPosition() (time.Duration, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.started || !s.clockSeen || s.startAt.IsZero() {
+		return 0, false
+	}
+	if time.Since(s.clockAt) > 10*time.Second {
+		return 0, false
+	}
+	deviceNow := time.Now().Add(s.clockOff)
+	base := time.Duration(s.anchor) * time.Second / time.Duration(s.opts.SampleRate)
+	pos := base + deviceNow.Sub(s.startAt)
+	if pos < 0 {
+		pos = 0
+	}
+	return pos, true
 }
 
 // WriteFrame 加密（可选）后发一个 RTP 包。

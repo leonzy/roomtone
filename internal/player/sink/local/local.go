@@ -61,6 +61,11 @@ type Sink struct {
 	// offset 服务端与客户端时钟的偏移估计（客户端时间 - 服务端时间）。
 	offset time.Duration
 	rtt    time.Duration
+	// 最近一次上报的进度，用于同步校正环。
+	pos     time.Duration
+	posAt   time.Time
+	playing bool
+	hasPos  bool
 }
 
 // New 创建 local sink。
@@ -185,7 +190,15 @@ func (s *Sink) HandleReport(r Report) {
 	}
 	s.mu.Unlock()
 
-	ev := sink.Event{Type: sink.EventProgress, Position: time.Duration(r.PositionMs) * time.Millisecond}
+	pos := time.Duration(r.PositionMs) * time.Millisecond
+	s.mu.Lock()
+	s.pos = pos
+	s.posAt = time.Now()
+	s.playing = r.State == "playing" && !r.Buffering
+	s.hasPos = true
+	s.mu.Unlock()
+
+	ev := sink.Event{Type: sink.EventProgress, Position: pos}
 	switch r.State {
 	case "playing":
 		ev.Type = sink.EventPlaying
@@ -202,6 +215,22 @@ func (s *Sink) HandleReport(r Report) {
 	default:
 		// 客户端上报是采样性质的，丢一条不影响判断。
 	}
+}
+
+// PlaybackPosition 实现 sink.PositionReporter：客户端上报的进度插值到当前时刻。
+//
+// 上报间隔 500ms，中间靠时钟推进补齐；暂停/缓冲时不插值，否则会把
+// "停住"误判成"落后"。
+func (s *Sink) PlaybackPosition() (time.Duration, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.hasPos {
+		return 0, false
+	}
+	if !s.playing {
+		return s.pos, true
+	}
+	return s.pos + time.Since(s.posAt), true
 }
 
 // Offset 当前时钟偏移估计。

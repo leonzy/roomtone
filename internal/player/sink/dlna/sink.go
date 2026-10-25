@@ -298,6 +298,19 @@ func (s *Sink) HandleNotify(body []byte) {
 	}
 }
 
+// PlaybackPosition 实现 sink.PositionReporter：轮询得到的进度，只在对端在播时有效。
+func (s *Sink) PlaybackPosition() (time.Duration, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.started || s.closed {
+		return 0, false
+	}
+	if !s.playing {
+		return 0, false
+	}
+	return s.position, true
+}
+
 // Position 当前播放位置（轮询/事件更新的最近值）。
 func (s *Sink) Position() time.Duration {
 	s.mu.Lock()

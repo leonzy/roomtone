@@ -1033,6 +1033,75 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "delay_ms 为\"该设备比主控晚出声多少毫秒\"（-2000~2000，正值=更晚），音量偏移 -100~100。改动立即生效：延迟通过重新挂载该路目标写入起播偏移，不需要重新起播。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "调整组成员的延迟补偿与音量偏移",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "设备 ID",
+                        "name": "player_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "延迟与音量偏移",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.memberUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的组",
+                        "schema": {
+                            "$ref": "#/definitions/player.GroupView"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "组或设备不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/groups/{id}/queue": {
@@ -1298,6 +1367,111 @@ const docTemplate = `{
                     },
                     "503": {
                         "description": "解码槽位已满",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/volume": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回基准音量与每个成员的实际音量（实际值 = clamp(基准 + 成员音量偏移)）。基准由主控反推。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "读取组音量",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "组音量",
+                        "schema": {
+                            "$ref": "#/definitions/player.GroupVolume"
+                        }
+                    },
+                    "404": {
+                        "description": "组不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "一次性给组内每台设备下发 clamp(volume + volume_offset)。部分设备失败不影响其他设备（已成功的成员不回滚），失败项在 members[].error 中返回。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "同步下发组音量",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "音量 0-100 与静音",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.groupVolumeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "下发结果（含每成员实际值）",
+                        "schema": {
+                            "$ref": "#/definitions/player.GroupVolume"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "组不存在",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -11935,6 +12109,17 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.groupVolumeRequest": {
+            "type": "object",
+            "properties": {
+                "muted": {
+                    "type": "boolean"
+                },
+                "volume": {
+                    "type": "integer"
+                }
+            }
+        },
         "handlers.hlsProxySettingRequest": {
             "type": "object",
             "properties": {
@@ -12081,6 +12266,17 @@ const docTemplate = `{
             "properties": {
                 "player_id": {
                     "type": "string"
+                }
+            }
+        },
+        "handlers.memberUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "delay_ms": {
+                    "type": "integer"
+                },
+                "volume_offset": {
+                    "type": "integer"
                 }
             }
         },
@@ -13594,6 +13790,43 @@ const docTemplate = `{
                 },
                 "sync_tier": {
                     "type": "string"
+                }
+            }
+        },
+        "player.GroupVolume": {
+            "type": "object",
+            "properties": {
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/player.GroupVolumeMember"
+                    }
+                },
+                "muted": {
+                    "type": "boolean"
+                },
+                "volume": {
+                    "type": "integer"
+                }
+            }
+        },
+        "player.GroupVolumeMember": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "ok": {
+                    "type": "boolean"
+                },
+                "player_id": {
+                    "type": "string"
+                },
+                "volume": {
+                    "type": "integer"
+                },
+                "volume_offset": {
+                    "type": "integer"
                 }
             }
         },

@@ -48,7 +48,7 @@ func playbackStatus(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, player.ErrGroupInParty), errors.Is(err, player.ErrDuplicateMember):
 		return http.StatusConflict
-	case errors.Is(err, player.ErrQueueEmpty), errors.Is(err, player.ErrQueueIndexOutOfRange):
+	case errors.Is(err, player.ErrSyncTierMismatch), errors.Is(err, player.ErrQueueEmpty), errors.Is(err, player.ErrQueueIndexOutOfRange):
 		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
@@ -272,6 +272,90 @@ func (h *PlaybackHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 
 type memberRequest struct {
 	PlayerID string `json:"player_id"`
+}
+
+type memberUpdateRequest struct {
+	DelayMs      int `json:"delay_ms"`
+	VolumeOffset int `json:"volume_offset"`
+}
+
+// UpdateMember 调整成员的延迟补偿与音量偏移
+// @Summary 调整组成员的延迟补偿与音量偏移
+// @Description delay_ms 为"该设备比主控晚出声多少毫秒"（-2000~2000，正值=更晚），音量偏移 -100~100。改动立即生效：延迟通过重新挂载该路目标写入起播偏移，不需要重新起播。
+// @Tags 播放控制
+// @Accept json
+// @Produce json
+// @Param id path string true "组 ID"
+// @Param player_id path string true "设备 ID"
+// @Param request body memberUpdateRequest true "延迟与音量偏移"
+// @Success 200 {object} player.GroupView "更新后的组"
+// @Failure 400 {object} map[string]string "请求格式错误"
+// @Failure 404 {object} map[string]string "组或设备不存在"
+// @Security BearerAuth
+// @Router /groups/{id}/members/{player_id} [patch]
+func (h *PlaybackHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
+	var req memberUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	g, err := h.mgr.UpdateMember(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "player_id"), req.DelayMs, req.VolumeOffset)
+	if err != nil {
+		playbackFail(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, g)
+}
+
+type groupVolumeRequest struct {
+	Volume int  `json:"volume"`
+	Muted  bool `json:"muted"`
+}
+
+// GroupVolume 读组音量
+// @Summary 读取组音量
+// @Description 返回基准音量与每个成员的实际音量（实际值 = clamp(基准 + 成员音量偏移)）。基准由主控反推。
+// @Tags 播放控制
+// @Produce json
+// @Param id path string true "组 ID"
+// @Success 200 {object} player.GroupVolume "组音量"
+// @Failure 404 {object} map[string]string "组不存在"
+// @Security BearerAuth
+// @Router /groups/{id}/volume [get]
+func (h *PlaybackHandler) GroupVolume(w http.ResponseWriter, r *http.Request) {
+	v, err := h.mgr.GroupVolumeOf(chi.URLParam(r, "id"))
+	if err != nil {
+		playbackFail(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, v)
+}
+
+// SetGroupVolume 下发组音量
+// @Summary 同步下发组音量
+// @Description 一次性给组内每台设备下发 clamp(volume + volume_offset)。部分设备失败不影响其他设备（已成功的成员不回滚），失败项在 members[].error 中返回。
+// @Tags 播放控制
+// @Accept json
+// @Produce json
+// @Param id path string true "组 ID"
+// @Param request body groupVolumeRequest true "音量 0-100 与静音"
+// @Success 200 {object} player.GroupVolume "下发结果（含每成员实际值）"
+// @Failure 400 {object} map[string]string "请求格式错误"
+// @Failure 404 {object} map[string]string "组不存在"
+// @Security BearerAuth
+// @Router /groups/{id}/volume [post]
+func (h *PlaybackHandler) SetGroupVolume(w http.ResponseWriter, r *http.Request) {
+	var req groupVolumeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	v, err := h.mgr.SetGroupVolume(r.Context(), chi.URLParam(r, "id"), req.Volume, req.Muted)
+	if err != nil {
+		playbackFail(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, v)
 }
 
 // RemoveMember 移出成员

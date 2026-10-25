@@ -41,7 +41,10 @@ type FrameRunner interface {
 }
 
 // RunnerFactory 为一次播放创建分发器。
-type RunnerFactory func(timeline *Timeline, sinks []sink.PushSink, startSample int64, onProgress func(int64, time.Time)) FrameRunner
+//
+// targets 是**活的**集合指针：分发器每帧读快照，因此播放中增删成员立即生效，
+// 不需要重启解码，也不用等下一曲。
+type RunnerFactory func(timeline *Timeline, targets *sink.Set, startSample int64, onProgress func(int64, time.Time)) FrameRunner
 
 // TrackResolver 把 song_id 解析成可解码的曲目。
 type TrackResolver interface {
@@ -63,6 +66,13 @@ type StateSnapshot struct {
 	State      string
 	RepeatMode string
 	Shuffle    bool
+}
+
+// CorrectionRunner 由分发器实现：把自身暴露成同步校正的执行者。
+//
+// 引擎只管起校正环，不关心校正怎么落地（丢帧 / 插静音都在分发器里）。
+type CorrectionRunner interface {
+	Corrector() Corrector
 }
 
 // EngineDeps 引擎依赖。
@@ -93,7 +103,7 @@ type Engine struct {
 	queue     *Queue
 	transport *Transport
 	timeline  *Timeline
-	sinks     []sink.PushSink
+	targets   *sink.Set
 	format    Format
 	eq        EQProfile
 	cancel    context.CancelFunc
@@ -103,6 +113,11 @@ type Engine struct {
 	preload   Decoder
 	preloadID int64
 	lastErr   error
+	// curPlan / planBase / cursor 是"播放中加入成员"所需的现场：
+	// 新设备要按当前曲目与当前进度 Open，并 Start 到当前时间轴位置。
+	curPlan  sink.StreamPlan
+	planBase int64
+	cursor   int64
 }
 
 // NewEngine 创建引擎。
@@ -122,6 +137,7 @@ func NewEngine(ownerKind, ownerID string, deps EngineDeps) *Engine {
 		deps:      deps,
 		queue:     NewQueue(),
 		transport: NewTransport(),
+		targets:   sink.NewSet(),
 		format:    Format{Codec: CodecL16, SampleRate: 44100, Channels: 2, Bits: 16},
 	}
 }
@@ -146,11 +162,93 @@ func (e *Engine) SetEQ(eq EQProfile) {
 	e.mu.Unlock()
 }
 
-// SetSinks 更新推送目标。播放中调用会在下一帧生效（成员动态加入）。
-func (e *Engine) SetSinks(sinks []sink.PushSink) {
+// Targets 当前推送目标集合（只读用途）。
+func (e *Engine) Targets() *sink.Set { return e.targets }
+
+// SetTargets 全量替换推送目标。
+//
+// 未在播放：直接替换，下次开播时统一 Open。
+// 正在播放：新增的立刻按当前曲目与进度 Open+Start（下一帧就能出声），
+// 移除的立刻停止写；只改了 EQ / 延迟的走参数更新，不重建。
+func (e *Engine) SetTargets(ctx context.Context, ts []sink.Target) error {
 	e.mu.Lock()
-	e.sinks = sinks
+	running := e.running
 	e.mu.Unlock()
+	if !running {
+		e.targets.Store(ts)
+		return nil
+	}
+	want := make(map[string]sink.Target, len(ts))
+	for _, t := range ts {
+		want[t.PlayerID] = t
+	}
+	for _, id := range e.targets.IDs() {
+		if _, ok := want[id]; !ok {
+			e.DetachTarget(id)
+		}
+	}
+	for _, t := range ts {
+		if old, ok := e.targets.Get(t.PlayerID); ok {
+			old.EQ = t.EQ
+			old.Delay = t.Delay
+			e.targets.Add(old)
+			continue
+		}
+		if err := e.attachTarget(ctx, t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// AttachTarget 播放中加入一台设备（也可在空闲时调用，等下次开播生效）。
+func (e *Engine) AttachTarget(ctx context.Context, t sink.Target) error {
+	e.mu.Lock()
+	running := e.running
+	e.mu.Unlock()
+	if !running {
+		e.targets.Add(t)
+		return nil
+	}
+	return e.attachTarget(ctx, t)
+}
+
+// DetachTarget 从分发中移除一台设备。只 Stop，不 Close——sink 实例由管理器缓存复用。
+func (e *Engine) DetachTarget(playerID string) {
+	t, ok := e.targets.Get(playerID)
+	e.targets.Remove(playerID)
+	if !ok {
+		return
+	}
+	_ = t.Sink.Stop()
+}
+
+// attachTarget 按当前曲目与进度把新设备接进正在播的时间轴。
+func (e *Engine) attachTarget(ctx context.Context, t sink.Target) error {
+	e.mu.Lock()
+	plan := e.curPlan
+	cursor, base := e.cursor, e.planBase
+	timeline := e.timeline
+	rate := e.format.SampleRate
+	e.mu.Unlock()
+	if plan.SongID == 0 || timeline == nil || rate <= 0 {
+		// 还没开播：只登记，开播时统一 Open。
+		e.targets.Add(t)
+		return nil
+	}
+	offset := cursor - base
+	if offset < 0 {
+		offset = 0
+	}
+	plan.Position += time.Duration(float64(offset) / float64(rate) * float64(time.Second))
+	if err := t.Sink.Open(ctx, plan); err != nil {
+		return fmt.Errorf("open sink %s: %w", t.PlayerID, err)
+	}
+	if err := t.Sink.Start(timeline.At(uint64(cursor)).Add(t.Delay)); err != nil {
+		return fmt.Errorf("start sink %s: %w", t.PlayerID, err)
+	}
+	e.targets.Add(t)
+	return nil
 }
 
 // Status 引擎快照，供 API 与 WS 事件使用。
@@ -463,7 +561,6 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		e.mu.Lock()
 		format := e.format
 		eq := e.eq
-		sinks := append([]sink.PushSink(nil), e.sinks...)
 		timeline := e.timeline
 		e.mu.Unlock()
 
@@ -493,14 +590,41 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			Duration: track.Duration,
 			Latency:  e.deps.Latency,
 		}
-		for _, s := range sinks {
-			_ = s.Open(ctx, plan)
-			_ = s.Start(timeline.At(uint64(sampleBase)))
+		e.mu.Lock()
+		e.curPlan = plan
+		e.planBase = sampleBase
+		e.cursor = sampleBase
+		e.mu.Unlock()
+		targets, _ := e.targets.Snapshot()
+		for _, t := range targets {
+			_ = t.Sink.Open(ctx, plan)
+			_ = t.Sink.Start(timeline.At(uint64(sampleBase)).Add(t.Delay))
 		}
 
-		runner := e.deps.Runners(timeline, sinks, sampleBase, func(idx int64, at time.Time) {
+		runner := e.deps.Runners(timeline, e.targets, sampleBase, func(idx int64, at time.Time) {
 			e.onProgress(idx, at, track.Duration, format.SampleRate)
 		})
+		// 同步校正环：与分发器同生命周期，ctx 结束即退出。
+		if cr, ok := runner.(CorrectionRunner); ok {
+			loop := &SyncLoop{
+				Targets:   e.targets,
+				Timeline:  timeline,
+				Corrector: cr.Corrector(),
+				Clock:     e.deps.Clock,
+				OnAdjust: func(a SyncAdjustment) {
+					e.deps.Logger.Info("sync adjust",
+						"owner", e.ownerKind+":"+e.ownerID,
+						"player", a.PlayerID, "action", string(a.Action),
+						"delta_ms", a.Delta.Milliseconds(), "applied_ms", a.Applied.Milliseconds())
+				},
+				OnDeviation: func(playerID string, delta time.Duration) {
+					e.deps.Logger.Warn("sync deviation too large",
+						"owner", e.ownerKind+":"+e.ownerID,
+						"player", playerID, "delta_ms", delta.Milliseconds())
+				},
+			}
+			go loop.Run(ctx)
+		}
 		frames, runErr := runner.Run(ctx, dec)
 		_ = dec.Close()
 
@@ -556,6 +680,7 @@ func (e *Engine) resolve(ctx context.Context, songID int64) (Track, error) {
 // onProgress 每帧回调：更新传输水位与位置，跨过水位线时发一次 state 事件。
 func (e *Engine) onProgress(sampleIndex int64, playAt time.Time, duration time.Duration, rate int) {
 	e.mu.Lock()
+	e.cursor = sampleIndex
 	if e.transport.State() == StateBuffering {
 		// 水位 = 已推送但尚未播放的时长。
 		ahead := playAt.Sub(e.deps.Clock())
