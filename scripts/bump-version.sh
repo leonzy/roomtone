@@ -29,6 +29,21 @@ log_ok()   { echo -e "${GREEN}✓${NC} $1" >&2; }
 log_warn() { echo -e "${YELLOW}警告：$1${NC}" >&2; }
 log_err()  { echo -e "${RED}错误：$1${NC}" >&2; }
 
+# 可移植的原地替换。BSD sed（macOS）要求 -i 后跟一个空参数，GNU sed 不接受该空参数，
+# 直接写 `sed -i` 会在 macOS 上报 `invalid command code`，因此统一走临时文件 + 覆盖写，
+# 用 cat 覆盖而不是 mv，保留原文件 inode 与权限。
+sed_inplace() {
+    _sed_expr="$1"
+    _sed_file="$2"
+    _sed_tmp="$(mktemp "${_sed_file}.XXXXXX")"
+    if ! sed "$_sed_expr" "$_sed_file" > "$_sed_tmp"; then
+        rm -f "$_sed_tmp"
+        return 1
+    fi
+    cat "$_sed_tmp" > "$_sed_file"
+    rm -f "$_sed_tmp"
+}
+
 usage() {
     echo "自动升版号脚本（统一发布契约）"
     echo ""
@@ -237,12 +252,12 @@ main() {
     fi
 
     log_info "[1/4] 更新 Makefile 中的版本号..."
-    sed -i "s/^VERSION ?= .*/VERSION ?= ${new}/" Makefile
+    sed_inplace "s/^VERSION ?= .*/VERSION ?= ${new}/" Makefile
     log_ok "Makefile 已更新"
 
     log_info "[2/4] 更新 main.go 中的 Swagger 版本..."
     if [ -f main.go ]; then
-        sed -i "s|^// @version .*|// @version ${new}|" main.go
+        sed_inplace "s|^// @version .*|// @version ${new}|" main.go
         log_ok "main.go 已更新"
     else
         log_warn "main.go 不存在，跳过"

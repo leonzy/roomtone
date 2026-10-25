@@ -43,7 +43,7 @@ echo "parent $*" >> "$SONGLOFT_CALL_LOG"
 if [ -n "\${FAKE_INVALID_PARENT:-}" ]; then printf '%s\\n' "$FAKE_VERSION_OUTPUT"; exit 0; fi
 for arg in "$@"; do [ "$arg" = "--dry-run" ] && { echo v9.9.9; exit 0; }; done
 [ -z "$(git status --porcelain)" ] || { echo "parent stub: dirty tree" >&2; exit 1; }
-sed -i "s/^VERSION ?= .*/VERSION ?= 9.9.9/" Makefile
+sed "s/^VERSION ?= .*/VERSION ?= 9.9.9/" Makefile > Makefile.tmp && cat Makefile.tmp > Makefile && rm -f Makefile.tmp
 git add Makefile
 git commit -q -m "chore: release version 9.9.9"
 echo v9.9.9
