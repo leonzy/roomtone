@@ -24,6 +24,7 @@ type DB interface {
 	SongTagRepository() *SongTagRepository
 	SongArtistRepository() *SongArtistRepository
 	PlaybackRepository() *PlaybackRepository
+	AlarmRepository() *AlarmRepository
 }
 
 // NewSQLiteDB 兼容旧调用方的构造函数，内部委托给 Open。

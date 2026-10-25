@@ -23,6 +23,255 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/alarms": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回按触发时刻排序的闹钟列表。last_fired_at 记录最近一次触发到的分钟（YYYY-MM-DDTHH:MM），可用于判断今天是否已经响过。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放历史"
+                ],
+                "summary": "列出全部闹钟",
+                "responses": {
+                    "200": {
+                        "description": "闹钟列表",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handlers.AlarmResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "到点后在 target_id 对应的组上起播 playlist_id（0 表示只调整音量），volume 为 0-100 的目标音量，fade_seconds 为渐强秒数。time_of_day 用 HH:MM 本地时刻，days_mask 的 bit0=周一 … bit6=周日，0 表示只在今天触发一次。id 由服务端生成。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放历史"
+                ],
+                "summary": "新建闹钟",
+                "parameters": [
+                    {
+                        "description": "闹钟配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.AlarmRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "创建成功",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.AlarmResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "参数非法",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "写入失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/alarms/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "覆盖式更新指定闹钟的全部可编辑字段（name / target_id / time_of_day / days_mask / playlist_id / volume / fade_seconds / enabled）。id 与 last_fired_at 不受影响。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放历史"
+                ],
+                "summary": "更新闹钟",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "闹钟 id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "闹钟配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.AlarmRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的闹钟",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.AlarmResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "参数非法",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "闹钟不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除指定闹钟。已触发记录随行一起删除；不影响正在播放的内容。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放历史"
+                ],
+                "summary": "删除闹钟",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "闹钟 id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "删除成功"
+                    },
+                    "404": {
+                        "description": "闹钟不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/alarms/{id}/test": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "不等定时，立刻按闹钟配置起播并渐强音量，便于调试。不写 last_fired_at，因此不影响今天的正常触发。目标组不存在或歌单为空时返回 500 并说明原因。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放历史"
+                ],
+                "summary": "立即触发闹钟",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "闹钟 id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已触发",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "闹钟不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "触发失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "播放子系统不可用",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "用户登录获取访问令牌",
@@ -12332,6 +12581,84 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "handlers.AlarmRequest": {
+            "type": "object",
+            "properties": {
+                "days_mask": {
+                    "description": "DaysMask 星期掩码，bit0=周一 … bit6=周日，127=每天，0=只在今天触发一次。",
+                    "type": "integer",
+                    "example": 127
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "fade_seconds": {
+                    "description": "FadeSeconds 渐强时长（秒），0 表示直接设到目标音量。",
+                    "type": "integer",
+                    "example": 30
+                },
+                "name": {
+                    "type": "string",
+                    "example": "起床"
+                },
+                "playlist_id": {
+                    "description": "PlaylistID 起播的歌单；0 表示只调整音量、不起播。",
+                    "type": "integer",
+                    "example": 3
+                },
+                "target_id": {
+                    "description": "TargetID 组 id 或设备（player）id，设备会解析成它所在的组。",
+                    "type": "string",
+                    "example": "group-1"
+                },
+                "time_of_day": {
+                    "description": "TimeOfDay 本地时刻 \"HH:MM\"。",
+                    "type": "string",
+                    "example": "07:30"
+                },
+                "volume": {
+                    "description": "Volume 目标音量 0-100。",
+                    "type": "integer",
+                    "example": 40
+                }
+            }
+        },
+        "handlers.AlarmResponse": {
+            "type": "object",
+            "properties": {
+                "days_mask": {
+                    "type": "integer"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "fade_seconds": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_fired_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "playlist_id": {
+                    "type": "integer"
+                },
+                "target_id": {
+                    "type": "string"
+                },
+                "time_of_day": {
+                    "type": "string"
+                },
+                "volume": {
+                    "type": "integer"
                 }
             }
         },

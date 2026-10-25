@@ -69,6 +69,8 @@ type App struct {
 	playerManager      *player.Manager
 	playbackHandler    *handlers.PlaybackHandler
 	playerDiscovery    *discovery.Discovery
+	alarmRunner        *alarmRunner
+	alarmHandler       *handlers.AlarmHandler
 	lanURL             *services.LANURLResolver
 	webDist            embed.FS
 	tracelyClient      *tracely.Client

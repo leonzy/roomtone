@@ -185,6 +185,11 @@ func (s *SQLiteDB) PlaybackRepository() *PlaybackRepository {
 	return NewPlaybackRepository(s.db)
 }
 
+// AlarmRepository 返回闹钟仓储
+func (s *SQLiteDB) AlarmRepository() *AlarmRepository {
+	return NewAlarmRepository(s.db)
+}
+
 // SongTagRepository 返回自定义标签仓储
 func (s *SQLiteDB) SongTagRepository() *SongTagRepository {
 	return NewSongTagRepository(s.db)

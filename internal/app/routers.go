@@ -274,6 +274,12 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/playback/party", pb.CreateParty)
 			r.Post("/playback/party/{id}/groups", pb.PartyGroups)
 			r.Post("/playback/party/{id}/transport", pb.PartyTransport)
+			al := a.alarmHandler
+			r.Get("/alarms", al.ListAlarms)
+			r.Post("/alarms", al.CreateAlarm)
+			r.Put("/alarms/{id}", al.UpdateAlarm)
+			r.Delete("/alarms/{id}", al.DeleteAlarm)
+			r.Post("/alarms/{id}/test", al.TriggerAlarm)
 			r.Get("/settings/player-discovery", configHandler.GetPlayerDiscoverySetting)
 			r.Put("/settings/player-discovery", configHandler.UpdatePlayerDiscoverySetting)
 			r.Get("/settings/player-output-allowlist", configHandler.GetPlayerOutputAllowlistSetting)

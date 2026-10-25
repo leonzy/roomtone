@@ -180,6 +180,16 @@ func (a *App) initPlayback() {
 		Interval:  time.Duration(disc.IntervalSeconds) * time.Second,
 	})
 	a.playerDiscovery.Start()
+
+	// 服务端闹钟：后台每 15 秒扫一次，到点在目标组上起播歌单并渐强音量。
+	// 和播放子系统同生命周期，进程退出即结束（没有跨请求状态要保存）。
+	alarmRepo := a.db.AlarmRepository()
+	a.alarmRunner = newAlarmRunner(alarmRepo, a.playerManager,
+		func(ctx context.Context, playlistID int64) ([]int64, error) {
+			return a.db.PlaylistSongRepository().ListSongIDsOrdered(ctx, playlistID, "", "")
+		})
+	a.alarmHandler = handlers.NewAlarmHandler(alarmRepo, a.alarmRunner.Trigger)
+	a.alarmRunner.Start(context.Background())
 	a.playbackHandler.SetDiscovery(a.playerDiscovery)
 	a.playbackHandler.SetAddressPolicy(func() bool {
 		var out handlers.PlayerOutputSetting
