@@ -67,7 +67,7 @@ echo "== 守卫 4：新端点必须进 swagger =="
 if [ ! -f docs/swagger.json ]; then
 	bad "docs/swagger.json 不存在（先跑 make swagger）"
 else
-	for p in '/players/{id}/power' '/players/{id}/eq/presets' '/playback/metrics' '/groups/{id}/master'; do
+	for p in '/players/{id}/power' '/players/{id}/eq/presets' '/playback/metrics' '/groups/{id}/master' '/groups/{id}/members/order'; do
 		if grep -q "\"$p\"" docs/swagger.json; then ok "swagger 含 $p"; else bad "swagger 缺 $p"; fi
 	done
 fi
