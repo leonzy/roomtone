@@ -82,6 +82,8 @@ func (a *App) setupAPIV1Router() {
 		case "auto_scan":
 			cfg := a.autoScanner.GetConfig()
 			a.autoScanner.ApplyConfig(cfg)
+		case "player_discovery":
+			a.applyPlayerDiscoveryConfig()
 		}
 	})
 	versionHandler := handlers.NewVersionHandler()
@@ -125,6 +127,9 @@ func (a *App) setupAPIV1Router() {
 
 		// 健康检查
 		r.Get("/health", healthHandler.CheckHealth)
+
+		// DLNA 设备事件回调：设备带不了 JWT，只能公开，靠来源 IP 校验。
+		r.Post("/playback/dlna/notify/{id}", a.playbackHandler.DLNANotify)
 
 		// 需要授权的路由组
 		r.Group(func(r chi.Router) {
@@ -230,6 +235,39 @@ func (a *App) setupAPIV1Router() {
 			r.Delete("/theme-packs/{themeID}", themePackHandler.DeleteThemePack)
 			r.Get("/settings/theme-catalog-url", themePackHandler.GetCatalogURLSetting)
 			r.Put("/settings/theme-catalog-url", themePackHandler.UpdateCatalogURLSetting)
+
+			// 播放控制与音箱输出
+			pb := a.playbackHandler
+			r.Get("/players", pb.ListPlayers)
+			r.Post("/players", pb.AddPlayer)
+			r.Post("/players/discover", pb.DiscoverPlayers)
+			r.Post("/players/{id}/reconnect", pb.ReconnectPlayer)
+			r.Put("/players/{id}", pb.UpdatePlayer)
+			r.Post("/players/{id}/volume", pb.SetVolume)
+			r.Get("/players/{id}/eq", pb.GetEQ)
+			r.Put("/players/{id}/eq", pb.SetEQ)
+			r.Get("/groups", pb.ListGroups)
+			r.Post("/groups", pb.CreateGroup)
+			r.Get("/groups/{id}", pb.GetGroup)
+			r.Post("/groups/{id}/members", pb.AddMember)
+			r.Delete("/groups/{id}/members/{player_id}", pb.RemoveMember)
+			r.Post("/groups/{id}/transfer", pb.Transfer)
+			r.Get("/groups/{id}/queue", pb.GetQueue)
+			r.Post("/groups/{id}/queue", pb.AddToQueue)
+			r.Put("/groups/{id}/queue/reorder", pb.ReorderQueue)
+			r.Post("/groups/{id}/transport", pb.Transport)
+			r.Get("/playback", pb.Playback)
+			r.Post("/playback/events/ticket", pb.EventsTicket)
+			// WS 升级不走 JWT（浏览器无法带 Authorization 头），鉴权靠一次性 ticket
+			r.Get("/playback/events", pb.Events)
+			r.Get("/playback/party/{id}", pb.PartyStatus)
+			r.Post("/playback/party", pb.CreateParty)
+			r.Post("/playback/party/{id}/groups", pb.PartyGroups)
+			r.Post("/playback/party/{id}/transport", pb.PartyTransport)
+			r.Get("/settings/player-discovery", configHandler.GetPlayerDiscoverySetting)
+			r.Put("/settings/player-discovery", configHandler.UpdatePlayerDiscoverySetting)
+			r.Get("/settings/player-output", configHandler.GetPlayerOutputSetting)
+			r.Put("/settings/player-output", configHandler.UpdatePlayerOutputSetting)
 
 			r.Get("/settings/hls-proxy", hlsHandler.GetProxySetting)
 			r.Put("/settings/hls-proxy", hlsHandler.UpdateProxySetting)

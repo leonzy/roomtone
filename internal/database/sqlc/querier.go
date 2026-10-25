@@ -37,14 +37,22 @@ type Querier interface {
 	DeleteAllPluginStorage(ctx context.Context, pluginEntryPath string) error
 	DeleteByCueSource(ctx context.Context, cueSourcePath string) (int64, error)
 	DeleteConfig(ctx context.Context, key string) (int64, error)
+	DeleteGroup(ctx context.Context, id string) (int64, error)
+	DeleteGroupMember(ctx context.Context, arg DeleteGroupMemberParams) (int64, error)
+	DeleteGroupMembers(ctx context.Context, groupID string) error
+	DeleteGroupsOfPlayer(ctx context.Context, playerID string) error
 	DeleteJSPlugin(ctx context.Context, id int64) error
+	DeleteParty(ctx context.Context, id string) (int64, error)
 	DeletePlayHistoryEntry(ctx context.Context, arg DeletePlayHistoryEntryParams) (int64, error)
+	DeletePlayer(ctx context.Context, id string) (int64, error)
 	DeletePlaylist(ctx context.Context, id int64) (int64, error)
 	DeletePlaylistSongsByPlaylistID(ctx context.Context, playlistID int64) error
 	DeletePluginStorage(ctx context.Context, arg DeletePluginStorageParams) (int64, error)
+	DeleteQueue(ctx context.Context, arg DeleteQueueParams) error
 	DeleteSong(ctx context.Context, id int64) (int64, error)
 	DeleteSongArtistsBySong(ctx context.Context, songID int64) error
 	DeleteSongTag(ctx context.Context, id int64) error
+	DeleteState(ctx context.Context, arg DeleteStateParams) error
 	DeleteThemePack(ctx context.Context, themeID string) (int64, error)
 	FindPlaylistByName(ctx context.Context, name string) (int64, error)
 	FindPlaylistByNameExcludeID(ctx context.Context, arg FindPlaylistByNameExcludeIDParams) (int64, error)
@@ -54,9 +62,12 @@ type Querier interface {
 	GetArtistByNormalizedKey(ctx context.Context, normalizedKey string) (Artist, error)
 	GetArtistsBySongID(ctx context.Context, songID int64) ([]GetArtistsBySongIDRow, error)
 	GetConfig(ctx context.Context, key string) (Config, error)
+	GetGroup(ctx context.Context, id string) (PlayerGroup, error)
 	GetJSPluginByEntryPath(ctx context.Context, entryPath string) (JsPlugin, error)
 	GetJSPluginByID(ctx context.Context, id int64) (JsPlugin, error)
 	GetMaxPlaylistPosition(ctx context.Context) (int64, error)
+	GetParty(ctx context.Context, id string) (PartySession, error)
+	GetPlayer(ctx context.Context, id string) (Player, error)
 	GetPlaylistByID(ctx context.Context, arg GetPlaylistByIDParams) (GetPlaylistByIDRow, error)
 	GetPlaylistSongs(ctx context.Context, playlistID int64) ([]Song, error)
 	GetPlaylistSongsPaginated(ctx context.Context, arg GetPlaylistSongsPaginatedParams) ([]Song, error)
@@ -66,28 +77,39 @@ type Querier interface {
 	GetSongTagByID(ctx context.Context, id int64) (SongTag, error)
 	GetSongTagByName(ctx context.Context, name string) (SongTag, error)
 	GetSongTimestamps(ctx context.Context, id int64) (GetSongTimestampsRow, error)
+	GetState(ctx context.Context, arg GetStateParams) (PlaybackState, error)
 	GetTagsBySongID(ctx context.Context, songID int64) ([]SongTag, error)
 	GetThemePackByThemeID(ctx context.Context, themeID string) (ThemePack, error)
 	GetTokenByID(ctx context.Context, tokenID string) (GetTokenByIDRow, error)
 	InsertAutoCreatedPlaylist(ctx context.Context, arg InsertAutoCreatedPlaylistParams) (int64, error)
+	InsertGroup(ctx context.Context, arg InsertGroupParams) error
+	InsertGroupMember(ctx context.Context, arg InsertGroupMemberParams) error
+	InsertParty(ctx context.Context, arg InsertPartyParams) error
+	InsertQueueItem(ctx context.Context, arg InsertQueueItemParams) error
 	IsTokenRevoked(ctx context.Context, arg IsTokenRevokedParams) (bool, error)
 	LinkSongArtist(ctx context.Context, arg LinkSongArtistParams) error
 	LinkSongTag(ctx context.Context, arg LinkSongTagParams) error
 	ListAllDuplicateSongs(ctx context.Context) ([]ListAllDuplicateSongsRow, error)
+	ListAllGroupMembers(ctx context.Context) ([]PlayerGroupMember, error)
 	ListAllPlaylistNames(ctx context.Context) ([]string, error)
 	ListAutoCreatedPlaylists(ctx context.Context) ([]ListAutoCreatedPlaylistsRow, error)
 	ListCueAudioPaths(ctx context.Context, cueSourcePath string) ([]string, error)
 	ListCueSources(ctx context.Context) ([]string, error)
 	ListDuplicateFingerprints(ctx context.Context) ([]ListDuplicateFingerprintsRow, error)
 	ListFailedFingerprints(ctx context.Context) ([]ListFailedFingerprintsRow, error)
+	ListGroupMembers(ctx context.Context, groupID string) ([]PlayerGroupMember, error)
+	ListGroups(ctx context.Context) ([]PlayerGroup, error)
 	ListJSPlugins(ctx context.Context) ([]JsPlugin, error)
 	ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsRow, error)
 	ListLocalSongsWithRelativePaths(ctx context.Context) ([]ListLocalSongsWithRelativePathsRow, error)
 	ListLocalWithoutFingerprint(ctx context.Context) ([]ListLocalWithoutFingerprintRow, error)
+	ListParties(ctx context.Context) ([]PartySession, error)
 	ListPlayHistory(ctx context.Context, arg ListPlayHistoryParams) ([]ListPlayHistoryRow, error)
+	ListPlayers(ctx context.Context) ([]Player, error)
 	ListPlaylistsContainingSong(ctx context.Context, songID int64) ([]int64, error)
 	ListPluginStorageEntryPaths(ctx context.Context) ([]string, error)
 	ListPluginStorageKeys(ctx context.Context, pluginEntryPath string) ([]string, error)
+	ListQueue(ctx context.Context, arg ListQueueParams) ([]int64, error)
 	ListSongsByFingerprint(ctx context.Context, fingerprint string) ([]ListSongsByFingerprintRow, error)
 	ListSongsNeedingMetadata(ctx context.Context) ([]ListSongsNeedingMetadataRow, error)
 	ListSongsWithCache(ctx context.Context) ([]Song, error)
@@ -107,9 +129,15 @@ type Querier interface {
 	UnlinkSongTag(ctx context.Context, arg UnlinkSongTagParams) error
 	UpdateAutoCreatedPlaylistMeta(ctx context.Context, arg UpdateAutoCreatedPlaylistMetaParams) (int64, error)
 	UpdateCachePath(ctx context.Context, arg UpdateCachePathParams) error
+	UpdateGroup(ctx context.Context, arg UpdateGroupParams) error
 	UpdateJSPlugin(ctx context.Context, arg UpdateJSPluginParams) error
 	UpdateJSPluginHashes(ctx context.Context, arg UpdateJSPluginHashesParams) error
 	UpdateJSPluginStatus(ctx context.Context, arg UpdateJSPluginStatusParams) error
+	UpdatePartyLeader(ctx context.Context, arg UpdatePartyLeaderParams) error
+	UpdatePlayerConfig(ctx context.Context, arg UpdatePlayerConfigParams) error
+	UpdatePlayerEQ(ctx context.Context, arg UpdatePlayerEQParams) error
+	UpdatePlayerOnline(ctx context.Context, arg UpdatePlayerOnlineParams) error
+	UpdatePlayerVolume(ctx context.Context, arg UpdatePlayerVolumeParams) error
 	UpdatePlaylist(ctx context.Context, arg UpdatePlaylistParams) (int64, error)
 	UpdatePlaylistPosition(ctx context.Context, arg UpdatePlaylistPositionParams) (int64, error)
 	UpdatePlaylistSort(ctx context.Context, arg UpdatePlaylistSortParams) (int64, error)
@@ -127,6 +155,8 @@ type Querier interface {
 	UpdateSongTagFields(ctx context.Context, arg UpdateSongTagFieldsParams) error
 	UpdateThemePack(ctx context.Context, arg UpdateThemePackParams) error
 	UpsertArtist(ctx context.Context, arg UpsertArtistParams) error
+	UpsertPlayer(ctx context.Context, arg UpsertPlayerParams) error
+	UpsertState(ctx context.Context, arg UpsertStateParams) error
 }
 
 var _ Querier = (*Queries)(nil)

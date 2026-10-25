@@ -180,6 +180,11 @@ func (s *SQLiteDB) ThemePackRepository() *ThemePackRepository {
 	return NewThemePackRepository(s.db)
 }
 
+// PlaybackRepository 返回播放器仓储
+func (s *SQLiteDB) PlaybackRepository() *PlaybackRepository {
+	return NewPlaybackRepository(s.db)
+}
+
 // SongTagRepository 返回自定义标签仓储
 func (s *SQLiteDB) SongTagRepository() *SongTagRepository {
 	return NewSongTagRepository(s.db)

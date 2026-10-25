@@ -23,6 +23,8 @@ import (
 	"songloft/internal/jsplugin"
 	"songloft/internal/logging"
 	"songloft/internal/models"
+	"songloft/internal/player"
+	"songloft/internal/player/discovery"
 	"songloft/internal/services"
 	"songloft/internal/services/playactivity"
 	"songloft/internal/services/source"
@@ -30,6 +32,8 @@ import (
 	"songloft/internal/version"
 
 	"github.com/hanxi/tracely/sdk/go/tracely"
+
+	"songloft/internal/app/ws"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -60,6 +64,12 @@ type App struct {
 	metadataRefresher  *services.MetadataRefresher
 	downloadActivity   *services.DownloadActivity // 下载活动闸门，导入探测据此让路（issue #265）
 	playActivity       *playactivity.Registry     // 跨 song/会话 cancel 的全局表，处理快速切歌时旧请求的让位（issue #79）
+	playbackBus        *player.EventBus
+	wsHub              *ws.Hub
+	playerManager      *player.Manager
+	playbackHandler    *handlers.PlaybackHandler
+	playerDiscovery    *discovery.Discovery
+	lanURL             *services.LANURLResolver
 	webDist            embed.FS
 	tracelyClient      *tracely.Client
 	logLevelVar        *slog.LevelVar        // 全局 slog 等级动态切换；由 /settings/log-level 即时 Set
@@ -86,6 +96,9 @@ func (a *App) Close() error {
 	}
 	if a.autoScanner != nil {
 		a.autoScanner.Stop()
+	}
+	if a.playerDiscovery != nil {
+		a.playerDiscovery.Stop()
 	}
 	if a.cacheService != nil {
 		a.cacheService.Shutdown()
@@ -484,6 +497,9 @@ func (a *App) Init() error {
 		slog.Warn("写入服务器平台配置失败", "error", err)
 	}
 	slog.Info("服务器平台已写入配置", "platform", serverPlatform)
+
+	// 播放控制与音箱输出（失败只让该功能不可用，不阻塞启动）
+	a.initPlayback()
 
 	a.setupRouter()
 

@@ -794,6 +794,520 @@ const docTemplate = `{
                 }
             }
         },
+        "/groups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回所有同步组，含成员、主控设备、同步等级（exact/aligned）与当前播放状态。含 DLNA 成员的组会被降级为 aligned，前端必须提示精度下降。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "列出同步组",
+                "responses": {
+                    "200": {
+                        "description": "同步组列表",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/player.GroupView"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "用给定设备创建同步组。设备会从原组自动摘出（一台设备同时只能属于一个组）。master_id 必须在 member_ids 中，缺省取第一个。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "新建同步组",
+                "parameters": [
+                    {
+                        "description": "组信息",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.createGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "新建的组",
+                        "schema": {
+                            "$ref": "#/definitions/player.GroupView"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回单个组的成员、同步等级与播放状态。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "获取同步组详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "同步组",
+                        "schema": {
+                            "$ref": "#/definitions/player.GroupView"
+                        }
+                    },
+                    "404": {
+                        "description": "组不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/members": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "播放中加入设备，从当前时间点接入（不回放已播部分）。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "向同步组加入设备",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "设备",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.memberRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的组",
+                        "schema": {
+                            "$ref": "#/definitions/player.GroupView"
+                        }
+                    },
+                    "404": {
+                        "description": "组或设备不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "设备已在组内",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/members/{player_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "mode=continue（默认）时该设备继续播放自己的内容；mode=stop 时立即停止出声。移出后设备回到自己的单机组。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "从同步组移出设备",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "设备 ID",
+                        "name": "player_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "continue",
+                        "description": "continue 或 stop",
+                        "name": "mode",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "操作结果",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "组或设备不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/queue": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回组的队列（歌曲 ID 规范顺序）、当前下标、循环与随机模式。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "获取组队列",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "播放状态与队列",
+                        "schema": {
+                            "$ref": "#/definitions/player.Status"
+                        }
+                    },
+                    "404": {
+                        "description": "组不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "追加一批歌曲到队列尾部。队列为空时自动从第一首开始（不自动播放）。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "向组队列追加歌曲",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "歌曲",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.queueAddRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的状态",
+                        "schema": {
+                            "$ref": "#/definitions/player.Status"
+                        }
+                    },
+                    "404": {
+                        "description": "组不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/queue/reorder": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "move 语义：把 from 位置的歌曲移到 to 位置。remove_index 非空时先删除该位置（删除与重排互斥，二选一）。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "重排队列",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "重排参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.queueReorderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的状态",
+                        "schema": {
+                            "$ref": "#/definitions/player.Status"
+                        }
+                    },
+                    "400": {
+                        "description": "下标越界",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/transfer": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "把当前播放（队列 + 位置）从 from_group_id 转到目标组。only_player_id 非空时表示\"只在这台音箱上播\"：把它从原组拆出来单独成组。源组在派对中时返回 409。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "转移播放到另一个组",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "目标组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "转移参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.transferRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "操作结果",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "组在派对中",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/transport": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "action: play / pause / stop / next / prev / seek（seek 需带 position 秒）。repeat 与 shuffle 也走这里：repeat=off|all|one，shuffle=true|false。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "播放控制",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.transportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的状态",
+                        "schema": {
+                            "$ref": "#/definitions/player.Status"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "解码槽位已满",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "description": "检查应用是否正常运行",
@@ -2341,6 +2855,738 @@ const docTemplate = `{
                         "description": "服务器错误",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/playback": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回所有组的播放状态。客户端断线重连后必须调一次做全量对齐，不能只依赖增量事件。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "获取全部播放状态",
+                "responses": {
+                    "200": {
+                        "description": "全部组状态",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/player.GroupView"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/playback/dlna/notify/{id}": {
+            "post": {
+                "description": "DLNA 渲染器通过 GENA NOTIFY 推送 TransportState/位置变化。设备无法携带 JWT，因此该端点公开，仅接受来源 IP 与设备地址一致的请求；其他来源返回 403。body 为 UPnP LastChange 属性集，超过 64KB 截断。",
+                "consumes": [
+                    "text/xml"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "接收 DLNA 设备事件回调",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "设备 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已接收",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "来源 IP 与设备地址不一致",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "设备不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/playback/events": {
+            "get": {
+                "description": "升级为 WebSocket 连接推送播放事件（state / member_changed / party_changed / group_drift / error 等）。鉴权用 POST /playback/events/ticket 换到的一次性 ticket，放在 query 参数 ticket 上；ticket 30 秒有效且用后即焚。客户端需按 seq 去重，断线重连后调 /playback 全量对齐。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "播放事件 WebSocket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "一次性 ticket",
+                        "name": "ticket",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "Switching Protocols",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "ticket 无效",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/playback/events/ticket": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "浏览器无法给 WS 带 Authorization 头，token 进 URL 又会落访问日志。先取一个 30 秒有效、绑定当前用户、用后即焚的 ticket，再连 /playback/events?ticket=...。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "获取 WebSocket 一次性 ticket",
+                "responses": {
+                    "200": {
+                        "description": "ticket",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ticketResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/playback/party": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "把多个组放进同一个派对，同播同一份内容。每个成员组各自解码，因此每组各占一个解码槽位。party_enabled=false 时返回 403。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "创建派对",
+                "parameters": [
+                    {
+                        "description": "派对信息",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.createPartyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "派对",
+                        "schema": {
+                            "$ref": "#/definitions/player.Party"
+                        }
+                    },
+                    "403": {
+                        "description": "派对模式已关闭",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "组已在别的派对中",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/playback/party/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回派对成员组与各组相对主控组的偏移（毫秒）。|offset| 超过 party_drift_tolerance_ms 时 drifting=true，前端应显示\"未对齐\"而不是反复弹提示。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "获取派对状态",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "派对 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "派对状态",
+                        "schema": {
+                            "$ref": "#/definitions/player.PartyStatus"
+                        }
+                    },
+                    "404": {
+                        "description": "派对不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/playback/party/{id}/groups": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "action=join 加入组 {group_id}；action=leave 退出组 {group_id, mode}；action=end 结束整个派对。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "派对成员组加入 / 退出 / 结束",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "派对 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "操作",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.partyGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "操作结果",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "派对或组不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/playback/party/{id}/transport": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "action: play / pause / stop，作用于派对内全部组。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "派对播放控制",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "派对 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.partyTransportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "操作结果",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/players": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回所有已发现的播放设备：类型（local/raop/dlna）、在线状态、能力、音量与 EQ 配置。前端据此渲染音箱选择器与分组面板。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "列出播放设备",
+                "responses": {
+                    "200": {
+                        "description": "设备列表",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/player.Player"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按地址直连一台音箱，用于发现不到的场景（Docker 桥接网络、跨网段、设备不广播）。DLNA 会先取 desc.xml 校验 AVTransport；RAOP 需要提供 device_id（MAC），否则无法拼出 RTSP 路径。地址在关闭「允许私网」时必须是公网地址。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "手动添加音箱",
+                "parameters": [
+                    {
+                        "description": "设备地址与类型",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.addPlayerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "已添加的设备",
+                        "schema": {
+                            "$ref": "#/definitions/player.Player"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误或设备不可达",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/players/discover": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "立即执行一轮 mDNS（_raop._tcp）与 SSDP（MediaRenderer）扫描，把发现的设备登记成播放设备并返回结果。不受「自动发现」开关影响，只受 protocols 配置限制；已存在的设备会刷新地址与能力（added / updated 区分）。需要密码的音箱记入 skipped。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "手动扫描音箱",
+                "responses": {
+                    "200": {
+                        "description": "扫描结果",
+                        "schema": {
+                            "$ref": "#/definitions/discovery.Result"
+                        }
+                    },
+                    "503": {
+                        "description": "设备发现不可用",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/players/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "修改设备名称或接管行为。takeover_behavior 只对 local 设备生效：pause（默认，被切走后立即暂停并提示）或 follow（静默转为纯控制器）。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "更新播放设备配置",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "设备 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新内容",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.updatePlayerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的设备",
+                        "schema": {
+                            "$ref": "#/definitions/player.Player"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "设备不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/players/{id}/eq": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回该音箱的 10 段 EQ 配置与服务端计算的前级衰减 preamp（用于防削波）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "获取设备均衡器配置",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "设备 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "EQ 配置",
+                        "schema": {
+                            "$ref": "#/definitions/player.EQProfile"
+                        }
+                    },
+                    "404": {
+                        "description": "设备不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保存 10 段 EQ。服务端会把增益钳到 ±12dB、重算 preamp 并回填。任一频段非 0 时该组强制走服务端解码管线，占用一个解码槽位。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "保存设备均衡器配置",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "设备 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "EQ 配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/player.EQProfile"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "保存后的配置（含 preamp）",
+                        "schema": {
+                            "$ref": "#/definitions/player.EQProfile"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "设备不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/players/{id}/reconnect": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "丢弃缓存的连接并重新握手，成功后把设备标回在线。用于音箱重启、换 IP 或路由器重连后 UI 的「重连」按钮；失败保持离线并返回 409。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "重连离线音箱",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "设备 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "重连后的设备",
+                        "schema": {
+                            "$ref": "#/definitions/player.Player"
+                        }
+                    },
+                    "404": {
+                        "description": "设备不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "设备仍不可达",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/players/{id}/volume": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "设置音量（0-100）与静音状态。支持硬件音量的音箱会立即生效；local 设备通过 WebSocket 下发指令。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "设置设备音量",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "设备 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "音量",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.volumeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的设备",
+                        "schema": {
+                            "$ref": "#/definitions/player.Player"
+                        }
+                    },
+                    "404": {
+                        "description": "设备不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -5101,6 +6347,166 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "保存配置失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/settings/player-discovery": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回音箱自动发现配置。enabled 控制是否周期扫描；protocols 可选 raop / dlna；interval_seconds 范围 10-600。未配置时返回默认值（开启、两种协议、30 秒）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "获取设备发现配置",
+                "responses": {
+                    "200": {
+                        "description": "设备发现配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PlayerDiscoverySetting"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保存后立即生效：下一次扫描周期使用新配置。protocols 只接受 raop 与 dlna；interval_seconds 超出 10-600 返回 400。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "保存设备发现配置",
+                "parameters": [
+                    {
+                        "description": "设备发现配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PlayerDiscoverySetting"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "保存后的配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PlayerDiscoverySetting"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "保存失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/settings/player-output": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回并发解码组数上限、默认起播延迟、DLNA 重对齐间隔、是否允许访问私网、派对开关与漂移容忍。未配置时返回默认值。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "获取播放输出配置",
+                "responses": {
+                    "200": {
+                        "description": "输出配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PlayerOutputSetting"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保存后立即生效：max_groups 调整解码预算（已在播的组不被打断，只影响后续申请）；party_drift_tolerance_ms 必须在 500-5000，越界返回 400；max_groups 必须在 1-16。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "保存播放输出配置",
+                "parameters": [
+                    {
+                        "description": "输出配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PlayerOutputSetting"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "保存后的配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PlayerOutputSetting"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "保存失败",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -10156,6 +11562,85 @@ const docTemplate = `{
                 }
             }
         },
+        "discovery.Result": {
+            "type": "object",
+            "properties": {
+                "added": {
+                    "description": "Added 本次新登记的设备 id。",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "errors": {
+                    "description": "Errors 单个协议的失败原因。一个协议挂了不影响另一个。",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "scanned_at": {
+                    "type": "string"
+                },
+                "skipped": {
+                    "description": "Skipped 扫到但不能用的设备（目前只有\"需要密码\"）。",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/discovery.Skipped"
+                    }
+                },
+                "speakers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/discovery.Speaker"
+                    }
+                },
+                "updated": {
+                    "description": "Updated 已在库、本次刷新了地址 / 能力的设备 id。",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "discovery.Skipped": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "discovery.Speaker": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "caps": {
+                    "$ref": "#/definitions/player.Caps"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/player.Kind"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.AutoScanSetting": {
             "type": "object",
             "properties": {
@@ -10222,6 +11707,46 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.PlayerDiscoverySetting": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "interval_seconds": {
+                    "type": "integer"
+                },
+                "protocols": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handlers.PlayerOutputSetting": {
+            "type": "object",
+            "properties": {
+                "allow_private_network": {
+                    "type": "boolean"
+                },
+                "default_latency_ms": {
+                    "type": "integer"
+                },
+                "dlna_realign_interval_minutes": {
+                    "type": "integer"
+                },
+                "max_groups": {
+                    "type": "integer"
+                },
+                "party_drift_tolerance_ms": {
+                    "type": "integer"
+                },
+                "party_enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
         "handlers.ScanRequest": {
             "type": "object",
             "properties": {
@@ -10282,6 +11807,31 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.addPlayerRequest": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "description": "Address 设备地址：DLNA 可填 IP / host:port / 完整 desc.xml 地址。",
+                    "type": "string"
+                },
+                "device_id": {
+                    "description": "DeviceID RAOP 必填：AirPlay 的 MAC（RTSP 路径要用）。",
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "Kind raop 或 dlna。local 设备由客户端自己注册，不能手动添加。",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name 可选，留空用设备自己报的名字。",
+                    "type": "string"
+                },
+                "public_key": {
+                    "description": "PublicKey RAOP 可选：设备公钥（PEM 或 TXT 里的 base64），填了才走加密。",
+                    "type": "string"
+                }
+            }
+        },
         "handlers.audioTracksResponse": {
             "type": "object",
             "properties": {
@@ -10290,6 +11840,37 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/services.AudioTrackInfo"
                     }
+                }
+            }
+        },
+        "handlers.createGroupRequest": {
+            "type": "object",
+            "properties": {
+                "master_id": {
+                    "type": "string"
+                },
+                "member_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.createPartyRequest": {
+            "type": "object",
+            "properties": {
+                "group_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -10495,6 +12076,36 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.memberRequest": {
+            "type": "object",
+            "properties": {
+                "player_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.partyGroupRequest": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "group_id": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.partyTransportRequest": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.pluginAutoUpdateSetting": {
             "type": "object",
             "properties": {
@@ -10569,6 +12180,31 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "handlers.queueAddRequest": {
+            "type": "object",
+            "properties": {
+                "song_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "handlers.queueReorderRequest": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "integer"
+                },
+                "remove_index": {
+                    "type": "integer"
+                },
+                "to": {
+                    "type": "integer"
                 }
             }
         },
@@ -10824,6 +12460,17 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.ticketResponse": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "integer"
+                },
+                "ticket": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.trackItem": {
             "type": "object",
             "properties": {
@@ -10837,6 +12484,45 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.transferRequest": {
+            "type": "object",
+            "properties": {
+                "from_group_id": {
+                    "type": "string"
+                },
+                "only_player_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.transportRequest": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "number"
+                },
+                "repeat": {
+                    "type": "string"
+                },
+                "shuffle": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handlers.updatePlayerRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "takeover_behavior": {
                     "type": "string"
                 }
             }
@@ -10874,6 +12560,17 @@ const docTemplate = `{
                 "loudness": {
                     "type": "number",
                     "example": -16
+                }
+            }
+        },
+        "handlers.volumeRequest": {
+            "type": "object",
+            "properties": {
+                "muted": {
+                    "type": "boolean"
+                },
+                "volume": {
+                    "type": "integer"
                 }
             }
         },
@@ -11798,6 +13495,354 @@ const docTemplate = `{
                 }
             }
         },
+        "player.Caps": {
+            "type": "object",
+            "properties": {
+                "bit_depth": {
+                    "type": "integer"
+                },
+                "channels": {
+                    "type": "integer"
+                },
+                "codecs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/sink.Codec"
+                    }
+                },
+                "device_id": {
+                    "description": "DeviceID RAOP 的 RTSP 路径 id（mDNS 服务名里的 MAC）。\n来自设备广播，因此随 capabilities 一起存，不单独建列。",
+                    "type": "string"
+                },
+                "latency_ms": {
+                    "description": "LatencyMs 设备固有缓冲延迟（RAOP 默认 2000ms），用于时间轴对齐。",
+                    "type": "integer"
+                },
+                "max_sample_rate": {
+                    "type": "integer"
+                },
+                "needs_password": {
+                    "description": "NeedsPassword 设备要求密码（mDNS TXT pw=true），第一版直接跳过。",
+                    "type": "boolean"
+                },
+                "public_key": {
+                    "description": "PublicKey RAOP 加密用的 PEM 公钥（TXT pk）。为空表示只能明文。",
+                    "type": "string"
+                },
+                "supports_seek": {
+                    "type": "boolean"
+                },
+                "supports_volume": {
+                    "type": "boolean"
+                },
+                "sync_tier": {
+                    "$ref": "#/definitions/sink.SyncTier"
+                }
+            }
+        },
+        "player.EQProfile": {
+            "type": "object",
+            "properties": {
+                "bands": {
+                    "description": "10 段增益 dB",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "preamp": {
+                    "description": "服务端算出的前级衰减，防削波",
+                    "type": "number"
+                },
+                "preset": {
+                    "type": "string"
+                }
+            }
+        },
+        "player.GroupView": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "master_id": {
+                    "type": "string"
+                },
+                "member_caps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/player.MemberCaps"
+                    }
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/player.Member"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "party_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/player.Status"
+                },
+                "sync_tier": {
+                    "type": "string"
+                }
+            }
+        },
+        "player.Kind": {
+            "type": "string",
+            "enum": [
+                "local",
+                "raop",
+                "dlna"
+            ],
+            "x-enum-varnames": [
+                "KindLocal",
+                "KindRAOP",
+                "KindDLNA"
+            ]
+        },
+        "player.Member": {
+            "type": "object",
+            "properties": {
+                "delay_ms": {
+                    "type": "integer"
+                },
+                "player_id": {
+                    "type": "string"
+                },
+                "volume_offset": {
+                    "type": "integer"
+                }
+            }
+        },
+        "player.MemberCaps": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "online": {
+                    "type": "boolean"
+                },
+                "player_id": {
+                    "type": "string"
+                },
+                "sync_tier": {
+                    "type": "string"
+                }
+            }
+        },
+        "player.Party": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "leader_group_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "player.PartyMember": {
+            "type": "object",
+            "properties": {
+                "drifting": {
+                    "type": "boolean"
+                },
+                "group_id": {
+                    "type": "string"
+                },
+                "offset_ms": {
+                    "type": "integer"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "player.PartyStatus": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "leader_group_id": {
+                    "type": "string"
+                },
+                "leader_status": {
+                    "$ref": "#/definitions/player.Status"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/player.PartyMember"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "player.Player": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "caps": {
+                    "$ref": "#/definitions/player.Caps"
+                },
+                "eq": {
+                    "$ref": "#/definitions/player.EQProfile"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/player.Kind"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "muted": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "online": {
+                    "type": "boolean"
+                },
+                "takeover": {
+                    "$ref": "#/definitions/player.TakeoverBehavior"
+                },
+                "volume": {
+                    "type": "integer"
+                }
+            }
+        },
+        "player.QueueSnapshot": {
+            "type": "object",
+            "properties": {
+                "current": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "repeat": {
+                    "$ref": "#/definitions/player.RepeatMode"
+                },
+                "shuffle": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "player.RepeatMode": {
+            "type": "string",
+            "enum": [
+                "off",
+                "all",
+                "one"
+            ],
+            "x-enum-varnames": [
+                "RepeatOff",
+                "RepeatAll",
+                "RepeatOne"
+            ]
+        },
+        "player.State": {
+            "type": "string",
+            "enum": [
+                "idle",
+                "loading",
+                "buffering",
+                "playing",
+                "paused",
+                "error"
+            ],
+            "x-enum-varnames": [
+                "StateIdle",
+                "StateLoading",
+                "StateBuffering",
+                "StatePlaying",
+                "StatePaused",
+                "StateError"
+            ]
+        },
+        "player.Status": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "string"
+                },
+                "owner_kind": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "number"
+                },
+                "queue": {
+                    "$ref": "#/definitions/player.QueueSnapshot"
+                },
+                "repeat": {
+                    "$ref": "#/definitions/player.RepeatMode"
+                },
+                "shuffle": {
+                    "type": "boolean"
+                },
+                "song_id": {
+                    "type": "integer"
+                },
+                "state": {
+                    "$ref": "#/definitions/player.State"
+                },
+                "underruns": {
+                    "type": "integer"
+                }
+            }
+        },
+        "player.TakeoverBehavior": {
+            "type": "string",
+            "enum": [
+                "pause",
+                "follow"
+            ],
+            "x-enum-varnames": [
+                "TakeoverPause",
+                "TakeoverFollow"
+            ]
+        },
         "services.AudioTrackInfo": {
             "type": "object",
             "properties": {
@@ -12154,6 +14199,34 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "sink.Codec": {
+            "type": "string",
+            "enum": [
+                "l16",
+                "wav",
+                "flac",
+                "aac",
+                "mp3"
+            ],
+            "x-enum-varnames": [
+                "CodecL16",
+                "CodecWAV",
+                "CodecFLAC",
+                "CodecAAC",
+                "CodecMP3"
+            ]
+        },
+        "sink.SyncTier": {
+            "type": "integer",
+            "enum": [
+                0,
+                1
+            ],
+            "x-enum-varnames": [
+                "SyncExact",
+                "SyncAligned"
+            ]
         },
         "source.HealthClass": {
             "type": "string",

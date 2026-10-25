@@ -62,6 +62,13 @@ type JsPlugin struct {
 	RenderEngine   string
 }
 
+type PartySession struct {
+	ID            string
+	Name          string
+	LeaderGroupID string
+	CreatedAt     time.Time
+}
+
 type PlayHistory struct {
 	ID          int64
 	ContextType string
@@ -69,6 +76,55 @@ type PlayHistory struct {
 	SongID      int64
 	PlayedAt    time.Time
 	PlayCount   int64
+}
+
+type PlaybackQueue struct {
+	OwnerKind string
+	OwnerID   string
+	Position  int64
+	SongID    int64
+}
+
+type PlaybackState struct {
+	OwnerKind  string
+	OwnerID    string
+	SongID     int64
+	Position   float64
+	State      string
+	RepeatMode string
+	Shuffle    int64
+	UpdatedAt  time.Time
+}
+
+type Player struct {
+	ID               string
+	Kind             string
+	Name             string
+	Address          string
+	Model            string
+	Capabilities     string
+	Volume           int64
+	Muted            int64
+	Online           int64
+	EqProfile        string
+	TakeoverBehavior string
+	LastSeenAt       sql.NullTime
+	CreatedAt        time.Time
+}
+
+type PlayerGroup struct {
+	ID             string
+	Name           string
+	MasterPlayerID string
+	PartyID        sql.NullString
+	CreatedAt      time.Time
+}
+
+type PlayerGroupMember struct {
+	GroupID      string
+	PlayerID     string
+	DelayMs      int64
+	VolumeOffset int64
 }
 
 type Playlist struct {
