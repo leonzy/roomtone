@@ -479,49 +479,84 @@ CREATE TABLE playback_states (
 
 ### 7.1 REST
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/players` | 设备列表（在线、能力、音量、状态） |
-| POST | `/players` | 手动添加设备 `{address, kind, device_id?}`（发现不到时兜底） |
-| POST | `/players/discover` | 手动触发 SSDP + mDNS 扫描，返回新增设备 |
-| PUT | `/players/{id}` | 重命名 / 启用停用 / `takeover_behavior`（仅 local） |
-| POST | `/players/{id}/volume` | `{volume, muted}` |
-| POST | `/players/{id}/reconnect` | 手动重连离线设备（UI 的"重连"按钮） |
-| GET | `/players/{id}/eq` | 该音箱的 EQ 配置（含服务端计算的 `preamp`） |
-| PUT | `/players/{id}/eq` | `{enabled, preset, bands[10]}`；服务端重算 `preamp` 并回填 |
-| GET | `/players/{id}/eq/presets` | 预设列表（与 `/settings/equalizer` 同一套） |
-| GET | `/groups` | 同步组列表（含 `sync_tier`） |
-| POST | `/groups` | `{name, member_ids, master_id}` |
-| PUT | `/groups/{id}` | 成员、主控、每成员 `delay_ms` |
-| POST | `/groups/{id}/members` | 播放中加入成员 `{player_id}`，从当前时间点接入 |
-| DELETE | `/groups/{id}/members/{player_id}` | 移出成员 `?mode=continue\|stop` |
-| POST | `/groups/{id}/transfer` | 转移播放 `{from_group_id, only_player_id?}`；`only_player_id` 用于"仅在此音箱播放"的拆分 |
-| GET | `/groups/{id}/queue` | 队列快照 |
-| POST | `/groups/{id}/queue` | 追加歌曲 / 歌单 |
-| PUT | `/groups/{id}/queue/reorder` | 重排 / 删除 |
-| POST | `/groups/{id}/transport` | `{action: play\|pause\|stop\|next\|prev\|seek, position?}` |
-| GET | `/playback` | 全局快照（UI 首屏） |
-| GET | `/playback/targets` | 输出选择器一次性拉取：可选目标 + 当前目标 + 在线态/能力 + 派对归属 |
-| GET | `/playback/party` | 当前派对（成员组、逻辑进度、各组漂移）；无派对返回 404 |
-| POST | `/playback/party` | 从某个组发起派对 `{group_id, name?}`；队列沿用发起组 |
-| POST | `/playback/party/groups` | 加入派对 `{group_id}`，从当前逻辑进度接入 |
-| DELETE | `/playback/party/groups/{group_id}` | 退出派对 `?mode=continue\|stop` |
-| POST | `/playback/party/transport` | `{action: play\|pause\|next\|prev\|seek, position?}`，广播到全派对 |
-| DELETE | `/playback/party` | 结束派对，所有组停播并回到各自队列 |
-| GET | `/playback/events` | WebSocket 订阅（状态变更推送） |
+路径相对 `/api/v1`（`main.go` 的 `@BasePath`），与 `internal/app/routers.go` 一一对应；字段与状态码以开发模式下的 `/swagger/index.html` 为准。
+
+**设备**
+
+| 方法 | 路径 | 请求体 / 参数 | 说明 |
+|---|---|---|---|
+| GET | `/players` | — | 设备列表：在线、待机、能力、音量、EQ |
+| POST | `/players` | `{address, kind, name?, device_id?, public_key?}` | 手动添加；`kind` 为 `raop` / `dlna`，成功 201；网络音箱被关闭时 403 |
+| POST | `/players/discover` | — | 触发 SSDP + mDNS 扫描，返回 `{speakers, added, updated, skipped, errors}`；发现被关闭 503 |
+| PUT | `/players/{id}` | `{name?, takeover_behavior?}` | 重命名 / 多端冲突策略（`pause` / `follow`） |
+| DELETE | `/players/{id}` | — | 永久删除：先停引擎再摘成员；单机组在派对里会先退出派对 |
+| POST | `/players/{id}/volume` | `{volume, muted}` | 单机音量 |
+| POST | `/players/{id}/power` | `{on}` | 待机 / 唤醒；`standby` 只表示服务端不推流，不代表断电 |
+| POST | `/players/{id}/reconnect` | — | 丢弃缓存的 sink 重新握手；设备仍离线 409 |
+| GET | `/players/{id}/eq` | — | 含服务端算出的 `preamp` |
+| PUT | `/players/{id}/eq` | `{enabled, preset, bands[10]}` | 服务端钳增益、重算 `preamp` 后回填，客户端必须用返回值刷新 |
+| GET | `/players/{id}/eq/presets` | — | 预设列表（与 `/settings/equalizer` 同一套） |
+
+**同步组**
+
+| 方法 | 路径 | 请求体 / 参数 | 说明 |
+|---|---|---|---|
+| GET | `/groups` | — | 组列表（含 `sync_tier`、`member_caps`、`status`） |
+| POST | `/groups` | `{name, member_ids, master_id?}` | 201；成员已在别的组 409，同步等级不匹配 400 |
+| GET | `/groups/{id}` | — | 单组详情 |
+| DELETE | `/groups/{id}` | — | 解散组，成员各自回到单机组；组在派对中 409（先退出派对） |
+| POST | `/groups/{id}/master` | `{player_id}` | 换主控；非成员 400 |
+| POST | `/groups/{id}/members` | `{player_id}` | 播放中加入成员，从当前时间点接入；已在别的组 409 |
+| PATCH | `/groups/{id}/members/{player_id}` | `{delay_ms?, volume_offset?}` | 每成员延迟补偿与音量偏移 |
+| DELETE | `/groups/{id}/members/{player_id}` | `?mode=continue\|stop` | 移出成员 |
+| GET | `/groups/{id}/volume` | — | 组音量 + 每成员实际值（含失败明细） |
+| POST | `/groups/{id}/volume` | `{volume, muted}` | 逐设备下发，单台失败不回滚其余 |
+| POST | `/groups/{id}/transfer` | `{from_group_id, only_player_id?}` | 路径里的 `{id}` 是**目标组**；`only_player_id` 非空时后端先把它拆成单机组，目标组被忽略 |
+| GET | `/groups/{id}/queue` | — | 队列快照 |
+| POST | `/groups/{id}/queue` | `{song_ids[]}` | 追加歌曲 |
+| PUT | `/groups/{id}/queue/reorder` | `{from, to}` 或 `{remove_index}` | move 语义；删除与重排互斥 |
+| POST | `/groups/{id}/transport` | `{action, position?, repeat?, shuffle?}` | `play\|pause\|stop\|next\|prev\|seek`（seek 用秒）；`repeat=off\|all\|one` 与 `shuffle=bool` 也走这里；解码槽位满 503 |
+
+**全局与指标**
+
+| 方法 | 路径 | 请求体 / 参数 | 说明 |
+|---|---|---|---|
+| GET | `/playback` | — | 首屏全量：所有组 + 状态 + 能力 + `party_id` |
+| GET | `/playback/metrics` | — | 运行指标快照：解码槽位 `decode_slots_used/max`、`player_underruns_total`（欠载补静音）、`player_sink_dropped_frames_total`（下游丢帧）、`player_resyncs_total`（偏差重挂）、`player_events_dropped_total`、`player_drift_ms`，以及各 owner（组/派对）明细；判读见 §4.6 |
+
+**派对**
+
+| 方法 | 路径 | 请求体 / 参数 | 说明 |
+|---|---|---|---|
+| POST | `/playback/party` | `{name?, group_ids[]}` | 201；`party_enabled=false` 403；组已在别的派对 409 |
+| GET | `/playback/party/{id}` | — | 成员组、主控组状态、各组相对偏移 |
+| POST | `/playback/party/{id}/groups` | `{action, group_id?, mode?}` | `join` / `leave`（`mode=continue\|stop`）/ `end`（结束整个派对） |
+| POST | `/playback/party/{id}/transport` | `{action}` | 只支持 `play\|pause\|stop`，广播到派对内全部组 |
+
+**事件**
+
+| 方法 | 路径 | 请求体 / 参数 | 说明 |
+|---|---|---|---|
+| POST | `/playback/events/ticket` | — | 换一次性 ticket（30s、绑定用户、用后即焚） |
+| GET | `/playback/events` | `?ticket=…` | WS 升级 101；不走 JWT（浏览器无法带 `Authorization` 头） |
 
 所有端点必须带 swag 注释与 `@Security BearerAuth`；`@Router` 不含 `/api/v1` 前缀。
 
+**不再有 `/playback/targets`**：v2 用 `GET /playback` 一次拿全（组、状态、能力、`party_id`），输出选择器无需单独端点。派对也没有"当前派对"的 GET：派对 id 记在各组的 `party_id` 上，客户端先读 `/playback` 再取 `/playback/party/{id}`。
+
 **转移的补偿语义**：`transfer` 在目标组以 `position + transfer_compensation_ms` 起播（默认 800ms），补偿源组停止到目标出声的空档。补偿只在服务端做一次，客户端不得重复补偿（见前端文档 §4.3）。
+
+**待机语义**：`POST /players/{id}/power` 的 `standby=true` 只表示服务端不再向该设备推流（DLNA 发 Stop 并清 URI，RAOP 停发 RTP），不代表硬件断电；RTSP 与 DLNA 都没有通用的上电指令。待机成员不在同步环里，唤醒后从当前进度重新接入。
 
 ### 7.2 配置端点
 
 遵循"用户可见开关走业务端点"：
 
-- `/settings/player-discovery` — `{enabled, protocols:["raop","dlna"], interval_seconds}`
-- `/settings/player-output` — `{max_groups, default_latency_ms, dlna_realign_interval_minutes, allow_private_network, party_enabled, party_drift_tolerance_ms}`
+- `/settings/player-discovery` — `{enabled, protocols:["raop","dlna"], interval_seconds}`；`interval_seconds` 范围 10–600，默认 30
+- `/settings/player-output` — `{max_groups, default_latency_ms, dlna_realign_interval_minutes, allow_private_network, network_sinks_enabled, party_enabled, party_drift_tolerance_ms}`
+- `/settings/player-output-allowlist` — `{entries:["192.168.1.0/24", …]}`；空数组表示不限制私网，配置后只允许这些网段，公网地址恒拒绝
 
-`party_drift_tolerance_ms` 默认 1500，下限 500、上限 5000；`party_enabled=false` 时发起派对返回 403（企业/公共部署可能需要关掉"让所有房间一起响"）。
+`party_drift_tolerance_ms` 默认 1500，下限 500、上限 5000；`party_enabled=false` 时发起派对返回 403（企业/公共部署可能需要关掉"让所有房间一起响"）。`network_sinks_enabled=false` 时手动添加与重连网络音箱返回 403：iOS Bundle 恒为 false，桌面 Bundle 需用户显式开启。
 
 ### 7.3 WebSocket 鉴权
 
@@ -529,22 +564,23 @@ CREATE TABLE playback_states (
 
 ### 7.4 事件契约
 
-所有事件带单调递增 `seq`，客户端丢弃小于当前 `seq` 的消息（乱序 / 重放）。
+统一信封：`{seq, type, time_ms, …}`。`seq` 单调递增且所有类型共用，客户端只需比较 `seq` 丢弃旧消息，不必按类型各维护一份。其余字段按类型出现（Go 侧 `omitempty`），下表列出每种事件实际携带的字段。
 
-```
-state           {group_id, song_id, position, status, seq}
-target_changed  {group_id, from_group_id, reason}
-member_changed  {group_id, player_id, action: join|leave|offline|online}
-speaker_seen    {player_id, name, kind}
-party_changed   {party_id, action: created|joined|left|ended, group_id, seq}
-group_drift     {party_id, group_id, offset_ms, corrected}
-eq_changed      {player_id, enabled, preset}
-error           {group_id, code, message}
-```
+| `type` | 携带字段 | 触发时机 | 客户端动作 |
+|---|---|---|---|
+| `state` | `group_id, song_id, position_ms, status` | 播放状态、曲目、位置变化 | 唯一播放状态来源，据 `group_id` 判断是否与自己相关 |
+| `target_changed` | `group_id, from_group_id, reason` | 播放被转移到别的组（`reason=transfer`） | 按 `players.takeover_behavior` 处理：`pause` 立即暂停并提示，`follow` 静默转为纯控制器 |
+| `member_changed` | `group_id?, player_id, action` | `action=join\|update\|leave\|offline\|online\|deleted\|standby\|wake`；`join`/`update`/`leave` 带 `group_id`，`offline`/`online` 每个所属组各发一条 | 待机/唤醒只走这里，没有独立的 `power` / `standby` / `wake` 事件 |
+| `group_changed` | `group_id, player_id?, action` | `action=deleted`（解散）、`master_changed`（换主控，带 `player_id`） | **建组不发事件**：新建后由调用方自行拉 `/playback` 或等首条 `state` |
+| `speaker_seen` | `player_id, name, kind` | 发现流程扫到新设备 | 提示"发现新音箱"，不自动加入任何组 |
+| `party_changed` | `party_id, group_id?, name?, action` | `action=created`（带 `name`）、`joined` / `left`（带 `group_id`）、`ended` | 重拉 `/playback/party/{id}`；`ended` 后清空派对态 |
+| `group_drift` | `party_id, group_id, offset_ms, corrected, unaligned` | 派对内校正环每次测量；`corrected=false` 表示本次校正失败，`unaligned=true` 表示已放弃重试 | 累计 3 次 `corrected=false` 或收到 `unaligned=true` 时把该组标成"未对齐"，不要反复弹 toast |
+| `eq_changed` | `player_id, enabled, preset` | 任一客户端改了 EQ | 刷新该设备的 EQ 面板 |
+| `error` | `group_id?, code, message` | 引擎内部错误（解码、下游写入等） | 展示错误，必要时 `stop` 后重试 |
 
-- `state` 是唯一的播放状态来源，不区分"谁触发的"；客户端据 `group_id` 判断是否为自己。
-- `target_changed` 用于多端冲突：本机正在播放而目标被切走时，客户端据此按 `players.takeover_behavior` 处理——`pause`（默认）立即暂停并提示，`follow` 静默转成纯控制器。
-- `group_drift` 只在派对内发，`corrected=false` 且累计 3 次后客户端必须显示"未对齐"而不是反复弹 toast。
+- `state` 不区分"谁触发的"；多端同时操作时以最后到达的 `seq` 为准。
+- 运行指标（解码槽位、欠载、丢帧、重同步）**不进事件流**：`GET /playback/metrics` 是快照，需要时按需拉取（前端面板打开时 2s 一次），避免高频事件挤占慢客户端。
+- 慢客户端丢弃的是自己那份副本，丢弃数计入 `player_events_dropped_total`；该计数持续增长说明有客户端卡住，而不是服务端丢数据。
 - 断线重连后客户端必须重新拉 `/playback` 全量对齐，不能只依赖增量事件。
 
 ## 8. 与现有系统的约束

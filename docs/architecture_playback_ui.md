@@ -501,33 +501,39 @@ Bundle 模式：只保留 `local` 目标，输出按钮显示"本机"，并在�
 
 | 方法 | 路径 | 用途 |
 |---|---|---|
-| GET | `/playback/targets` | 选择器一次性拉取：可选目标 + 当前目标 + 每个目标的能力/在线态 |
-| POST | `/groups/{id}/transfer` | 转移播放 `{from_group_id, only_player_id?}` |
+| GET | `/playback` | 选择器与首屏共用：所有组 + 状态 + 能力 + `party_id`（v2 起不再有 `/playback/targets`） |
+| GET | `/playback/metrics` | 指标面板：解码槽位、欠载、丢帧、重挂、各 owner 偏差 |
+| POST | `/groups/{id}/transfer` | 转移播放 `{from_group_id, only_player_id?}`（路径 `{id}` 是目标组） |
 | POST | `/groups/{id}/members` | 播放中加入成员 `{player_id}`（从当前时间点接入） |
+| PATCH | `/groups/{id}/members/{player_id}` | 调整成员 `{delay_ms?, volume_offset?}` |
 | DELETE | `/groups/{id}/members/{player_id}` | 移出成员 `?mode=continue\|stop` |
 | POST | `/players/{id}/reconnect` | 手动重连离线音箱 |
-| GET | `/playback/party` | 当前派对（无派对 404） |
-| POST | `/playback/party` | 发起派对 `{group_id, name?}` |
-| POST | `/playback/party/groups` | 加入派对 `{group_id}` |
-| DELETE | `/playback/party/groups/{group_id}` | 退出派对 `?mode=continue\|stop` |
-| POST | `/playback/party/transport` | 广播传输命令 `{action, position?}` |
-| DELETE | `/playback/party` | 结束派对 |
+| POST | `/players/{id}/power` | 待机 / 唤醒 `{on}`；待机成员不在同步环里 |
+| POST | `/playback/party` | 发起派对 `{name?, group_ids[]}` |
+| GET | `/playback/party/{id}` | 派对状态（成员组、偏移、`drifting` / `unaligned`） |
+| POST | `/playback/party/{id}/groups` | `{action: join\|leave\|end, group_id?, mode?}` |
+| POST | `/playback/party/{id}/transport` | 广播 `play\|pause\|stop` |
 | GET / PUT | `/players/{id}/eq` | 读/写单台音箱 EQ（PUT 后回填 `preamp`） |
 | GET | `/players/{id}/eq/presets` | 预设列表（与 `/settings/equalizer` 同一套） |
 | PUT | `/players/{id}` | 除重命名外还写 `takeover_behavior` |
 
 WS 事件：
 
+完整契约见后端文档 §7.4，前端只用这几种：
+
 ```
-state           {group_id, song_id, position, status, seq}
+state           {group_id, song_id, position_ms, status}
 target_changed  {group_id, from_group_id, reason}
-member_changed  {group_id, player_id, action: join|leave|offline|online}
+member_changed  {group_id?, player_id, action: join|update|leave|offline|online|deleted|standby|wake}
+group_changed   {group_id, player_id?, action: deleted|master_changed}   // 建组不发事件，需拉 /playback
 speaker_seen    {player_id, name, kind}
-party_changed   {party_id, action: created|joined|left|ended, group_id, seq}
-group_drift     {party_id, group_id, offset_ms, corrected}
+party_changed   {party_id, group_id?, name?, action: created|joined|left|ended}
+group_drift     {party_id, group_id, offset_ms, corrected, unaligned}
 eq_changed      {player_id, enabled, preset}
-error           {group_id, code, message}
+error           {group_id?, code, message}
 ```
+
+指标（解码槽位、欠载、丢帧、重挂）不走事件流，面板打开时按 2s 拉 `GET /playback/metrics`。
 
 ## 11. 分阶段交付
 
@@ -539,11 +545,11 @@ error           {group_id, code, message}
 | **F3** | 拆分播放、主控切换、延迟补偿、删除设备/组（二次确认） | P3 |
 | **F4** | 每音箱 EQ（推子、预设、preamp 展示、本机叠加保护） | P2.5 |
 | **F5** | 派对（发起/加入/退出/漂移提示/长按独占） | P3.5 |
-| **F6** | TV/Lynx 适配、拖拽排序、待机/唤醒（待机成员置灰、不可入精确组） | F2 |
+| **F6** | TV/Lynx 适配、待机/唤醒（待机成员置灰、不可入精确组）；拖拽排序待后端提供接口 | F2 |
 
 F4 与 F5 互不依赖，可以并行；两者都只改选择器与设置页，不碰播放页主结构，风险可控。
 
-F0 可与后端 P0 并行开发，用 mock 服务（`/playback/targets` 返回假数据）先做 UI。
+F0 可与后端 P0 并行开发，用 mock 服务（`/playback` 返回假数据）先做 UI。
 
 ## 12. 验收清单
 

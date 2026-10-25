@@ -116,7 +116,7 @@ B5-01 ─► B7-01 ─► B7-03 ─► [G4]
 
 关键路径：`B0-01 → B1-02 → B2-01 → B2-04 → B3-05 → G1 → B5-01 → B5-09 → B5-08 → G2 → B7-07 → G4`。
 
-前端 F0 可以在 B1-05 之前开工（对 `/playback/targets` 打桩），这是唯一一条真正并行、且不增加返工风险的线。
+前端 F0 可以在 B1-05 之前开工（对 `/playback` 打桩），这是唯一一条真正并行、且不增加返工风险的线。
 
 ## 4. 后端任务分解
 
@@ -274,7 +274,7 @@ B5-01 ─► B7-01 ─► B7-03 ─► [G4]
 
 | ID | 任务 | 主要文件 | 验收 | 依赖 | d |
 |---|---|---|---|---|---|
-| F0-01 | `output` 模块骨架 + API/仓储 | `lib/features/output/data/*` | `/playback/targets` 打桩可跑；错误映射统一 | — | 2 |
+| F0-01 | `output` 模块骨架 + API/仓储 | `lib/features/output/data/*` | `/playback` 打桩可跑；错误映射统一 | — | 2 |
 | F0-02 | WS 客户端（ticket / 退避 / seq 去重 / 轮询降级） | `data/output_socket.dart` | 断线 3 次后退 3s 轮询并提示"实时状态不可用"；重连后拉 `/playback` 全量对齐 | B0-06 | 2 |
 | F0-03 | 输出按钮 + 选择器 Sheet | `presentation/widgets/output_button.dart`、`output_sheet.dart` | 空态有引导 + 扫描按钮；离线目标置灰不隐藏；排序"在线→同网→名称" | F0-01 | 2.5 |
 | F0-04 | 音箱管理页 | `features/settings/presentation/speaker_settings_page.dart` | 发现/命名/删除/延迟补偿/输出参数齐备；发现为空时给 Docker 网络提示 | B0-07 | 2 |
@@ -375,8 +375,8 @@ v2 比 v1 多 4 周（~19 周 ≈ 4.4 月），多出来的全是“把半成品
 - [x] M6 每音箱 EQ（B6-01 ~ B6-07）→ G3 → v0.5——已完成；G3 真机听感 Not run
 - [x] M7 派对（B7-01 ~ B7-07）→ G4——已完成（`party_test.go` 在 CI）；G4 真机 Not run
 - [x] M8 韧性与可观测（B8-01 ~ B8-05）→ v1.0——已完成（B8-04 生命周期端点、B8-03 metrics、B8-05 power）
-- [ ] 前端 F0 ~ F6（0%，`clients/player/lib/features/` 下无 `output`）
-- [~] X 收尾：X-01/X-03 部分完成、**X-07 完成**（`make check-playback`）；**待：X-02 播放器出口白名单、X-04 Bundle 限制、X-05/06**
+- [x] 前端 F0 ~ F6——已完成（`clients/player`：F0 面板/待机、F1 建组与成员参数、F2 转移、F3 EQ、F4 派对、F5 指标、F6 待机置灰）；真机与 TV/Lynx 走查 Not run；拖拽排序与"对齐中"标记待后端接口（无 reorder 端点、无对齐状态字段）
+- [~] X 收尾：X-01/X-03 部分完成、**X-02 白名单 / X-04 Bundle 限制 / X-07 守卫已完成**；**待：X-05/06**
 
 ### 11.1 下一批提交顺序（按依赖排，一次一个提交）
 

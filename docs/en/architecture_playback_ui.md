@@ -501,33 +501,39 @@ Depends on backend §7, plus the following endpoints (mirrored into [architectur
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/playback/targets` | One-shot fetch for the picker: available targets + current target + capabilities/online state |
-| POST | `/groups/{id}/transfer` | Transfer playback `{from_group_id, only_player_id?}` |
+| GET | `/playback` | Shared by the picker and first paint: all groups + status + caps + `party_id` (no `/playback/targets` since v2) |
+| GET | `/playback/metrics` | Metrics panel: decode slots, underruns, dropped frames, resyncs, per-owner drift |
+| POST | `/groups/{id}/transfer` | Transfer playback `{from_group_id, only_player_id?}` (`{id}` is the destination group) |
 | POST | `/groups/{id}/members` | Join during playback `{player_id}` (joins at the current position) |
+| PATCH | `/groups/{id}/members/{player_id}` | Tune a member `{delay_ms?, volume_offset?}` |
 | DELETE | `/groups/{id}/members/{player_id}` | Leave `?mode=continue\|stop` |
 | POST | `/players/{id}/reconnect` | Manually reconnect an offline speaker |
-| GET | `/playback/party` | Current party (404 when none) |
-| POST | `/playback/party` | Start a party `{group_id, name?}` |
-| POST | `/playback/party/groups` | Join a party `{group_id}` |
-| DELETE | `/playback/party/groups/{group_id}` | Leave a party `?mode=continue\|stop` |
-| POST | `/playback/party/transport` | Broadcast a transport command `{action, position?}` |
-| DELETE | `/playback/party` | End the party |
+| POST | `/players/{id}/power` | Standby / wake `{on}`; standby members leave the sync ring |
+| POST | `/playback/party` | Start a party `{name?, group_ids[]}` |
+| GET | `/playback/party/{id}` | Party status (member groups, offsets, `drifting` / `unaligned`) |
+| POST | `/playback/party/{id}/groups` | `{action: join\|leave\|end, group_id?, mode?}` |
+| POST | `/playback/party/{id}/transport` | Broadcast `play\|pause\|stop` |
 | GET / PUT | `/players/{id}/eq` | Read/write one speaker's EQ (PUT returns the recomputed `preamp`) |
 | GET | `/players/{id}/eq/presets` | Preset list (same set as `/settings/equalizer`) |
 | PUT | `/players/{id}` | Also writes `takeover_behavior` besides renaming |
 
 WS events:
 
+The full contract is in backend doc §7.4; the frontend only uses these:
+
 ```
-state           {group_id, song_id, position, status, seq}
+state           {group_id, song_id, position_ms, status}
 target_changed  {group_id, from_group_id, reason}
-member_changed  {group_id, player_id, action: join|leave|offline|online}
+member_changed  {group_id?, player_id, action: join|update|leave|offline|online|deleted|standby|wake}
+group_changed   {group_id, player_id?, action: deleted|master_changed}   // creation emits nothing; refetch /playback
 speaker_seen    {player_id, name, kind}
-party_changed   {party_id, action: created|joined|left|ended, group_id, seq}
-group_drift     {party_id, group_id, offset_ms, corrected}
+party_changed   {party_id, group_id?, name?, action: created|joined|left|ended}
+group_drift     {party_id, group_id, offset_ms, corrected, unaligned}
 eq_changed      {player_id, enabled, preset}
-error           {group_id, code, message}
+error           {group_id?, code, message}
 ```
+
+Metrics (decode slots, underruns, dropped frames, resyncs) never use the event stream; the panel pulls `GET /playback/metrics` every 2s while open.
 
 ## 11. Phased Delivery
 
@@ -539,11 +545,11 @@ error           {group_id, code, message}
 | **F3** | Split playback, master switching, delay compensation, deleting a device/group (with confirmation) | P3 |
 | **F4** | Per-speaker EQ (faders, presets, preamp display, double-application guard) | P2.5 |
 | **F5** | Party (start/join/leave, drift hints, long-press exclusivity) | P3.5 |
-| **F6** | TV/Lynx adaptation, drag-to-reorder, standby/wake (standby members greyed out, cannot join an exact group) | F2 |
+| **F6** | TV/Lynx adaptation, standby/wake (standby members greyed out, cannot join an exact group); drag-to-reorder awaits a backend endpoint | F2 |
 
 F4 and F5 are independent and can run in parallel; both touch only the picker and the settings page, not the player page structure.
 
-F0 can be developed in parallel with backend P0 by mocking `/playback/targets`.
+F0 can be developed in parallel with backend P0 by mocking `/playback`.
 
 ## 12. Acceptance Checklist
 

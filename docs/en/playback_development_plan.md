@@ -116,7 +116,7 @@ B5-01 ─► B7-01 ─► B7-03 ─► [G4]
 
 Critical path: `B0-01 → B1-02 → B2-01 → B2-04 → B3-05 → G1 → B5-01 → B5-09 → B5-08 → G2 → B7-07 → G4`.
 
-Frontend F0 can start before B1-05 (stub `/playback/targets`). That is the only line that truly parallelizes without adding rework risk.
+Frontend F0 can start before B1-05 (stub `/playback`). That is the only line that truly parallelizes without adding rework risk.
 
 ## 4. Backend task breakdown
 
@@ -274,7 +274,7 @@ The frontend lives in `clients/player`; landing points are in [interaction desig
 
 | ID | Task | Main files | Acceptance | Depends | d |
 |---|---|---|---|---|---|
-| F0-01 | `output` module skeleton + API/repository | `lib/features/output/data/*` | Stubbed `/playback/targets` works end to end; unified error mapping | — | 2 |
+| F0-01 | `output` module skeleton + API/repository | `lib/features/output/data/*` | Stubbed `/playback` works end to end; unified error mapping | — | 2 |
 | F0-02 | WS client (ticket / backoff / seq dedup / polling fallback) | `data/output_socket.dart` | After 3 failures fall back to 3s polling and show "live state unavailable"; realign with a full `/playback` fetch on reconnect | B0-06 | 2 |
 | F0-03 | Output button + selector sheet | `presentation/widgets/output_button.dart`, `output_sheet.dart` | Empty state has guidance + scan button; offline targets greyed but not hidden; order "online → same network → name" | F0-01 | 2.5 |
 | F0-04 | Speaker management page | `features/settings/presentation/speaker_settings_page.dart` | Discover/rename/delete/delay compensation/output settings all present; empty discovery shows the Docker networking hint | B0-07 | 2 |
@@ -375,8 +375,8 @@ Task detail lives in §4 / §5; only milestones are tracked here so the two neve
 - [~] M6 per-speaker EQ (B6-01 ~ B6-07) → G3 → v0.5 — done: B6-02/04; **pending: B6-01/03/05 (presets)/06/07**
 - [~] M7 party (B7-01 ~ B7-07) → G4 — done: B7-01/02/04/05; **pending: B7-03 rewrite, B7-06/07**
 - [~] M8 resilience and observability (B8-01 ~ B8-05) → v1.0 — done: B8-01; **pending: B8-02 event, B8-03/04/05**
-- [ ] Frontend F0 ~ F6 (0%; no `output` directory under `clients/player/lib/features/`)
-- [ ] X wrap-up: X-01 partial, X-03 partial; **X-02/04/05/07 not started**
+- [x] Frontend F0 ~ F6 — done (`clients/player`: F0 panel/standby, F1 group creation and member params, F2 transfer, F3 EQ, F4 party, F5 metrics, F6 standby greying); real-device and TV/Lynx walkthroughs Not run; drag-to-reorder and the "aligning" badge await backend support (no reorder endpoint, no alignment state field)
+- [~] X wrap-up: X-01/X-03 partial; **X-02 allowlist, X-04 Bundle limits, X-07 guard done**; **pending: X-05/06**
 
 ### 11.1 Next commit sequence (dependency order, one commit each)
 

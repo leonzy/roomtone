@@ -479,49 +479,84 @@ How clients consume these endpoints (picker, transfer, dynamic grouping, dual-mo
 
 ### 7.1 REST
 
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/players` | Device list (online, caps, volume, state) |
-| POST | `/players` | Add a device manually `{address, kind, device_id?}` (fallback when discovery finds nothing) |
-| POST | `/players/discover` | Trigger SSDP + mDNS scan, return newly found devices |
-| PUT | `/players/{id}` | Rename / enable / disable / `takeover_behavior` (local only) |
-| POST | `/players/{id}/volume` | `{volume, muted}` |
-| POST | `/players/{id}/reconnect` | Manually reconnect an offline device (the UI "reconnect" button) |
-| GET | `/players/{id}/eq` | That speaker's EQ config (including the server-computed `preamp`) |
-| PUT | `/players/{id}/eq` | `{enabled, preset, bands[10]}`; the server recomputes and returns `preamp` |
-| GET | `/players/{id}/eq/presets` | Preset list (same set as `/settings/equalizer`) |
-| GET | `/groups` | Sync groups (including `sync_tier`) |
-| POST | `/groups` | `{name, member_ids, master_id}` |
-| PUT | `/groups/{id}` | Members, master, per-member `delay_ms` |
-| POST | `/groups/{id}/members` | Join during playback `{player_id}`, joins at the current position |
-| DELETE | `/groups/{id}/members/{player_id}` | Leave `?mode=continue\|stop` |
-| POST | `/groups/{id}/transfer` | Transfer playback `{from_group_id, only_player_id?}`; `only_player_id` implements "play on this speaker only" |
-| GET | `/groups/{id}/queue` | Queue snapshot |
-| POST | `/groups/{id}/queue` | Append songs / playlists |
-| PUT | `/groups/{id}/queue/reorder` | Reorder / remove |
-| POST | `/groups/{id}/transport` | `{action: play\|pause\|stop\|next\|prev\|seek, position?}` |
-| GET | `/playback` | Global snapshot (UI first paint) |
-| GET | `/playback/targets` | One-shot fetch for the output picker: available targets + current target + online state/caps + party membership |
-| GET | `/playback/party` | Current party (member groups, logical position, per-group drift); 404 when there is none |
-| POST | `/playback/party` | Start a party from a group `{group_id, name?}`; keeps that group's queue |
-| POST | `/playback/party/groups` | Join a party `{group_id}`, attaching at the current logical position |
-| DELETE | `/playback/party/groups/{group_id}` | Leave a party `?mode=continue\|stop` |
-| POST | `/playback/party/transport` | `{action: play\|pause\|next\|prev\|seek, position?}`, broadcast to the whole party |
-| DELETE | `/playback/party` | End the party; every group stops and returns to its own queue |
-| GET | `/playback/events` | WebSocket subscription (state change push) |
+Paths are relative to `/api/v1` (`@BasePath` in `main.go`) and map one-to-one onto `internal/app/routers.go`; fields and status codes are authoritative in `/swagger/index.html` (dev mode).
+
+**Devices**
+
+| Method | Path | Body / params | Notes |
+|---|---|---|---|
+| GET | `/players` | — | Device list: online, standby, caps, volume, EQ |
+| POST | `/players` | `{address, kind, name?, device_id?, public_key?}` | Manual add; `kind` is `raop` / `dlna`, 201 on success; 403 when network sinks are disabled |
+| POST | `/players/discover` | — | Trigger SSDP + mDNS scan, returns `{speakers, added, updated, skipped, errors}`; 503 when discovery is disabled |
+| PUT | `/players/{id}` | `{name?, takeover_behavior?}` | Rename / multi-client conflict policy (`pause` / `follow`) |
+| DELETE | `/players/{id}` | — | Permanent delete: stops the engine before detaching members; a solo group inside a party leaves the party first |
+| POST | `/players/{id}/volume` | `{volume, muted}` | Single-device volume |
+| POST | `/players/{id}/power` | `{on}` | Standby / wake; `standby` only means the server stops pushing, not a powered-off device |
+| POST | `/players/{id}/reconnect` | — | Drop the cached sink and re-handshake; 409 while still offline |
+| GET | `/players/{id}/eq` | — | Includes the server-computed `preamp` |
+| PUT | `/players/{id}/eq` | `{enabled, preset, bands[10]}` | The server clamps gains and recomputes `preamp`; clients must refresh from the response |
+| GET | `/players/{id}/eq/presets` | — | Preset list (same set as `/settings/equalizer`) |
+
+**Sync groups**
+
+| Method | Path | Body / params | Notes |
+|---|---|---|---|
+| GET | `/groups` | — | Groups (including `sync_tier`, `member_caps`, `status`) |
+| POST | `/groups` | `{name, member_ids, master_id?}` | 201; 409 when a member already belongs to another group, 400 on sync-tier mismatch |
+| GET | `/groups/{id}` | — | Single group |
+| DELETE | `/groups/{id}` | — | Dissolve the group, members fall back to their solo groups; 409 while the group is in a party (leave the party first) |
+| POST | `/groups/{id}/master` | `{player_id}` | Change master; 400 for a non-member |
+| POST | `/groups/{id}/members` | `{player_id}` | Join during playback, attaching at the current position; 409 if already in another group |
+| PATCH | `/groups/{id}/members/{player_id}` | `{delay_ms?, volume_offset?}` | Per-member delay compensation and volume offset |
+| DELETE | `/groups/{id}/members/{player_id}` | `?mode=continue\|stop` | Remove a member |
+| GET | `/groups/{id}/volume` | — | Group volume plus each member's effective value (with per-device failures) |
+| POST | `/groups/{id}/volume` | `{volume, muted}` | Pushed per device; a single failure does not roll back the others |
+| POST | `/groups/{id}/transfer` | `{from_group_id, only_player_id?}` | `{id}` in the path is the **destination** group; a non-empty `only_player_id` first splits that device into a new solo group and the destination is ignored |
+| GET | `/groups/{id}/queue` | — | Queue snapshot |
+| POST | `/groups/{id}/queue` | `{song_ids[]}` | Append songs |
+| PUT | `/groups/{id}/queue/reorder` | `{from, to}` or `{remove_index}` | Move semantics; remove and reorder are mutually exclusive |
+| POST | `/groups/{id}/transport` | `{action, position?, repeat?, shuffle?}` | `play\|pause\|stop\|next\|prev\|seek` (seek in seconds); `repeat=off\|all\|one` and `shuffle=bool` also go here; 503 when the decode budget is exhausted |
+
+**Global and metrics**
+
+| Method | Path | Body / params | Notes |
+|---|---|---|---|
+| GET | `/playback` | — | First-paint snapshot: every group + status + caps + `party_id` |
+| GET | `/playback/metrics` | — | Metrics snapshot: decode slots `decode_slots_used/max`, `player_underruns_total` (silence padding), `player_sink_dropped_frames_total` (downstream drops), `player_resyncs_total` (drift re-attach), `player_events_dropped_total`, `player_drift_ms`, plus per-owner (group/party) detail; see §4.6 for interpretation |
+
+**Parties**
+
+| Method | Path | Body / params | Notes |
+|---|---|---|---|
+| POST | `/playback/party` | `{name?, group_ids[]}` | 201; 403 when `party_enabled=false`; 409 when a group is already in another party |
+| GET | `/playback/party/{id}` | — | Member groups, leader status, per-group offsets |
+| POST | `/playback/party/{id}/groups` | `{action, group_id?, mode?}` | `join` / `leave` (`mode=continue\|stop`) / `end` (ends the whole party) |
+| POST | `/playback/party/{id}/transport` | `{action}` | Only `play\|pause\|stop`, broadcast to every group in the party |
+
+**Events**
+
+| Method | Path | Body / params | Notes |
+|---|---|---|---|
+| POST | `/playback/events/ticket` | — | Exchange for a one-time ticket (30s, bound to the user, single use) |
+| GET | `/playback/events` | `?ticket=…` | WS upgrade 101; no JWT (browsers cannot set `Authorization` on WS) |
 
 Every endpoint needs swag annotations and `@Security BearerAuth`; `@Router` paths must not include the `/api/v1` prefix.
 
+**There is no `/playback/targets`**: v2 returns everything from `GET /playback` (groups, status, caps, `party_id`), so the output picker needs no separate endpoint. There is also no "current party" GET: the party id lives in each group's `party_id`, so clients read `/playback` first and then `/playback/party/{id}`.
+
 **Transfer compensation semantics**: `transfer` starts the destination at `position + transfer_compensation_ms` (default 800ms), compensating for the gap between the source stopping and the destination sounding. Compensation happens exactly once, on the server; clients must not add their own (see frontend doc §4.3).
+
+**Standby semantics**: `standby=true` from `POST /players/{id}/power` only means the server stops pushing to that device (DLNA sends Stop and clears the URI, RAOP stops RTP); it does not power the hardware off, since neither RTSP nor DLNA has a generic power-on command. Standby members leave the sync ring and re-attach at the current position when woken.
 
 ### 7.2 Settings endpoints
 
 Following the "user-visible switches live on business endpoints" rule:
 
-- `/settings/player-discovery` — `{enabled, protocols:["raop","dlna"], interval_seconds}`
-- `/settings/player-output` — `{max_groups, default_latency_ms, dlna_realign_interval_minutes, allow_private_network, party_enabled, party_drift_tolerance_ms}`
+- `/settings/player-discovery` — `{enabled, protocols:["raop","dlna"], interval_seconds}`; `interval_seconds` ranges 10–600, default 30
+- `/settings/player-output` — `{max_groups, default_latency_ms, dlna_realign_interval_minutes, allow_private_network, network_sinks_enabled, party_enabled, party_drift_tolerance_ms}`
+- `/settings/player-output-allowlist` — `{entries:["192.168.1.0/24", …]}`; an empty array does not restrict private networks, otherwise only these ranges are allowed and public addresses are always rejected
 
-`party_drift_tolerance_ms` defaults to 1500 (range 500–5000); with `party_enabled=false` starting a party returns 403 (managed or public deployments may want to forbid "every room at once").
+`party_drift_tolerance_ms` defaults to 1500 (range 500–5000); with `party_enabled=false` starting a party returns 403 (managed or public deployments may want to forbid "every room at once"). With `network_sinks_enabled=false` manual add and reconnect return 403: iOS Bundle is always false, desktop Bundle requires an explicit opt-in.
 
 ### 7.3 WebSocket authentication
 
@@ -529,22 +564,23 @@ Browsers cannot set an `Authorization` header on WS handshakes, and putting the 
 
 ### 7.4 Event contract
 
-Every event carries a monotonic `seq`; clients drop anything below their current `seq` (reordering / replay).
+Common envelope: `{seq, type, time_ms, …}`. `seq` is monotonic and shared by every type, so clients only compare `seq` to drop stale messages instead of keeping one counter per type. The remaining fields appear per type (`omitempty` on the Go side); the table lists what each event actually carries.
 
-```
-state           {group_id, song_id, position, status, seq}
-target_changed  {group_id, from_group_id, reason}
-member_changed  {group_id, player_id, action: join|leave|offline|online}
-speaker_seen    {player_id, name, kind}
-party_changed   {party_id, action: created|joined|left|ended, group_id, seq}
-group_drift     {party_id, group_id, offset_ms, corrected}
-eq_changed      {player_id, enabled, preset}
-error           {group_id, code, message}
-```
+| `type` | Fields | Emitted when | Client behaviour |
+|---|---|---|---|
+| `state` | `group_id, song_id, position_ms, status` | Playback state, track or position changes | The only source of playback state; decide relevance by `group_id` |
+| `target_changed` | `group_id, from_group_id, reason` | Playback was moved to another group (`reason=transfer`) | Follow `players.takeover_behavior`: `pause` stops immediately and informs the user, `follow` silently becomes a pure controller |
+| `member_changed` | `group_id?, player_id, action` | `action=join\|update\|leave\|offline\|online\|deleted\|standby\|wake`; `join`/`update`/`leave` carry `group_id`, `offline`/`online` fire once per containing group | Standby and wake only travel here; there are no separate `power` / `standby` / `wake` events |
+| `group_changed` | `group_id, player_id?, action` | `action=deleted` (dissolved), `master_changed` (carries `player_id`) | **Creating a group emits nothing**: the caller refetches `/playback` or waits for the first `state` |
+| `speaker_seen` | `player_id, name, kind` | Discovery found a new device | Offer "new speaker found"; never auto-join any group |
+| `party_changed` | `party_id, group_id?, name?, action` | `action=created` (carries `name`), `joined` / `left` (carry `group_id`), `ended` | Refetch `/playback/party/{id}`; clear party state after `ended` |
+| `group_drift` | `party_id, group_id, offset_ms, corrected, unaligned` | Each correction-loop measurement inside a party; `corrected=false` marks a failed correction, `unaligned=true` means retries were abandoned | After 3 `corrected=false` events or `unaligned=true`, mark the group "out of sync"; do not repeat toasts |
+| `eq_changed` | `player_id, enabled, preset` | Any client changed EQ | Refresh that device's EQ panel |
+| `error` | `group_id?, code, message` | Internal engine error (decode, downstream write, …) | Show the error; `stop` and retry when appropriate |
 
-- `state` is the only source of playback state and does not say *who* triggered it; clients decide by `group_id`.
-- `target_changed` handles multi-client conflicts: when this device is playing and the target is moved away, the client follows `players.takeover_behavior` — `pause` (default) pauses immediately and informs the user, `follow` silently turns into a pure controller.
-- `group_drift` is only emitted inside a party; after 3 `corrected=false` events the client must show a persistent "out of sync" state rather than repeating toasts.
+- `state` never says *who* triggered it; when several clients act at once, the highest `seq` wins.
+- Runtime metrics (decode slots, underruns, dropped frames, resyncs) **never enter the event stream**: `GET /playback/metrics` is a snapshot pulled on demand (the frontend panel polls every 2s while open), so high-frequency samples do not crowd out slow clients.
+- A slow client drops its own copy only; drops are counted in `player_events_dropped_total`. A steadily rising counter means a stuck client, not server-side data loss.
 - After a reconnect, clients must refetch `/playback` for a full reconcile rather than trusting incremental events alone.
 
 ## 8. Constraints Imposed by the Existing System
