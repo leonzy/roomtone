@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"songloft/internal/services"
 )
 
 // 播放器相关配置走业务端点（不是通用 /configs/{key}）：
@@ -31,8 +33,13 @@ type PlayerOutputSetting struct {
 	DefaultLatencyMs           int  `json:"default_latency_ms"`
 	DLNARealignIntervalMinutes int  `json:"dlna_realign_interval_minutes"`
 	AllowPrivateNetwork        bool `json:"allow_private_network"`
-	PartyEnabled               bool `json:"party_enabled"`
-	PartyDriftToleranceMs      int  `json:"party_drift_tolerance_ms"`
+	// NetworkSinksEnabled 是否允许网络音箱（RAOP / DLNA）。
+	//
+	// 服务器部署默认 true；iOS Bundle 恒为 false（由宿主强制覆盖）；
+	// 桌面 Bundle 需要用户显式开启。关闭后手动添加与重连都返回 403 并说明原因。
+	NetworkSinksEnabled   bool `json:"network_sinks_enabled"`
+	PartyEnabled          bool `json:"party_enabled"`
+	PartyDriftToleranceMs int  `json:"party_drift_tolerance_ms"`
 }
 
 func defaultPlayerOutput() PlayerOutputSetting {
@@ -41,6 +48,7 @@ func defaultPlayerOutput() PlayerOutputSetting {
 		DefaultLatencyMs:           2000,
 		DLNARealignIntervalMinutes: 0,
 		AllowPrivateNetwork:        true,
+		NetworkSinksEnabled:        true,
 		PartyEnabled:               true,
 		PartyDriftToleranceMs:      1500,
 	}
@@ -138,7 +146,12 @@ func (h *ConfigHandler) GetPlayerOutputSetting(w http.ResponseWriter, r *http.Re
 // @Security BearerAuth
 // @Router /settings/player-output [put]
 func (h *ConfigHandler) UpdatePlayerOutputSetting(w http.ResponseWriter, r *http.Request) {
-	var req PlayerOutputSetting
+	// 先取旧值再解请求体：老客户端（或 curl 手写 body）不带
+	// network_sinks_enabled 时，不能因为零值把网络音箱全关掉。
+	req := defaultPlayerOutput()
+	if err := h.configService.GetJSON(playerOutputKey, &req); err != nil {
+		req = defaultPlayerOutput()
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
 		return
@@ -177,4 +190,70 @@ func ParseProtocols(list []string) map[string]bool {
 		out[strings.ToLower(strings.TrimSpace(p))] = true
 	}
 	return out
+}
+
+const playerOutputAllowlistKey = "player_output_allowlist"
+
+// PlayerOutputAllowlistSetting 播放器出口白名单。
+//
+// 与代理白名单（proxy_private_allowlist）是两套配置，互不影响：
+// 前者决定"能往哪些网段推音频"，后者决定"服务端出站 HTTP 能去哪"。
+// entries 为空表示不限制（私网全允许），非空则收敛到这些网段；公网恒拒绝。
+type PlayerOutputAllowlistSetting struct {
+	Entries []string `json:"entries"`
+}
+
+// GetPlayerOutputAllowlistSetting 读取播放器出口白名单
+// @Summary 获取播放器出口白名单
+// @Description 返回允许推送音频的网段（CIDR 或单个 IP）。空数组表示不限制私网；配置后只允许这些网段，公网地址恒拒绝。与代理白名单互不影响。
+// @Tags 设置
+// @Produce json
+// @Success 200 {object} handlers.PlayerOutputAllowlistSetting "白名单"
+// @Security BearerAuth
+// @Router /settings/player-output-allowlist [get]
+func (h *ConfigHandler) GetPlayerOutputAllowlistSetting(w http.ResponseWriter, r *http.Request) {
+	cfg := PlayerOutputAllowlistSetting{Entries: []string{}}
+	if err := h.configService.GetJSON(playerOutputAllowlistKey, &cfg); err != nil {
+		respondJSON(w, http.StatusOK, PlayerOutputAllowlistSetting{Entries: []string{}})
+		return
+	}
+	if cfg.Entries == nil {
+		cfg.Entries = []string{}
+	}
+	respondJSON(w, http.StatusOK, cfg)
+}
+
+// UpdatePlayerOutputAllowlistSetting 保存播放器出口白名单
+// @Summary 保存播放器出口白名单
+// @Description 保存后立即生效（下一次手动添加设备或重连时校验）。条目支持 CIDR 与单个 IP，非法条目返回 400。只影响播放器出口，不改动代理白名单。
+// @Tags 设置
+// @Accept json
+// @Produce json
+// @Param request body handlers.PlayerOutputAllowlistSetting true "白名单"
+// @Success 200 {object} handlers.PlayerOutputAllowlistSetting "保存后的白名单"
+// @Failure 400 {object} map[string]string "条目格式错误"
+// @Failure 500 {object} map[string]string "保存失败"
+// @Security BearerAuth
+// @Router /settings/player-output-allowlist [put]
+func (h *ConfigHandler) UpdatePlayerOutputAllowlistSetting(w http.ResponseWriter, r *http.Request) {
+	var req PlayerOutputAllowlistSetting
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	if req.Entries == nil {
+		req.Entries = []string{}
+	}
+	if _, err := services.ParsePlayerOutputAllowlist(req.Entries); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+	if err := h.configService.SetJSON(playerOutputAllowlistKey, req); err != nil {
+		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
+		return
+	}
+	if h.onConfigChanged != nil {
+		go h.onConfigChanged(playerOutputAllowlistKey)
+	}
+	respondJSON(w, http.StatusOK, req)
 }

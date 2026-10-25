@@ -111,3 +111,42 @@ func isPrivateIP(ip net.IP) bool {
 	}
 	return false
 }
+
+// --- 播放器出口白名单（X-02） ---
+//
+// 与上面的代理白名单**互不影响**：代理白名单控制"服务端出站 HTTP 请求能去哪"，
+// 播放器出口白名单控制"能往哪些网段推音频"。两者混用会出事：
+// 为了让音箱能连，把 192.168.0.0/16 加进代理白名单，等于顺手放开了 SSRF 防护；
+// 反过来，收紧代理白名单会莫名其妙让音箱不出声。
+//
+// 所以这里单独一套解析与判定，配置键也不同（player_output_allowlist）。
+
+// IsPlayerOutputAllowed 判断播放器出口目标是否允许。
+//
+// 语义与代理白名单刻意不同：音箱本来就在局域网里，**私网默认允许**；
+// 白名单为空表示"不限制"，非空时则变成"只允许这些网段"（收敛到指定音箱网段）。
+// 公网地址一律拒绝——本项目不往公网推音频（那会把家里音箱变成开放代理）。
+func IsPlayerOutputAllowed(ip net.IP, allowlist []*net.IPNet) bool {
+	if ip == nil {
+		return false
+	}
+	if !isPrivateIP(ip) && !ip.IsLoopback() {
+		return false
+	}
+	if len(allowlist) == 0 {
+		return true
+	}
+	return allowlistContains(allowlist, ip)
+}
+
+// ParsePlayerOutputAllowlist 解析播放器出口白名单（复用 CIDR 语法，独立入口）。
+//
+// 单独一个函数而不是直接调 ParseAllowlist：两条链路的错误文案要能区分，
+// 否则用户改错了地方会收到"代理白名单格式错误"这种误导性提示。
+func ParsePlayerOutputAllowlist(entries []string) ([]*net.IPNet, error) {
+	nets, err := ParseAllowlist(entries)
+	if err != nil {
+		return nil, fmt.Errorf("播放器出口白名单格式错误：%w", err)
+	}
+	return nets, nil
+}

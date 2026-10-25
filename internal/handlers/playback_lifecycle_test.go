@@ -100,3 +100,27 @@ func TestSetMasterEndpoint(t *testing.T) {
 		t.Fatalf("空 player_id 状态码 = %d，期望 400", rr.Code)
 	}
 }
+
+// TestNetworkSinkDisabledB0805 X-04：模式不允许网络音箱时返回 403 且说明原因。
+func TestNetworkSinkDisabledX04(t *testing.T) {
+	h := newPlaybackHandlerForTest(t)
+	h.SetNetworkSinkPolicy(func() (bool, string) { return false, "iOS 内嵌模式下不支持网络音箱" })
+	body := []byte(`{"address":"192.168.1.9:5000","kind":"raop","device_id":"aabbccddeeff"}`)
+	rr := httptest.NewRecorder()
+	h.AddPlayer(rr, httptest.NewRequest(http.MethodPost, "/api/v1/players", bytes.NewReader(body)))
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("状态码 = %d，期望 403：%s", rr.Code, rr.Body.String())
+	}
+	if !bytes.Contains(rr.Body.Bytes(), []byte("iOS")) {
+		t.Fatalf("拒绝原因没带给前端：%s", rr.Body.String())
+	}
+	// 本机设备不受限制（重连 local 不该被模式校验挡住）。
+	if err := h.mgr.RegisterPlayer(context.Background(), player.Player{ID: "loc", Kind: player.KindLocal, Name: "本机"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	rr = httptest.NewRecorder()
+	h.ReconnectPlayer(rr, withURLParams(httptest.NewRequest(http.MethodPost, "/api/v1/players/loc/reconnect", nil), "id", "loc"))
+	if rr.Code == http.StatusForbidden {
+		t.Fatalf("本机设备重连不该被模式限制：%s", rr.Body.String())
+	}
+}

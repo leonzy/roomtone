@@ -18,6 +18,7 @@ import (
 	"songloft/internal/player/discovery"
 	"songloft/internal/player/sink/dlna"
 	"songloft/internal/player/sink/raop"
+	"songloft/internal/services"
 )
 
 // DiscoveryRunner 设备发现能力。Bundle / 精简环境可以没有（接口为 nil）。
@@ -30,6 +31,40 @@ func (h *PlaybackHandler) SetDiscovery(d DiscoveryRunner) { h.discovery = d }
 
 // SetAddressPolicy 注入"是否允许私网地址"的判断（来自 /settings/player-output）。
 func (h *PlaybackHandler) SetAddressPolicy(allow func() bool) { h.allowPrivate = allow }
+
+// SetOutputAllowlist 注入播放器出口白名单（来自 /settings/player-output-allowlist）。
+//
+// 与代理白名单是两条独立的链路（X-02）：那条管服务端出站 HTTP，
+// 这条管往哪个网段推音频，配置键与判定都不共用。
+func (h *PlaybackHandler) SetOutputAllowlist(f func() []*net.IPNet) { h.outputAllowlist = f }
+
+// SetNetworkSinkPolicy 注入"能否使用网络音箱"的判断（X-04 Bundle 限制）。
+//
+// 返回 (是否允许, 不允许的原因)。iOS Bundle 里 Go 后端跑在 app 进程内，
+// 推流目标与 App 生命周期纠缠，默认只留 local；桌面 Bundle 需要显式开启。
+// 拒绝时把原因原样返回给前端，而不是静默失败——用户必须知道是"这个模式
+// 不支持"还是"设备不在线"。
+func (h *PlaybackHandler) SetNetworkSinkPolicy(f func() (bool, string)) { h.networkSinks = f }
+
+func (h *PlaybackHandler) networkSinkCheck() error {
+	if h.networkSinks == nil {
+		return nil
+	}
+	if ok, reason := h.networkSinks(); !ok {
+		return fmt.Errorf("%w: %s", errNetworkSinkDisabled, reason)
+	}
+	return nil
+}
+
+// errNetworkSinkDisabled 当前运行模式不允许网络音箱（映射成 403）。
+var errNetworkSinkDisabled = errors.New("当前运行模式不支持网络音箱")
+
+func (h *PlaybackHandler) outputAllowed() []*net.IPNet {
+	if h.outputAllowlist == nil {
+		return nil
+	}
+	return h.outputAllowlist()
+}
 
 func (h *PlaybackHandler) privateAllowed() bool {
 	if h.allowPrivate == nil {
@@ -97,6 +132,10 @@ func (h *PlaybackHandler) AddPlayer(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.Address) == "" {
 		respondError(w, http.StatusBadRequest, "address 不能为空", nil)
+		return
+	}
+	if err := h.networkSinkCheck(); err != nil {
+		respondError(w, http.StatusForbidden, err.Error(), nil)
 		return
 	}
 	if err := h.checkAddress(r.Context(), kind, req.Address); err != nil {
@@ -191,7 +230,15 @@ func (h *PlaybackHandler) AddPlayer(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /players/{id}/reconnect [post]
 func (h *PlaybackHandler) ReconnectPlayer(w http.ResponseWriter, r *http.Request) {
-	p, err := h.mgr.Reconnect(r.Context(), chi.URLParam(r, "id"))
+	id := chi.URLParam(r, "id")
+	// 只对网络音箱做模式校验；本机设备在任何模式下都可用。
+	if p, err := h.mgr.GetPlayer(id); err == nil && p.Kind != player.KindLocal {
+		if err := h.networkSinkCheck(); err != nil {
+			respondError(w, http.StatusForbidden, err.Error(), nil)
+			return
+		}
+	}
+	p, err := h.mgr.Reconnect(r.Context(), id)
 	if err != nil {
 		playbackFail(w, err)
 		return
@@ -205,16 +252,23 @@ func (h *PlaybackHandler) checkAddress(ctx context.Context, kind player.Kind, ad
 	if err != nil {
 		return err
 	}
-	if h.privateAllowed() {
-		return nil
-	}
 	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil || len(ips) == 0 {
 		return fmt.Errorf("无法解析地址 %s", host)
 	}
+	if !h.privateAllowed() {
+		for _, ip := range ips {
+			if isPrivateIP(ip.IP) {
+				return errors.New("当前设置不允许访问私网地址（/settings/player-output 的 allow_private_network）")
+			}
+		}
+	}
+	// 出口白名单：私网默认允许，配了白名单就只认白名单里的网段；
+	// 公网地址一律拒绝——不往公网推音频，否则家里音箱就成了开放中继。
+	allow := h.outputAllowed()
 	for _, ip := range ips {
-		if isPrivateIP(ip.IP) {
-			return errors.New("当前设置不允许访问私网地址（/settings/player-output 的 allow_private_network）")
+		if !services.IsPlayerOutputAllowed(ip.IP, allow) {
+			return fmt.Errorf("播放器出口白名单不允许 %s（/settings/player-output-allowlist）", ip.IP)
 		}
 	}
 	return nil

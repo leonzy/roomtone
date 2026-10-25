@@ -25,16 +25,17 @@ type Sink struct {
 	id   string
 	caps sink.Caps
 
-	mu       sync.Mutex
-	frames   []FrameRecord
-	plan     sink.StreamPlan
-	started  time.Time
-	volume   float64
-	opened   bool
-	stopped  bool
-	closed   bool
-	writeErr error
-	events   chan sink.Event
+	mu        sync.Mutex
+	frames    []FrameRecord
+	plan      sink.StreamPlan
+	started   time.Time
+	volume    float64
+	opened    bool
+	stopped   bool
+	closed    bool
+	continues []int64
+	writeErr  error
+	events    chan sink.Event
 }
 
 // New 创建假 sink。
@@ -127,6 +128,21 @@ func (s *Sink) Close() error {
 	s.mu.Unlock()
 	close(s.events)
 	return nil
+}
+
+// Continue 实现 sink.GaplessSink：测试里代表"支持接续的推送设备"。
+func (s *Sink) Continue(plan sink.StreamPlan) error {
+	s.mu.Lock()
+	s.continues = append(s.continues, plan.SongID)
+	s.mu.Unlock()
+	return nil
+}
+
+// Continues 返回接续过的曲目 id（gapless 用例断言用）。
+func (s *Sink) Continues() []int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]int64(nil), s.continues...)
 }
 
 // IsStopped 是否被 Stop 过（测试断言用）。

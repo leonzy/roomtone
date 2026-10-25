@@ -113,6 +113,8 @@ type Engine struct {
 	underruns int64
 	preload   Decoder
 	preloadID int64
+	// sinksOpen 当前 sink 会话已经打开（下一曲可以走 gapless 接续）。
+	sinksOpen bool
 	lastErr   error
 	// curPlan / planBase / cursor 是"播放中加入成员"所需的现场：
 	// 新设备要按当前曲目与当前进度 Open，并 Start 到当前时间轴位置。
@@ -513,6 +515,7 @@ func (e *Engine) stopLocked() {
 		e.cancel = nil
 	}
 	e.running = false
+	e.sinksOpen = false
 	if e.preload != nil {
 		_ = e.preload.Close()
 		e.preload = nil
@@ -578,7 +581,7 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			e.mu.Unlock()
 		}
 
-		dec, err := e.deps.Decoder.Open(ctx, track, position, format)
+		dec, err := e.openDecoder(ctx, track, position, format)
 		if err != nil {
 			e.fail(err)
 			return
@@ -602,10 +605,34 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		e.planBase = sampleBase
 		e.cursor = sampleBase
 		e.mu.Unlock()
+		e.mu.Lock()
+		resume := e.sinksOpen
+		e.mu.Unlock()
 		targets, _ := e.targets.Snapshot()
-		for _, t := range targets {
-			_ = t.Sink.Open(ctx, plan)
-			_ = t.Sink.Start(timeline.At(uint64(sampleBase)).Add(t.Delay))
+		if resume && canGapless(targets) {
+			// 无缝接续：不重新握手、不重新 Start。RTP 时间戳由帧的
+			// SampleIndex 推导，跨曲本来就连着，所以这里只更新曲目信息。
+			for _, t := range targets {
+				if g, ok := t.Sink.(sink.GaplessSink); ok {
+					if err := g.Continue(plan); err != nil {
+						e.deps.Logger.Warn("gapless continue failed", "player_id", t.PlayerID, "err", err)
+					}
+				}
+			}
+		} else {
+			if resume && len(targets) > 0 {
+				// 有成员不支持接续（DLNA 这类拉流设备）：退回普通切换，
+				// 交界处会有一次 Open/Play，属于已知降级。
+				e.deps.Logger.Info("gapless unavailable, falling back to reopen",
+					"owner", e.ownerKind+":"+e.ownerID)
+			}
+			for _, t := range targets {
+				_ = t.Sink.Open(ctx, plan)
+				_ = t.Sink.Start(timeline.At(uint64(sampleBase)).Add(t.Delay))
+			}
+			e.mu.Lock()
+			e.sinksOpen = true
+			e.mu.Unlock()
 		}
 
 		runner := e.deps.Runners(timeline, e.targets, sampleBase, func(idx int64, at time.Time) {
@@ -688,6 +715,7 @@ func (e *Engine) resolve(ctx context.Context, songID int64) (Track, error) {
 
 // onProgress 每帧回调：更新传输水位与位置，跨过水位线时发一次 state 事件。
 func (e *Engine) onProgress(sampleIndex int64, playAt time.Time, duration time.Duration, rate int) {
+	e.maybePrefetch(sampleIndex, duration, rate)
 	e.mu.Lock()
 	e.cursor = sampleIndex
 	if e.transport.State() == StateBuffering {

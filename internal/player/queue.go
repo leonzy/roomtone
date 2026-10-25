@@ -300,6 +300,32 @@ func (q *Queue) Next(auto bool) bool {
 }
 
 // Prev 后退一首。已在第一首且 repeat=off 时返回 false。
+// PeekNext 看一眼下一首会放什么，不移动游标（预取用）。
+func (q *Queue) PeekNext() (int64, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	n := len(q.items)
+	if n == 0 {
+		return 0, false
+	}
+	if q.shuffle && len(q.order) == n {
+		if q.pos+1 < len(q.order) {
+			return q.items[q.order[q.pos+1]], true
+		}
+		if q.repeat == RepeatAll {
+			return q.items[q.order[0]], true
+		}
+		return 0, false
+	}
+	if q.current+1 < n {
+		return q.items[q.current+1], true
+	}
+	if q.repeat == RepeatAll {
+		return q.items[0], true
+	}
+	return 0, false
+}
+
 func (q *Queue) Prev() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()

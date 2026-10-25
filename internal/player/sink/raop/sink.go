@@ -70,6 +70,8 @@ type Sink struct {
 	ctrlAddr *net.UDPAddr
 	// pendingAESKey ANNOUNCE 里要声明的 RSA 密文（空表示明文）。
 	pendingAESKey string
+	// plan 当前曲目信息（gapless 接续时只更新它）。
+	plan sink.StreamPlan
 }
 
 // New 创建 sink。真正建连在 Open。
@@ -392,6 +394,22 @@ func (s *Sink) Stop() error {
 	s.started = false
 	s.emit(sink.Event{Type: sink.EventStopped})
 	return err
+}
+
+// Continue 在同一 RTSP/RTP 会话里接续下一曲（gapless）。
+//
+// 只更新元数据：RTP 时间戳由帧的 SampleIndex 推导，本来就跨曲连续，
+// 所以这里既不能重新 ANNOUNCE，也不能重新 Start——重新 Start 会把
+// 锚点按新位置重算，设备端听到的是时间戳倒退。
+func (s *Sink) Continue(plan sink.StreamPlan) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.rtsp == nil {
+		return errors.New("raop: 会话已关闭，无法接续")
+	}
+	s.plan = plan
+	s.emit(sink.Event{Type: sink.EventPlaying, Position: plan.Position})
+	return nil
 }
 
 // Standby 停发 RTP（TEARDOWN）。

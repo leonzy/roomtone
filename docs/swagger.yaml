@@ -132,6 +132,13 @@ definitions:
           type: string
         type: array
     type: object
+  handlers.PlayerOutputAllowlistSetting:
+    properties:
+      entries:
+        items:
+          type: string
+        type: array
+    type: object
   handlers.PlayerOutputSetting:
     properties:
       allow_private_network:
@@ -142,6 +149,13 @@ definitions:
         type: integer
       max_groups:
         type: integer
+      network_sinks_enabled:
+        description: |-
+          NetworkSinksEnabled 是否允许网络音箱（RAOP / DLNA）。
+
+          服务器部署默认 true；iOS Bundle 恒为 false（由宿主强制覆盖）；
+          桌面 Bundle 需要用户显式开启。关闭后手动添加与重连都返回 403 并说明原因。
+        type: boolean
       party_drift_tolerance_ms:
         type: integer
       party_enabled:
@@ -6660,6 +6674,56 @@ paths:
       security:
       - BearerAuth: []
       summary: 保存播放输出配置
+      tags:
+      - 设置
+  /settings/player-output-allowlist:
+    get:
+      description: 返回允许推送音频的网段（CIDR 或单个 IP）。空数组表示不限制私网；配置后只允许这些网段，公网地址恒拒绝。与代理白名单互不影响。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 白名单
+          schema:
+            $ref: '#/definitions/handlers.PlayerOutputAllowlistSetting'
+      security:
+      - BearerAuth: []
+      summary: 获取播放器出口白名单
+      tags:
+      - 设置
+    put:
+      consumes:
+      - application/json
+      description: 保存后立即生效（下一次手动添加设备或重连时校验）。条目支持 CIDR 与单个 IP，非法条目返回 400。只影响播放器出口，不改动代理白名单。
+      parameters:
+      - description: 白名单
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.PlayerOutputAllowlistSetting'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 保存后的白名单
+          schema:
+            $ref: '#/definitions/handlers.PlayerOutputAllowlistSetting'
+        "400":
+          description: 条目格式错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 保存失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保存播放器出口白名单
       tags:
       - 设置
   /settings/plugin-auto-update:

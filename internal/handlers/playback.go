@@ -26,6 +26,10 @@ type PlaybackHandler struct {
 	discovery DiscoveryRunner
 	// allowPrivate 手动添加设备时是否允许私网地址（/settings/player-output）。
 	allowPrivate func() bool
+	// outputAllowlist 播放器出口白名单（/settings/player-output-allowlist），与代理白名单独立。
+	outputAllowlist func() []*net.IPNet
+	// networkSinks 当前运行模式是否允许网络音箱（X-04）。
+	networkSinks func() (bool, string)
 }
 
 // NewPlaybackHandler 创建 handler。
@@ -43,6 +47,8 @@ func playbackStatus(err error) int {
 	case errors.Is(err, player.ErrBudgetExhausted), errors.Is(err, player.ErrBudgetEQCaused):
 		return http.StatusServiceUnavailable
 	case errors.Is(err, player.ErrPartyDisabled), errors.Is(err, player.ErrNotifyForbidden):
+		return http.StatusForbidden
+	case errors.Is(err, errNetworkSinkDisabled):
 		return http.StatusForbidden
 	case errors.Is(err, player.ErrPlayerOffline):
 		return http.StatusConflict

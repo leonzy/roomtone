@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -113,6 +115,37 @@ func (a *App) initPlayback() {
 	}
 
 	a.playbackHandler = handlers.NewPlaybackHandler(a.playerManager, a.wsHub)
+	// Bundle / 移动端限制（X-04）：iOS 上 Go 后端跑在 app 进程内，推流目标
+	// 会跟着 App 一起被系统挂起，所以默认只留 local sink；桌面 Bundle 由
+	// 用户显式打开 network_sinks_enabled。拒绝时把原因原样返回，前端照抄提示。
+	a.playbackHandler.SetNetworkSinkPolicy(func() (bool, string) {
+		if runtime.GOOS == "ios" {
+			return false, "iOS 内嵌模式下不支持网络音箱（AirPlay / DLNA），请用本机播放或在服务器上部署"
+		}
+		cfg := handlers.PlayerOutputSetting{NetworkSinksEnabled: true}
+		if err := a.configService.GetJSON("player_output", &cfg); err != nil {
+			return true, ""
+		}
+		if !cfg.NetworkSinksEnabled {
+			return false, "已在设置中关闭网络音箱（/settings/player-output 的 network_sinks_enabled）"
+		}
+		return true, ""
+	})
+
+	// 播放器出口白名单：每次校验现读配置，改完不用重启（与代理白名单各自独立）。
+	a.playbackHandler.SetOutputAllowlist(func() []*net.IPNet {
+		var cfg struct {
+			Entries []string `json:"entries"`
+		}
+		if err := a.configService.GetJSON("player_output_allowlist", &cfg); err != nil {
+			return nil
+		}
+		nets, err := services.ParsePlayerOutputAllowlist(cfg.Entries)
+		if err != nil {
+			return nil
+		}
+		return nets
+	})
 	a.wsHub.OnMessage(a.handlePlayerMessage)
 
 	// 设备发现：mDNS 找 AirPlay 1 音箱，SSDP 找 DLNA renderer。

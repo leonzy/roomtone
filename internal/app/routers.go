@@ -275,6 +275,8 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/playback/party/{id}/transport", pb.PartyTransport)
 			r.Get("/settings/player-discovery", configHandler.GetPlayerDiscoverySetting)
 			r.Put("/settings/player-discovery", configHandler.UpdatePlayerDiscoverySetting)
+			r.Get("/settings/player-output-allowlist", configHandler.GetPlayerOutputAllowlistSetting)
+			r.Put("/settings/player-output-allowlist", configHandler.UpdatePlayerOutputAllowlistSetting)
 			r.Get("/settings/player-output", configHandler.GetPlayerOutputSetting)
 			r.Put("/settings/player-output", configHandler.UpdatePlayerOutputSetting)
 

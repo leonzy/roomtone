@@ -167,6 +167,15 @@ type PushSink interface {
 	WriteFrame(f Frame) error
 }
 
+// GaplessSink 能在同一会话里接续下一曲：不重新握手、不断流。
+//
+// 只有服务端推帧且 RTP 时间戳连续才有意义（RAOP）：下一曲的帧直接接着
+// 上一曲的采样序号往后写，设备端听到的是连续的声音。
+// 控制型 sink（local 自拉流）由客户端自己预取，不属于这里。
+type GaplessSink interface {
+	Continue(plan StreamPlan) error
+}
+
 // PowerSink 支持待机 / 唤醒的输出端。
 //
 // 只有真正能"安静下来又不丢会话"的设备才实现：DLNA 发 Stop 并清空 URI；
