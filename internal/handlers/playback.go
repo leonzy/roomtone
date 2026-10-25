@@ -13,7 +13,7 @@ import (
 	"songloft/internal/app/ws"
 	appmiddleware "songloft/internal/middleware"
 	"songloft/internal/player"
-	"songloft/internal/player/pipeline"
+	"songloft/internal/player/dsp"
 )
 
 // PlaybackHandler 播放控制与音箱管理。
@@ -171,14 +171,32 @@ func (h *PlaybackHandler) SetEQ(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
 		return
 	}
-	req.Bands = pipeline.NormalizeBands(req.Bands)
-	req.Preamp = pipeline.ComputePreamp(req.Bands)
+	req.Bands = dsp.NormalizeBands(req.Bands)
+	req.Preamp = dsp.ComputePreamp(req.Bands)
 	out, err := h.mgr.SetEQ(r.Context(), chi.URLParam(r, "id"), req)
 	if err != nil {
 		playbackFail(w, err)
 		return
 	}
 	respondJSON(w, http.StatusOK, out)
+}
+
+// ListEQPresets 内置 EQ 预设
+// @Summary 列出内置均衡器预设
+// @Description 返回 10 段内置预设（原声/流行/摇滚/爵士/古典/人声/电子/低频增强/高频增强/响度），每项都带服务端算好的 preamp。预设是便捷起点：前端选中后自行 PUT /players/{id}/eq 保存，服务端不记录"当前用哪个预设"。设备不存在返回 404。
+// @Tags 播放控制
+// @Produce json
+// @Param id path string true "设备 ID"
+// @Success 200 {array} player.EQPreset "预设列表"
+// @Failure 404 {object} map[string]string "设备不存在"
+// @Security BearerAuth
+// @Router /players/{id}/eq/presets [get]
+func (h *PlaybackHandler) ListEQPresets(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.mgr.GetPlayer(chi.URLParam(r, "id")); err != nil {
+		playbackFail(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, player.EQPresets())
 }
 
 // ListGroups 组列表

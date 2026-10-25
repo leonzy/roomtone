@@ -246,6 +246,7 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/players/{id}/volume", pb.SetVolume)
 			r.Get("/players/{id}/eq", pb.GetEQ)
 			r.Put("/players/{id}/eq", pb.SetEQ)
+			r.Get("/players/{id}/eq/presets", pb.ListEQPresets)
 			r.Get("/groups", pb.ListGroups)
 			r.Post("/groups", pb.CreateGroup)
 			r.Get("/groups/{id}", pb.GetGroup)

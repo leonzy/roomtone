@@ -31,7 +31,7 @@ type Decoder interface {
 
 // DecoderFactory 打开解码流。抽成接口是为了让引擎测试不依赖 ffmpeg。
 type DecoderFactory interface {
-	Open(ctx context.Context, track Track, startAt time.Duration, format Format, eq EQProfile) (Decoder, error)
+	Open(ctx context.Context, track Track, startAt time.Duration, format Format) (Decoder, error)
 }
 
 // FrameRunner 把一条 PCM 流按统一时间轴切帧推给 sinks。
@@ -105,7 +105,6 @@ type Engine struct {
 	timeline  *Timeline
 	targets   *sink.Set
 	format    Format
-	eq        EQProfile
 	cancel    context.CancelFunc
 	running   bool
 	release   func()
@@ -152,13 +151,6 @@ func (e *Engine) Transport() *Transport { return e.transport }
 func (e *Engine) SetFormat(f Format) {
 	e.mu.Lock()
 	e.format = f
-	e.mu.Unlock()
-}
-
-// SetEQ 设置组 EQ（第一版取主控设备的 EQ）。
-func (e *Engine) SetEQ(eq EQProfile) {
-	e.mu.Lock()
-	e.eq = eq
 	e.mu.Unlock()
 }
 
@@ -492,10 +484,24 @@ func (e *Engine) acquireLocked() (func(), error) {
 		return func() {}, nil
 	}
 	reason := "play"
-	if !e.eq.Flat() {
+	if e.eqActiveLocked() {
 		reason = "equalizer"
 	}
 	return e.deps.Budget.Acquire(e.ownerKind+":"+e.ownerID, reason)
+}
+
+// eqActiveLocked 组内是否有成员启用了非 flat 的 EQ。
+//
+// 有 EQ 的组必须走服务端解码（不能直通原文件），槽位耗尽时的提示文案
+// 与"同时播放数已满"区分开，用户才知道该关 EQ 还是该停一个组。
+func (e *Engine) eqActiveLocked() bool {
+	ts, _ := e.targets.Snapshot()
+	for _, t := range ts {
+		if f, ok := t.EQ.(interface{ Flat() bool }); ok && !f.Flat() {
+			return true
+		}
+	}
+	return false
 }
 
 // stopLocked 停掉当前解码协程。
@@ -560,7 +566,6 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		}
 		e.mu.Lock()
 		format := e.format
-		eq := e.eq
 		timeline := e.timeline
 		e.mu.Unlock()
 
@@ -571,7 +576,7 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			e.mu.Unlock()
 		}
 
-		dec, err := e.deps.Decoder.Open(ctx, track, position, format, eq)
+		dec, err := e.deps.Decoder.Open(ctx, track, position, format)
 		if err != nil {
 			e.fail(err)
 			return

@@ -1435,6 +1435,24 @@ definitions:
       sync_tier:
         $ref: '#/definitions/sink.SyncTier'
     type: object
+  player.EQPreset:
+    properties:
+      bands:
+        description: Bands 10 段增益（dB），顺序对应 dsp.CenterFreqs。
+        items:
+          type: number
+        type: array
+      id:
+        example: rock
+        type: string
+      name:
+        example: 摇滚
+        type: string
+      preamp:
+        description: Preamp 服务端按最大正增益算出的前级衰减（dB，≤0），前端直接用。
+        example: -5.1
+        type: number
+    type: object
   player.EQProfile:
     properties:
       bands:
@@ -4391,6 +4409,36 @@ paths:
       summary: 保存设备均衡器配置
       tags:
       - 播放控制
+  /players/{id}/eq/presets:
+    get:
+      description: 返回 10 段内置预设（原声/流行/摇滚/爵士/古典/人声/电子/低频增强/高频增强/响度），每项都带服务端算好的 preamp。预设是便捷起点：前端选中后自行
+        PUT /players/{id}/eq 保存，服务端不记录"当前用哪个预设"。设备不存在返回 404。
+      parameters:
+      - description: 设备 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 预设列表
+          schema:
+            items:
+              $ref: '#/definitions/player.EQPreset'
+            type: array
+        "404":
+          description: 设备不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出内置均衡器预设
+      tags:
+      - 播放控制
   /players/{id}/reconnect:
     post:
       description: 丢弃缓存的连接并重新握手，成功后把设备标回在线。用于音箱重启、换 IP 或路由器重连后 UI 的「重连」按钮；失败保持离线并返回
@@ -5893,7 +5941,8 @@ paths:
       consumes:
       - application/json
       description: 保存全局均衡器（EQ）配置。bands 必须包含 10 个元素，每个值在 -12 ~ +12 范围内（单位 dB）。preset
-        为预设名称（flat/rock/pop/jazz/classical/bass_boost/treble_boost/vocal/custom）。
+        为预设名称，取值与 GET /players/{id}/eq/presets 返回的 id 一致（flat/pop/rock/jazz/classical/vocal/electronic/bass_boost/treble_boost/loudness），或
+        custom 表示自定义曲线；未知预设返回 400。
       parameters:
       - description: 均衡器配置
         in: body

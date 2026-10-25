@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+
+	"songloft/internal/player"
 )
 
 const equalizerKey = "equalizer"
@@ -40,7 +42,7 @@ func (h *ConfigHandler) GetEqualizerSetting(w http.ResponseWriter, r *http.Reque
 
 // UpdateEqualizerSetting 保存均衡器配置
 // @Summary 保存均衡器配置
-// @Description 保存全局均衡器（EQ）配置。bands 必须包含 10 个元素，每个值在 -12 ~ +12 范围内（单位 dB）。preset 为预设名称（flat/rock/pop/jazz/classical/bass_boost/treble_boost/vocal/custom）。
+// @Description 保存全局均衡器（EQ）配置。bands 必须包含 10 个元素，每个值在 -12 ~ +12 范围内（单位 dB）。preset 为预设名称，取值与 GET /players/{id}/eq/presets 返回的 id 一致（flat/pop/rock/jazz/classical/vocal/electronic/bass_boost/treble_boost/loudness），或 custom 表示自定义曲线；未知预设返回 400。
 // @Tags 设置
 // @Accept json
 // @Produce json
@@ -55,6 +57,14 @@ func (h *ConfigHandler) UpdateEqualizerSetting(w http.ResponseWriter, r *http.Re
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
 		return
+	}
+	// 预设名与 GET /players/{id}/eq/presets 同一份表，避免两套常量漂移。
+	// "custom" 表示用户自己拖的曲线，没有对应预设。
+	if req.Preset != "" && req.Preset != "custom" {
+		if _, ok := player.EQPresetByID(req.Preset); !ok {
+			respondError(w, http.StatusBadRequest, "未知的预设："+req.Preset, nil)
+			return
+		}
 	}
 	if len(req.Bands) != 10 {
 		respondError(w, http.StatusBadRequest, "bands 必须包含 10 个元素", nil)

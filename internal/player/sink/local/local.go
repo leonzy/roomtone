@@ -34,6 +34,10 @@ type Command struct {
 	Volume     int    `json:"volume,omitempty"`
 	Muted      bool   `json:"muted,omitempty"`
 	Format     string `json:"format,omitempty"`
+	// EQ 该设备的均衡器状态。AppliedBy 告诉客户端"这条曲线谁来执行"：
+	// 本机是自拉流，服务端拿不到它的 PCM，所以是 client——客户端必须
+	// 按 Bands/Preamp 应用，且只应用一次。
+	EQ *sink.EQSettings `json:"eq,omitempty"`
 }
 
 // Report 客户端每 500ms 上报的状态。
@@ -56,6 +60,7 @@ type Sink struct {
 	plan    sink.StreamPlan
 	volume  int
 	muted   bool
+	eq      sink.EQSettings
 	started time.Time
 	closed  bool
 	// offset 服务端与客户端时钟的偏移估计（客户端时间 - 服务端时间）。
@@ -102,12 +107,19 @@ func (s *Sink) Open(_ context.Context, plan sink.StreamPlan) error {
 	if s.ctl == nil {
 		return errors.New("local sink: 客户端连接已断开")
 	}
-	return s.ctl.SendCommand(Command{
+	s.mu.Lock()
+	eq := s.eq
+	s.mu.Unlock()
+	cmd := Command{
 		Cmd:        "load",
 		SongID:     plan.SongID,
 		PositionMs: plan.Position.Milliseconds(),
 		Format:     string(plan.Format.Codec),
-	})
+	}
+	if eq.AppliedBy != "" {
+		cmd.EQ = &eq
+	}
+	return s.ctl.SendCommand(cmd)
 }
 
 // Start 下发 play，带绝对起播时刻。
@@ -143,6 +155,27 @@ func (s *Sink) SetVolume(v float64) error {
 		return nil
 	}
 	return s.ctl.SendCommand(Command{Cmd: "volume", Volume: s.volume})
+}
+
+// SetEQ 下发该设备的 EQ 曲线。
+//
+// 曲线随 load 一起重发，客户端重连后不需要额外拉一次状态；播放中调整
+// 走独立的 eq 指令，客户端按 20ms 斜坡过渡，不断音。
+func (s *Sink) SetEQ(eq sink.EQSettings) error {
+	s.mu.Lock()
+	s.eq = eq
+	s.mu.Unlock()
+	if s.ctl == nil {
+		return nil
+	}
+	return s.ctl.SendCommand(Command{Cmd: "eq", EQ: &eq})
+}
+
+// EQ 当前下发的 EQ 曲线（测试与状态查询用）。
+func (s *Sink) EQ() sink.EQSettings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.eq
 }
 
 // Pause 下发暂停（引擎停掉解码后调用，客户端保留本地缓冲）。
@@ -243,7 +276,7 @@ func (s *Sink) Offset() time.Duration {
 // ValidateCommand 校验指令名，防止前后端拼错时静默失效。
 func ValidateCommand(cmd string) error {
 	switch cmd {
-	case "load", "play", "pause", "stop", "seek", "volume":
+	case "load", "play", "pause", "stop", "seek", "volume", "eq":
 		return nil
 	}
 	return fmt.Errorf("unknown local command %q", cmd)

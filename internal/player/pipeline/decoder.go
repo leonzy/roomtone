@@ -44,7 +44,7 @@ func NewFFmpegDecoderFactory(pathFn func() string, logger *slog.Logger) *FFmpegD
 }
 
 // Open 启动 ffmpeg，输出 s16le。
-func (f *FFmpegDecoderFactory) Open(ctx context.Context, track player.Track, startAt time.Duration, format sink.Format, eq player.EQProfile) (player.Decoder, error) {
+func (f *FFmpegDecoderFactory) Open(ctx context.Context, track player.Track, startAt time.Duration, format sink.Format) (player.Decoder, error) {
 	path := ""
 	if f.PathFn != nil {
 		path = strings.TrimSpace(f.PathFn())
@@ -56,29 +56,7 @@ func (f *FFmpegDecoderFactory) Open(ctx context.Context, track player.Track, sta
 		return nil, fmt.Errorf("song %d has no playable source", track.SongID)
 	}
 
-	args := []string{"-nostdin", "-hide_banner", "-loglevel", "error"}
-	if startAt > 0 {
-		args = append(args, "-ss", fmt.Sprintf("%.3f", startAt.Seconds()))
-	}
-	if track.RemoteURL != "" {
-		// 远程 URL：不落盘，直连。ffmpeg 只支持 HTTP/HTTPS 代理。
-		args = append(args, "-reconnect", "1", "-reconnect_streamed", "1", "-i", track.RemoteURL)
-	} else {
-		args = append(args, "-i", track.Path)
-	}
-	args = append(args, "-vn")
-	if filter := BuildFilterChain(eq); filter != "" {
-		args = append(args, "-af", filter)
-	}
-	args = append(args,
-		"-f", "s16le",
-		"-acodec", "pcm_s16le",
-		"-ar", fmt.Sprintf("%d", format.SampleRate),
-		"-ac", fmt.Sprintf("%d", format.Channels),
-		"pipe:1",
-	)
-
-	cmd := exec.CommandContext(ctx, path, args...)
+	cmd := exec.CommandContext(ctx, path, decoderArgs(track, startAt, format)...)
 	// 独立进程组：ctx 取消时 CommandContext 只 kill 父进程，
 	// ffmpeg 自己 fork 的子进程会变孤儿继续吃 CPU。
 	setProcessGroup(cmd)
@@ -97,6 +75,32 @@ func (f *FFmpegDecoderFactory) Open(ctx context.Context, track player.Track, sta
 		d.kill()
 	}()
 	return d, nil
+}
+
+// decoderArgs 拼 ffmpeg 命令行。
+//
+// **不带任何 -af**：EQ 在分发之后由 Go 逐样本处理（internal/player/dsp）。
+// 每台音箱各起一个带滤镜的 ffmpeg 会退回多解码源，同步地基直接崩掉；
+// 一条共享滤镜链又只能有一个声音，所以滤镜方案整体否决。
+func decoderArgs(track player.Track, startAt time.Duration, format sink.Format) []string {
+	args := []string{"-nostdin", "-hide_banner", "-loglevel", "error"}
+	if startAt > 0 {
+		args = append(args, "-ss", fmt.Sprintf("%.3f", startAt.Seconds()))
+	}
+	if track.RemoteURL != "" {
+		// 远程 URL：不落盘，直连。ffmpeg 只支持 HTTP/HTTPS 代理。
+		args = append(args, "-reconnect", "1", "-reconnect_streamed", "1", "-i", track.RemoteURL)
+	} else {
+		args = append(args, "-i", track.Path)
+	}
+	args = append(args, "-vn",
+		"-f", "s16le",
+		"-acodec", "pcm_s16le",
+		"-ar", fmt.Sprintf("%d", format.SampleRate),
+		"-ac", fmt.Sprintf("%d", format.Channels),
+		"pipe:1",
+	)
+	return args
 }
 
 type ffmpegDecoder struct {

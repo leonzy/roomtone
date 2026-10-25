@@ -85,6 +85,26 @@ func (f Format) BytesPerSample() int { return f.Bits / 8 }
 // FrameBytes 一个采样帧（所有声道）的字节数。
 func (f Format) FrameBytes() int { return f.BytesPerSample() * f.Channels }
 
+// EQ 执行方。防"双重 EQ"的唯一开关：服务端与客户端只允许一方应用曲线，
+// 两边都做会把 -6dB 叠成 -12dB，用户听到的是明显过头的音色。
+const (
+	// EQAppliedByServer 服务端在分发之后逐样本处理（RAOP / DLNA 这类服务端推帧的场景）。
+	EQAppliedByServer = "server"
+	// EQAppliedByClient 客户端自拉流，服务端不下发 PCM，由客户端按曲线自行处理。
+	EQAppliedByClient = "client"
+)
+
+// EQSettings 下发给客户端（或留在服务端）的 EQ 状态。
+//
+// Bands 顺序固定对应 31/62/125/250/500/1k/2k/4k/8k/16k Hz，Preamp 已由服务端
+// 按最大正增益算好（≤0），客户端直接用，不要自己再算一遍。
+type EQSettings struct {
+	Enabled   bool      `json:"enabled"`
+	Bands     []float64 `json:"bands"`
+	Preamp    float64   `json:"preamp"`
+	AppliedBy string    `json:"applied_by"`
+}
+
 // StreamPlan 下发给 sink 的播放计划。
 type StreamPlan struct {
 	Format   Format

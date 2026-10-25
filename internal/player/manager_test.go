@@ -186,7 +186,7 @@ type toneDecoderFactory struct {
 	starts  []time.Duration
 }
 
-func (f *toneDecoderFactory) Open(_ context.Context, _ player.Track, startAt time.Duration, _ player.Format, _ player.EQProfile) (player.Decoder, error) {
+func (f *toneDecoderFactory) Open(_ context.Context, _ player.Track, startAt time.Duration, _ player.Format) (player.Decoder, error) {
 	f.mu.Lock()
 	f.starts = append(f.starts, startAt)
 	f.mu.Unlock()

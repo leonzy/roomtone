@@ -381,11 +381,10 @@ func (m *Manager) SetEQ(ctx context.Context, id string, eq EQProfile) (EQProfile
 		enabled := eq.Enabled
 		m.deps.Bus.Publish(Event{Type: EventEQChanged, PlayerID: id, Enabled: &enabled, Preset: eq.Preset})
 	}
-	// EQ 变了要重开解码器才生效。
+	// EQ 挂在分发的每路链上：重建目标即可，不需要重开解码器，
+	// 播放中调整只会有 20ms 斜坡，不断音。
 	for _, gid := range groups {
-		if e := m.engine("group", gid); e != nil {
-			e.SetEQ(m.groupEQ(gid))
-		}
+		m.rebuildSinks(ctx, gid)
 	}
 	return eq, nil
 }
@@ -891,22 +890,7 @@ func (m *Manager) ensureEngine(ctx context.Context, g Group) {
 	})
 	m.engines[key] = e
 	m.mu.Unlock()
-	e.SetEQ(m.groupEQ(g.ID))
 	m.rebuildSinks(ctx, g.ID)
-}
-
-// groupEQ 组 EQ 取主控设备的配置（第一版：一台音箱一个 EQ，组内以主控为准）。
-func (m *Manager) groupEQ(groupID string) EQProfile {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	g, ok := m.groups[groupID]
-	if !ok {
-		return EQProfile{}
-	}
-	if p, ok := m.players[g.MasterID]; ok {
-		return p.EQ
-	}
-	return EQProfile{}
 }
 
 // rebuildSinks 按组成员重建推送目标。
@@ -940,6 +924,9 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) {
 		if !ok {
 			continue
 		}
+		// 控制型 sink（local 自拉流）不进分发列表：服务端拿不到它的 PCM，
+		// 曲线只能下发给客户端自己执行，字段里写清 applied_by 防双重 EQ。
+		m.syncControlEQ(s, p)
 		ps, ok := s.(sink.PushSink)
 		if !ok {
 			continue
@@ -954,6 +941,34 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) {
 	// 播放中增删成员走差异路径：新增的立刻接进时间轴，移除的立刻停。
 	if err := e.SetTargets(ctx, targets); err != nil {
 		m.deps.Logger.Warn("attach playback target failed", "group", groupID, "err", err)
+	}
+}
+
+// eqSettingsFor 把设备 EQ 翻成下发结构（客户端与 WS 共用一份口径）。
+func eqSettingsFor(p *Player, appliedBy string) sink.EQSettings {
+	bands := dsp.NormalizeBands(p.EQ.Bands)
+	return sink.EQSettings{
+		Enabled:   !p.EQ.Flat(),
+		Bands:     bands,
+		Preamp:    p.EQ.Preamp,
+		AppliedBy: appliedBy,
+	}
+}
+
+// syncControlEQ 给控制型 sink 下发 EQ 状态。
+//
+// 这类设备（本机客户端）自己拉 /songs/{id}/stream，服务端不接触它的 PCM，
+// 所以曲线必须由客户端执行；applied_by=client 让客户端不要等"服务端已处理"。
+func (m *Manager) syncControlEQ(s sink.Sink, p *Player) {
+	type eqSetter interface {
+		SetEQ(sink.EQSettings) error
+	}
+	es, ok := s.(eqSetter)
+	if !ok {
+		return
+	}
+	if err := es.SetEQ(eqSettingsFor(p, sink.EQAppliedByClient)); err != nil {
+		m.deps.Logger.Warn("push eq to client failed", "player", p.ID, "err", err)
 	}
 }
 
