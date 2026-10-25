@@ -120,8 +120,15 @@ export default async () => {
     },
 
     sitemap: {
-      // 含 base：VitePress 只拿 hostname 拼页面路径，不会自己补 /roomtone/
-      hostname: 'https://leonzy.github.io/roomtone',
+      // VitePress 用 sitemap 包把页面路径（以 / 开头）解析到 hostname 上，
+      // 前导斜杠会把 base 吃掉，所以 hostname 只写域名，子路径由 transformItems 补。
+      hostname: 'https://leonzy.github.io',
+      transformItems: (items) =>
+        items.map((item) => ({
+          ...item,
+          url: `${BASE}${item.url}`,
+          links: item.links?.map((link) => ({ ...link, url: `${BASE}${link.url}` })),
+        })),
     },
 
     lastUpdated: true,
