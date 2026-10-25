@@ -129,6 +129,11 @@ function rewriteLinks(content, { en = false } = {}) {
     if (path === 'README.md' || path === './README.md') {
       return `${open}./quick-start.md${suffix}${close}`;
     }
+    // NOTICE 系列在仓库根没有 .md 后缀（NOTICE / NOTICE.en），同步后目标是 ./NOTICE.md。
+    // 不改写的话 en 侧会留下 ./NOTICE.en，VitePress 找不到该页直接判死链。
+    if (path === 'NOTICE' || path === './NOTICE' || path === 'NOTICE.en' || path === './NOTICE.en') {
+      return `${open}./NOTICE.md${suffix}${close}`;
+    }
 
     return `${open}${path}${suffix}${close}`;
   });

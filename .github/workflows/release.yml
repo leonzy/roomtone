@@ -940,6 +940,22 @@ jobs:
           cd clients/player
           flutter pub get
 
+      - name: Relax -Werror in Linux plugin CMake
+        run: |
+          # 插件（tray_manager 等）把 -Werror 写进 CMakeLists，新版 libayatana 头把
+          # app_indicator_new 标成 deprecated，于是整包构建直接报错。降级为警告即可，
+          # 该 API 在运行时仍然可用。
+          mapfile -t files < <(grep -rl -- '-Werror' \
+            clients/player/linux/CMakeLists.txt \
+            clients/player/linux/flutter/ephemeral/.plugin_symlinks/*/linux/CMakeLists.txt 2>/dev/null || true)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no -Werror found, nothing to do"
+            exit 0
+          fi
+          printf '%s\n' "${files[@]}"
+          # 用 perl 而非 sed -i：BSD/GNU sed 的 -i 参数不兼容，perl -pi 两边行为一致。
+          perl -pi -e 's/-Werror(=[a-zA-Z-]*)?//g' "${files[@]}"
+
       - name: Build Flutter Linux with embedded backend
         run: |
           cd clients/player
