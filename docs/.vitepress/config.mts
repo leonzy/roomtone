@@ -6,8 +6,13 @@ import AutoSidebar from 'vite-plugin-vitepress-auto-sidebar';
 import taskLists from 'markdown-it-task-lists'
 import llmstxt from 'vitepress-plugin-llms'
 
+// GitHub Pages 项目站点部署在 /roomtone/ 子路径下。VitePress 会自动给 markdown 链接
+// 和主题资源加上 base，但 head 里的裸路径不会，所以下面统一拼 BASE。
+const BASE = '/roomtone/'
+
 export default async () => {
   return withMermaid(defineConfig({
+    base: BASE,
     title: "Roomtone",
     description: "Songloft - 自托管个人音乐服务器，支持 JS 插件扩展、Flutter 与 Lynx 客户端",
     lang: 'zh-Hans',
@@ -55,11 +60,11 @@ export default async () => {
     },
 
     head: [
-      ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+      ['link', { rel: 'icon', type: 'image/svg+xml', href: `${BASE}favicon.svg` }],
       ['meta', { property: 'og:type', content: 'website' }],
       ['meta', { property: 'og:title', content: 'Songloft - 自托管个人音乐服务器' }],
       ['meta', { property: 'og:description', content: '简单、自由、插件化的个人音乐服务器，支持 JS 插件扩展' }],
-      ['meta', { property: 'og:image', content: 'https://songloft.hanxi.cc/logo.png' }],
+      ['meta', { property: 'og:image', content: 'https://leonzy.github.io/roomtone/logo.png' }],
     ],
 
     themeConfig: {
@@ -115,7 +120,8 @@ export default async () => {
     },
 
     sitemap: {
-      hostname: 'https://songloft.hanxi.cc',
+      // 含 base：VitePress 只拿 hostname 拼页面路径，不会自己补 /roomtone/
+      hostname: 'https://leonzy.github.io/roomtone',
     },
 
     lastUpdated: true,
