@@ -362,10 +362,10 @@ jobs:
 
           # VERSION=dev 时 Makefile 自动加 -tags dev（Swagger + pprof）
           make build-cross GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            GOARM=${{ matrix.goarm }} OUTPUT="songloft-${SUFFIX}${EXT}"
+            GOARM=${{ matrix.goarm }} OUTPUT="roomtone-${SUFFIX}${EXT}"
 
           make build-cross GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            GOARM=${{ matrix.goarm }} OUTPUT="songloft-${SUFFIX}-lite${EXT}" \
+            GOARM=${{ matrix.goarm }} OUTPUT="roomtone-${SUFFIX}-lite${EXT}" \
             EXTRA_TAGS=lite BUILD_TYPE=lite
 
           ls -lh songloft-${SUFFIX}*

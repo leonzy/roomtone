@@ -6,6 +6,8 @@ This page describes Flutter. The ReactLynx + TypeScript preview client supports 
 
 The Songloft Flutter client supports six platforms: **Android, iOS, macOS, Windows, Linux, and Web**. The full server defaults to the separate Lynx Web client (`clients/player-lynx`); legacy embedded Flutter Web remains an explicit option. Flutter also supports **Bundle local mode**: embedding the Go backend into the client (as a native library via gomobile on mobile, and as a subprocess on desktop), so users can play local music without deploying a separate server.
 
+> Player/speaker interaction design (output picker, dynamic grouping, playback transfer, party and per-speaker EQ, local player takeover) is a separate topic: see [Playback and Speaker Interaction Design (Frontend)](./architecture_playback_ui.md). The backend contract lives in [Playback Control and Speaker Output Architecture](./architecture_playback.md).
+
 ## Tech Stack
 
 - **Framework**: Flutter 3.41+ / Dart 3.7+

@@ -45,7 +45,7 @@ COPY . .
 # 同时挂载 GOMODCACHE 和 GOCACHE
 # Makefile 根据 VERSION=dev 自动启用 dev 编译标签（含 Swagger + pprof）
 # 用 build-cross 交叉编译到 $TARGETOS/$TARGETARCH（GOARM 由 $TARGETVARIANT 推导），
-# 始终在原生 amd64 上编译 + UPX，产物统一输出为 /app/songloft
+# 始终在原生 amd64 上编译 + UPX，产物统一输出为 /app/roomtone
 ARG LITE_BUILD=false
 ARG VERSION
 RUN --mount=type=cache,target=/go/pkg/mod \
@@ -54,7 +54,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     echo "VERSION=[${VERSION}] LITE_BUILD=[${LITE_BUILD}] TARGET=[${TARGETOS}/${TARGETARCH}/${TARGETVARIANT}]" && \
     case "${TARGETVARIANT}" in v7) GOARM=7;; v6) GOARM=6;; *) GOARM=;; esac && \
     if [ "$LITE_BUILD" = "true" ]; then \
-        make build-cross GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" GOARM="${GOARM}" OUTPUT=songloft \
+        make build-cross GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" GOARM="${GOARM}" OUTPUT=roomtone \
             EXTRA_TAGS=lite BUILD_TYPE=lite \
             GIT_COMMIT="${GIT_COMMIT}" BUILD_TIME="${BUILD_TIME}" \
             TRACELY_APP_ID="${TRACELY_APP_ID}" \
@@ -62,7 +62,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
             TRACELY_HOST="${TRACELY_HOST}" \
             ${VERSION:+VERSION=${VERSION}}; \
     else \
-        make build-cross GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" GOARM="${GOARM}" OUTPUT=songloft \
+        make build-cross GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" GOARM="${GOARM}" OUTPUT=roomtone \
             GIT_COMMIT="${GIT_COMMIT}" BUILD_TIME="${BUILD_TIME}" \
             TRACELY_APP_ID="${TRACELY_APP_ID}" \
             TRACELY_APP_SECRET="${TRACELY_APP_SECRET}" \
@@ -114,7 +114,7 @@ COPY --link --from=ghcr.io/songloft-org/songloft-base-ffmpeg:latest /ffprobe /bi
 COPY --link --chmod=0755 scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
 
 # 主程序二进制每次构建都变 → 放在最后一个 content 层，更新时仅此层需重新下载
-COPY --link --from=go-builder /app/songloft /app/songloft
+COPY --link --from=go-builder /app/roomtone /app/roomtone
 
 EXPOSE 58091
 

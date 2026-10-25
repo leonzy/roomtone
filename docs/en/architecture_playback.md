@@ -1,0 +1,594 @@
+# Playback Control and Speaker Output Architecture (Design Draft)
+
+> **Status: design proposal, not implemented.** This document describes how Songloft extends from a "client-authoritative media server" into one that owns playback state and pushes audio to speakers on the local network.
+>
+> References: Lyrion Music Server (`../slimserver`, Perl) — `Slim/Player/Source.pm`, `Sync.pm`, `CapabilitiesHelper.pm`; shairport-sync (reverse reference for RAOP receivers); OwnTone (RAOP sender reference).
+
+## 1. Goals and Non-Goals
+
+### 1.1 Goals
+
+| # | Goal | Notes |
+|---|---|---|
+| G1 | **Server-side queue and playback state** | Queue, current track, position, repeat/shuffle held by the server, consistent across clients |
+| G2 | **Push to AirPlay speakers (AirPlay 1 / RAOP)** | Server pushes PCM to the speaker; no client involved |
+| G3 | **Push to DLNA/UPnP speakers** | Server drives the renderer over SOAP; the device pulls the stream |
+| G4 | **Multi-room sync** | Exact sync inside AirPlay groups; aligned start only for DLNA |
+| G5 | **First-party client joins as a player** | Flutter client registers as a `local` sink and can share a group |
+| G6 | **Resume after restart** | Restore track and position after a server restart or device reconnect |
+| G7 | **Party mode** | Multiple groups play the same track at once; each group keeps its own volume and can join/leave without affecting the others (§4.7) |
+| G8 | **Per-speaker equalizer** | Independent 10-band EQ per speaker, applied inside the server-side PCM pipeline (§4.8) |
+
+### 1.2 Non-Goals
+
+- **AirPlay 2** (HomePod, Apple TV, and other AP2-only devices). Rationale in §2.
+- **Chromecast / native Sonos / native TIDAL Connect.** Chromecast may become a separate sink later.
+- **Video casting.** The existing HLS path (`/songs/{id}/stream?media=video`) is unchanged.
+- **Plugin scripts controlling players.** The first version exposes REST/WS only; the plugin bridge is deferred (§8.5).
+- **Sample-accurate sync across a party.** A party only guarantees "same track, same logical position, within 1.5s" (§4.7), never ±20ms across groups. Use a sync group when sample accuracy matters.
+
+## 2. Protocol Reality Check
+
+Settle feasibility up front to avoid rework.
+
+| Protocol | Server push | Sync accuracy | Shared clock | Open-source sender status |
+|---|---|---|---|---|
+| **RAOP (AirPlay 1)** | ✅ RTP push | **±10–20 ms** | ✅ sync packets map `rtp ↔ ntp` | OwnTone `raop.c`; no usable Go library (3 repos, all stale/zero-star) |
+| **AirPlay 2** | ✅ buffered stream | ±10 ms | ✅ PTP/NTP | **No mature open-source sender**; needs FairPlay SAP + HAP pairing + encrypted buffered audio |
+| **DLNA / UPnP** | ⚠️ commands only, device pulls | **±200–500 ms, drifting** | ❌ no clock in the protocol | Mature control-plane libraries (`goupnp`); sync is unsolvable |
+
+Conclusions:
+
+1. **RAOP must be written in-house**, but the protocol is public and has a receiver implementation to mirror; scope is manageable (~3k lines of Go).
+2. **AirPlay 2 is out of scope.** It requires reverse-engineered FairPlay handshakes and pairing, and there is no dependable sender implementation anywhere. AP2-only devices are explicitly marked "unsupported" in the UI.
+3. **DLNA cannot be tightly synced.** This is a protocol ceiling, not an implementation-quality issue. It must be modelled explicitly via `SyncTier` and surfaced to users (§4.3).
+
+> Additional fact: LMS itself has no native AirPlay/DLNA output either — its ecosystem relies on `airupnp`/`ShairTunes2W` bridges, and **those bridges have no sync at all**. This design goes beyond LMS on that point.
+
+## 3. Overall Architecture
+
+```
+                     REST / WebSocket
+   ┌─────────────────────────────────────────────────────────────┐
+   │  internal/player                                            │
+   │                                                             │
+   │  Party ─► Queue ─► Transport ─► Timeline ─┬─► EQ ─► raop.Sink
+   │  (party)   (queue)  (state machine)(clock) ├─► EQ ─► local.Sink
+   │                                │          └─► EQ ─► dlna.Sink
+   │                          Decoder(ffmpeg)
+   │                          one decode · one PCM stream
+   └─────────────────────────────────────────────────────────────┘
+                                    │
+              ┌─────────────────────┼─────────────────────┐
+              ▼                     ▼                     ▼
+        RTP/RTSP → AirPlay      WS cmds → client       SOAP → DLNA
+```
+
+Three responsibilities: **Party decides *what plays*** (content unit), **Group decides *who is exactly in step*** (sync unit), **EQ decides *how each device sounds*** (device unit). They never replace each other — see §4.7 / §4.8.
+
+Package layout (mirrors the existing `internal/` layering: Service calls it, Handler only converts protocols):
+
+```
+internal/player/
+  manager.go       player registry, discovery scheduling, state event bus
+  player.go        Player entity and capability model
+  group.go         sync group: master/slave, delay compensation, format negotiation
+  queue.go         queue semantics (current / repeat / shuffle / jump / preload)
+  transport.go     transport state machine
+  timeline.go      unified timeline and frame fan-out
+  party.go         party: shared queue and logical position across groups, drift correction
+  budget.go        concurrent *decoding group* limit (independent of transcode slots)
+  eq.go            per-speaker EQ config and preamp computation
+  pipeline/
+    decoder.go     ffmpeg → s16le single decode source + ring buffer
+    resample.go    in-group sample-rate alignment (via ffmpeg -ar)
+    biquad.go      RBJ peaking cascade (one instance per sink, sample-count preserving)
+  sink/
+    sink.go        Sink / PushSink / PullSink interfaces
+    local/         WebSocket commands + client pull
+    raop/          RTSP + RTP + AES + pacing
+    dlna/          SSDP + SOAP + DIDL-Lite
+  clock.go         monotonic ↔ NTP conversion (injectable for tests)
+```
+
+## 4. Core Mechanics
+
+### 4.1 One decode source, many sinks (the foundation of sync)
+
+**Never** start one ffmpeg per speaker: process-startup jitter plus differing buffer depths means hundreds of milliseconds of skew at t=0, and it never converges.
+
+The correct approach (exactly LMS `Source.pm`'s `shift->master()` semantics: the master owns the single source, members share it):
+
+```
+one ffmpeg process → s16le/44100/2ch → ring buffer (3s) → 882 frames every 20ms
+                                                        ├─ raop A: same bytes + same RTP timestamp
+                                                        ├─ raop B: same bytes + same RTP timestamp
+                                                        └─ local C: same bytes + same play_at
+```
+
+Sync then degenerates into "each sink plays according to its own timestamp"; accuracy depends only on the protocol's clock capability, not on Go-side scheduling.
+
+**Side benefit:** a single decode source gives **gapless playback for free** — the next track simply continues the same RTP timeline, with no device-side gapless support required. DLNA still needs `SetNextAVTransportURI`.
+
+**The one exception is EQ**: every speaker has a different equalizer, so the bytes leaving the fan-out necessarily differ. EQ therefore sits **after fan-out and before encoding**, yet shares the same timeline because it preserves the sample count (§4.8).
+
+### 4.2 Unified timeline
+
+```go
+type Timeline struct {
+    t0         time.Time     // group start (monotonic base)
+    sampleRate int           // unified sample rate for the group
+    anchor     uint32        // RTP timestamp at start
+    latency    time.Duration // default 2s (RAOP buffer window)
+}
+
+// absolute play time of the n-th sample frame
+func (t *Timeline) At(n uint64) time.Time {
+    return t.t0.Add(time.Duration(float64(n)/float64(t.sampleRate)*float64(time.Second)) + t.latency)
+}
+```
+
+- Use the monotonic reading of `time.Now()`, **never the wall clock** (an NTP jump would tear the timeline apart).
+- RAOP's NTP timestamps are derived from the same base in `clock.go`, keeping the `rtp ↔ ntp` mapping monotonic.
+- The clock must be injectable (`type Clock interface{ Now() time.Time }`); otherwise timing logic cannot be tested deterministically.
+
+### 4.3 Sync tiers (must be modelled explicitly)
+
+```go
+type SyncTier int
+
+const (
+    SyncExact   SyncTier = iota // RAOP / local: ±20ms
+    SyncAligned                 // DLNA: aligned start only, drifts
+)
+```
+
+Rules:
+
+- All members `SyncExact` → exact sync.
+- Any DLNA member → the whole group degrades to `SyncAligned`; the API returns `sync_tier` and the UI states "includes a DLNA device, sync accuracy reduced".
+- **Never** add a DLNA member to an exact group without degrading it — that turns "acceptable" into "unlistenable" instantly.
+
+Optional (default off): `dlna_realign_interval`, silently re-align every N minutes via stop→seek→play, at the cost of one audible gap.
+
+### 4.4 Queue and transport state machine
+
+Queue semantics mirror LMS `Playlist.pm`:
+
+- `currentIndex` + `repeat(all|one|off)` + `shuffle`
+- `jump(index)`, `next/prev`, `insertNext`
+- **Preload**: start decoding the next track when the current one has < 30s left, guaranteeing gapless
+
+State machine:
+
+```
+idle ──load──► loading ──► buffering ──► playing ⇄ paused
+                   │            │            │
+                   └────────────┴────────────┴──► error ──recover──► idle
+```
+
+- The `buffering → playing` transition is gated on **ring-buffer water level** (default 2s), not "first frame arrived".
+- `error` carries a readable reason (unreachable device / unsupported format / ffmpeg missing) and maps directly onto an API error.
+- Group state = master state; a member going offline does not change group state, it only sets `member_offline`.
+
+### 4.5 Capability negotiation and format unification
+
+```go
+type Caps struct {
+    Codecs        []Codec // l16 / alac / aac / mp3 / wav / flac
+    MaxSampleRate int
+    Channels      int
+    VolumeRange   [2]float64 // dB or 0-100, interpreted per kind
+}
+```
+
+Negotiation rules (mirroring LMS `CapabilitiesHelper::samplerateLimit`):
+
+1. Sample rate = **the minimum of all members' maximums**; adding a 48k-only device forces the group to 48k.
+2. Codec degrades by compatibility: `l16 → aac → mp3` (lossless first, lossy as a fallback so audio still plays).
+3. Channels unified to 2; mono sources are upmixed.
+4. DSD / APE / M4A and friends are converted to PCM by ffmpeg during decode; Go never decodes audio itself.
+
+### 4.6 Buffering and underrun
+
+- Ring buffer target 2s (aligned with RAOP latency), floor 500ms.
+- On underrun, **insert silence** rather than stalling: the RTP timeline must stay continuous, otherwise the whole group is dragged off.
+- Expose `player_underruns_total` to diagnose slow disks / slow networks.
+
+### 4.7 Party mode (many groups, one track)
+
+**The problem:** a sync group answers "how do these devices stay exactly in step", but a group has exactly one queue and one transport state. What users actually want is "kitchen and living room play the same track, each with its own volume, and either can join or leave without disturbing the other" — that is sharing at the **content layer**, not merging at the **clock layer**.
+
+**Conclusion: a party is not "a bigger group", it is a layer above groups.** A group stays the sync unit (±20ms); a party is the content unit (within 1.5s). This also explains why merging two groups is not an option: merging would let a DLNA member in the living room drag the kitchen's exact group down with it.
+
+```go
+type Party struct {
+    ID       string
+    Name     string
+    Queue    *Queue          // shared queue, same semantics as a group queue
+    Groups   map[string]*Group
+    Leader   string          // earliest-joined online group; advances Position
+    Position time.Duration   // logical position, driven by the leader's state
+}
+```
+
+Rules:
+
+- **Shared content, independent timelines**: each group still owns its decoder and output pipeline (format, volume and sync tier are all per group). A party only shares "which track, which second".
+- **Alignment**: when `|group.position - party.position| > 1500ms`, send `seek` to that group; after 3 consecutive failed corrections mark it `out_of_sync`, surface it in the UI and suggest a sync group instead. No finer correction — a party tolerates ~1s of skew, and chasing tighter only adds audible breaks.
+- **Control surface**: `play/pause/next/prev/seek` broadcast to the whole party; `volume/mute` always stay per group or per speaker. **There is no party master volume** (rooms differ acoustically; one shared level guarantees someone can't hear).
+- **Queue ownership**: starting a party promotes the initiating group's queue to the party queue, while every group's original queue is left untouched (same as transfer — nothing is destroyed). Leaving a party returns that group to its own queue in `idle`.
+- **Join / leave**: joining attaches at `party.position` (same semantics as adding a member mid-playback); leaving defaults to "split and continue" — a new group queue built from the party's current track and position.
+- **Capacity**: each group costs one decoder, and the total party size is bounded by the same `player_max_groups` (default 4), see §8.4.
+- **Ending**: `DELETE /playback/party` stops every group and returns each to its own queue; no queue is deleted.
+- **Mutually exclusive with transfer**: during a party, `POST /groups/{id}/transfer` on a member group returns **409** with "this group is in a party, leave it first". The queue is shared by the party, and letting one group pull it out leaves the others with nothing to play — the semantics are undefinable. "Only this speaker" means leaving the party first.
+- **Why not share one decoder**: groups in a party may need different formats (a 48k DLNA group plus a 44.1k RAOP group), and RAOP has a fixed 2s buffer that DLNA does not. Forcing them to share only drags both into one downgrade. One extra ffmpeg process buys "each group stays at its best".
+
+### 4.8 Per-speaker equalizer (server-side DSP)
+
+**Why it must be server-side**: the existing EQ (`/settings/equalizer`, 10 bands, -12..+12dB, implemented with mpv `af`) applies to the local client player. Once playback is pushed by the server, the client only receives encoded bytes and the local EQ does nothing — the speaker plays uncorrected audio.
+
+**Why in Go rather than an ffmpeg filter**: ffmpeg's `equalizer` filter can only act on its own output, and one process carries one filter chain. Starting an ffmpeg per sink falls back to "many decode sources" and the sync foundation collapses (§4.1). EQ therefore sits **after fan-out and before encoding**, processed sample by sample in Go.
+
+```
+single decode ──► fan-out ──┬─► EQ(living room, +3dB@100Hz) ──► ALAC ──► RAOP
+                            ├─► EQ(kitchen, flat)            ──► AAC  ──► RAOP
+                            └─► EQ(study, -2dB@2kHz)        ──► WAV  ──► DLNA
+```
+
+**Why sync is unaffected**: a 10-band peaking-biquad cascade is a **sample-count-preserving** per-sample filter; it neither inserts nor drops samples. The same sample index maps to the same timestamp on every path, so "same bytes + same timestamp" becomes "same sample index + same timestamp" — the premise of sync (one timeline) is intact, only the amplitudes differ.
+
+- **Filters**: RBJ peaking EQ on the existing 10 centre frequencies (31/62/125/250/500/1k/2k/4k/8k/16k Hz), Q fixed at 1.41; `preset` reuses the exact same names as `/settings/equalizer` (flat/rock/pop/jazz/classical/bass_boost/treble_boost/vocal/custom) so we never maintain two preset sets.
+- **Pipeline order**: `decode → loudnorm(optional, group-level) → fan-out → EQ(per sink) → encode`. loudnorm normalizes content, EQ corrects a room, so the latter must come last; loudnorm's `TP=-1.5` also leaves headroom for EQ's preamp.
+- **Group delay**: at the same sample rate the cascades have identical group delay (a few ms), so relative sync inside a group is unaffected; absolute latency folds into `default_latency_ms` with no separate compensation.
+- **Clipping**: `+12dB` will clip. When a non-flat EQ is enabled the server applies `preamp = -max(0, max(band))` so peaks never exceed 0dBFS; the API must return the actual `preamp` and the UI must show it, otherwise users report "turning on EQ makes it quieter" as a bug.
+- **Hot switching**: changing EQ mid-playback resets filter state and clicks. The approach is a 20ms linear ramp on preamp while filter state continues under the new coefficients; hard reset only allowed when `idle`.
+- **Decoding is mandatory**: passthrough paths (no transcode, remote-URL direct) have no PCM. The rule is that **if any member of a group has a non-flat EQ, the group is forced onto the server decode pipeline**, honestly consuming one `player_max_groups` slot; when no slot is free return 503 with an error message that names EQ as the cause.
+- **`local` sink uses server-side EQ too**: same as any other sink, so one group never mixes two EQ sources. While the local device is a server output target, the client **disables its own EQ automatically** and labels it "EQ applied by server" to prevent double application; when the client plays on its own (server not involved) it keeps using local EQ.
+
+## 5. Sink Implementations
+
+### 5.1 Interface split
+
+```go
+type Sink interface {
+    ID() string
+    Kind() Kind
+    Caps() Caps
+    Open(ctx context.Context, plan StreamPlan) error
+    Start(at time.Time) error
+    Seek(sample uint64) error
+    SetVolume(v float64) error
+    Stop() error
+    Close() error
+    Events() <-chan Event
+}
+
+// PushSink receives frames (raop, local)
+type PushSink interface {
+    Sink
+    WriteFrame(f Frame) error
+}
+
+// PullSink only hands out a URL; the device pulls (dlna)
+type PullSink interface {
+    Sink
+    StreamURL(plan StreamPlan) (string, error)
+}
+```
+
+`Timeline` fans frames out to `PushSink` only; `PullSink`s are merely aligned at `Start`.
+
+### 5.2 `local` sink (first-party client)
+
+```
+client connects WS /api/v1/playback/events
+  → register_player {kind:"local", caps:{codecs:[...], sample_rates:[44100,48000]}}
+server sends load {song_id, position, play_at:<unix_ms>}
+client starts at (play_at - local clock offset)
+client reports {position, buffering, volume, state} every 500ms
+```
+
+- The clock offset is estimated once from the server's `server_time` plus a half-RTT correction; ±50ms is achievable on a LAN.
+- The client pulls from the existing `/songs/{id}/stream`, with `format` chosen by negotiation.
+- **This is the highest value-per-effort tier**: no external protocol risk, yet "phone + living-room speaker" works immediately.
+
+### 5.3 `raop` sink (AirPlay 1)
+
+Message sequence (RTSP over TCP, port from mDNS TXT `port`, default 5000):
+
+```
+mDNS:  _raop._tcp  TXT: txtvers=1 ch=2 cn=0,1,2,3 et=0,3,5 sr=44100 ss=16
+                        pw=false pk=<device RSA public key> tp=UDP
+
+OPTIONS  *              → Public: ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, TEARDOWN,
+                                  OPTIONS, GET_PARAMETER, SET_PARAMETER
+ANNOUNCE rtsp://…       → SDP:
+                            m=audio 0 RTP/AVP 96
+                            a=rtpmap:96 L16/44100/2
+                            a=rsaaeskey:<RSA-OAEP-SHA1(AESKey, pk)>
+                            a=aesiv:<base64(16B)>
+SETUP                   → Transport: RTP/AVP/UDP;unicast;interleaved=0-1;
+                          control_port=<c>;timing_port=<t>
+RECORD                  → start
+[20ms]  RTP audio        payload type 0x60, 12B header + AES-128-CBC(payload)
+[1s]    sync packet      type 0x54: rtp_now + ntp_sec + ntp_frac + rtp_latency
+[as needed] SET_PARAMETER  volume: -20.0 / progress: 0/12.5/240
+FLUSH                    RTP-Info: seq=…;rtptime=…   ← seek
+TEARDOWN
+```
+
+All crypto uses the standard library: `crypto/rsa` (OAEP-SHA1), `crypto/aes` (CBC), `encoding/base64`.
+
+**Why sync works:** the `sync` packet pairs `rtp_now` with `ntp_time`; each receiver maps RTP timestamps onto its own clock. Every speaker in the group receives the same mapping, so they align by construction. This is exactly why AirPlay can sync and DLNA never can.
+
+**The audio codec is the one real bet:**
+
+| Option | Compatibility | Cost | Notes |
+|---|---|---|---|
+| L16 (raw PCM) | shairport-sync family ✅; old AirPort Express / some hardware ❌ | none (no encoder) | **First choice, validate first** |
+| AAC-ADTS | most devices ✅ | low (ffmpeg `-f adts`) | Lossy; conflicts with a lossless-first server; fallback only |
+| ALAC | best | high (no mature Go encoder) | Evaluate only if L16 compatibility proves insufficient |
+
+Before release, a **real-device compatibility matrix** is mandatory (at minimum: AirPort Express, Sonos, router + shairport-sync, mainstream soundbars; Apple TV is excluded because it is AP2-only).
+
+### 5.4 `dlna` sink
+
+```
+SSDP M-SEARCH  ST: urn:schemas-upnp-org:device:MediaRenderer:1
+  → 200 OK  LOCATION: http://<ip>:<port>/desc.xml
+  → parse desc.xml, extract controlURL for AVTransport / RenderingControl / ConnectionManager
+
+SOAP SetAVTransportURI(InstanceID=0, CurrentURI=<stream URL>, CurrentURIMetaData=<DIDL-Lite>)
+SOAP Play(Speed=1)
+SOAP GetPositionInfo / GetTransportInfo      ← polling (switch to SUBSCRIBE when supported)
+SOAP SetVolume(Channel=Master, DesiredVolume=0..100)
+SOAP SetNextAVTransportURI(…)                ← gapless next track (not universally supported)
+SUBSCRIBE <eventSubURL>                      ← device pushes state
+```
+
+- The stream URL must be the **LAN-reachable absolute URL** produced by `internal/services/internal_url.go` (never `127.0.0.1`).
+- Start alignment: put every device into a paused `SetAVTransportURI` state, then issue `Play` concurrently.
+- Drift is unavoidable: buffer depths differ per device; measured 200–500ms and accumulating. Handle it via §4.3.
+- Chinese-brand speakers differ widely in SOAP dialect (tolerance for empty `CurrentURIMetaData`, `Seek` units, missing event subscriptions). Patch by `modelName` and always keep "add device by IP" as a fallback.
+
+## 6. Data Model
+
+Migration `0040_players.sql`:
+
+```sql
+CREATE TABLE players (
+    id            TEXT PRIMARY KEY,          -- raop:AA:BB:… / dlna:uuid:… / local:<device_id>
+    kind          TEXT NOT NULL CHECK(kind IN ('local','raop','dlna')),
+    name          TEXT NOT NULL,
+    address       TEXT NOT NULL DEFAULT '',
+    model         TEXT NOT NULL DEFAULT '',
+    capabilities  TEXT NOT NULL DEFAULT '{}', -- JSON, Caps
+    volume        INTEGER NOT NULL DEFAULT 0, -- normalized 0-100
+    muted         INTEGER NOT NULL DEFAULT 0,
+    online        INTEGER NOT NULL DEFAULT 0,
+    eq_profile    TEXT NOT NULL DEFAULT '{}',  -- JSON: {enabled,preset,bands[10],preamp}
+    takeover_behavior TEXT NOT NULL DEFAULT 'pause'  -- when this device is taken over: pause | follow (local only)
+                  CHECK(takeover_behavior IN ('pause','follow')),
+    last_seen_at  DATETIME,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE player_groups (
+    id               TEXT PRIMARY KEY,
+    name             TEXT NOT NULL DEFAULT '',
+    master_player_id TEXT NOT NULL DEFAULT '',
+    party_id         TEXT,                   -- non-null = this group is in a party
+    created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE party_sessions (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL DEFAULT '',
+    leader_group_id TEXT NOT NULL DEFAULT '', -- group that advances the logical position
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE player_group_members (
+    group_id      TEXT NOT NULL,
+    player_id     TEXT NOT NULL,
+    delay_ms      INTEGER NOT NULL DEFAULT 0,  -- manual delay compensation
+    volume_offset INTEGER NOT NULL DEFAULT 0,  -- relative volume within the group
+    PRIMARY KEY (group_id, player_id)
+);
+
+CREATE TABLE playback_queues (
+    owner_kind TEXT NOT NULL CHECK(owner_kind IN ('group','party')),
+    owner_id   TEXT NOT NULL,
+    position   INTEGER NOT NULL,
+    song_id    INTEGER NOT NULL,
+    PRIMARY KEY (owner_kind, owner_id, position)
+);
+
+CREATE TABLE playback_states (
+    owner_kind TEXT NOT NULL CHECK(owner_kind IN ('group','party')),
+    owner_id   TEXT NOT NULL,
+    song_id    INTEGER NOT NULL DEFAULT 0,
+    position   REAL NOT NULL DEFAULT 0,
+    state      TEXT NOT NULL DEFAULT 'idle',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (owner_kind, owner_id)
+);
+```
+
+Design notes:
+
+- **A standalone player also gets a group containing only itself**, so queue/transport logic exists once. Equivalent to LMS's `master()` simplification.
+- `playback_states` backs resume-after-restart (LMS `persistPlaybackStateForPowerOff`).
+- The queue is persisted so a restart does not lose it; the in-memory group struct remains authoritative and the DB row is a snapshot.
+- `playback_queues` / `playback_states` are generalized with `owner_kind + owner_id` so a **party reuses the same queue and state-machine code** instead of a second implementation; with `owner_kind='party'`, `owner_id` is `party_sessions.id`.
+- `eq_profile` lives on the `players` row rather than its own table: EQ is a device property on par with volume, read and written together. `preamp` is a derived value kept only to avoid recomputation and is revalidated against the current `bands` on read.
+- `party_id` on `player_groups` instead of a membership table: a group can only be in one party at a time, and a nullable FK column expresses that better than a many-to-many table.
+
+## 7. API
+
+How clients consume these endpoints (picker, transfer, dynamic grouping, dual-mode local playback) is covered in [Playback and Speaker Interaction Design (Frontend)](./architecture_playback_ui.md).
+
+### 7.1 REST
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/players` | Device list (online, caps, volume, state) |
+| POST | `/players/discover` | Trigger SSDP + mDNS scan, return newly found devices |
+| PUT | `/players/{id}` | Rename / enable / disable / `takeover_behavior` (local only) |
+| POST | `/players/{id}/volume` | `{volume, muted}` |
+| POST | `/players/{id}/reconnect` | Manually reconnect an offline device (the UI "reconnect" button) |
+| GET | `/players/{id}/eq` | That speaker's EQ config (including the server-computed `preamp`) |
+| PUT | `/players/{id}/eq` | `{enabled, preset, bands[10]}`; the server recomputes and returns `preamp` |
+| GET | `/players/{id}/eq/presets` | Preset list (same set as `/settings/equalizer`) |
+| GET | `/groups` | Sync groups (including `sync_tier`) |
+| POST | `/groups` | `{name, member_ids, master_id}` |
+| PUT | `/groups/{id}` | Members, master, per-member `delay_ms` |
+| POST | `/groups/{id}/members` | Join during playback `{player_id}`, joins at the current position |
+| DELETE | `/groups/{id}/members/{player_id}` | Leave `?mode=continue\|stop` |
+| POST | `/groups/{id}/transfer` | Transfer playback `{from_group_id, only_player_id?}`; `only_player_id` implements "play on this speaker only" |
+| GET | `/groups/{id}/queue` | Queue snapshot |
+| POST | `/groups/{id}/queue` | Append songs / playlists |
+| PUT | `/groups/{id}/queue/reorder` | Reorder / remove |
+| POST | `/groups/{id}/transport` | `{action: play\|pause\|stop\|next\|prev\|seek, position?}` |
+| GET | `/playback` | Global snapshot (UI first paint) |
+| GET | `/playback/targets` | One-shot fetch for the output picker: available targets + current target + online state/caps + party membership |
+| GET | `/playback/party` | Current party (member groups, logical position, per-group drift); 404 when there is none |
+| POST | `/playback/party` | Start a party from a group `{group_id, name?}`; keeps that group's queue |
+| POST | `/playback/party/groups` | Join a party `{group_id}`, attaching at the current logical position |
+| DELETE | `/playback/party/groups/{group_id}` | Leave a party `?mode=continue\|stop` |
+| POST | `/playback/party/transport` | `{action: play\|pause\|next\|prev\|seek, position?}`, broadcast to the whole party |
+| DELETE | `/playback/party` | End the party; every group stops and returns to its own queue |
+| GET | `/playback/events` | WebSocket subscription (state change push) |
+
+Every endpoint needs swag annotations and `@Security BearerAuth`; `@Router` paths must not include the `/api/v1` prefix.
+
+**Transfer compensation semantics**: `transfer` starts the destination at `position + transfer_compensation_ms` (default 800ms), compensating for the gap between the source stopping and the destination sounding. Compensation happens exactly once, on the server; clients must not add their own (see frontend doc §4.3).
+
+### 7.2 Settings endpoints
+
+Following the "user-visible switches live on business endpoints" rule:
+
+- `/settings/player-discovery` — `{enabled, protocols:["raop","dlna"], interval_seconds}`
+- `/settings/player-output` — `{max_groups, default_latency_ms, dlna_realign_interval_minutes, allow_private_network, party_enabled, party_drift_tolerance_ms}`
+
+`party_drift_tolerance_ms` defaults to 1500 (range 500–5000); with `party_enabled=false` starting a party returns 403 (managed or public deployments may want to forbid "every room at once").
+
+### 7.3 WebSocket authentication
+
+Browsers cannot set an `Authorization` header on WS handshakes, and putting the token in the URL leaks it into access logs. Approach: `POST /playback/events/ticket` returns a one-time ticket (30s TTL, bound to the user), then `GET /playback/events?ticket=…` upgrades.
+
+### 7.4 Event contract
+
+Every event carries a monotonic `seq`; clients drop anything below their current `seq` (reordering / replay).
+
+```
+state           {group_id, song_id, position, status, seq}
+target_changed  {group_id, from_group_id, reason}
+member_changed  {group_id, player_id, action: join|leave|offline|online}
+speaker_seen    {player_id, name, kind}
+party_changed   {party_id, action: created|joined|left|ended, group_id, seq}
+group_drift     {party_id, group_id, offset_ms, corrected}
+eq_changed      {player_id, enabled, preset}
+error           {group_id, code, message}
+```
+
+- `state` is the only source of playback state and does not say *who* triggered it; clients decide by `group_id`.
+- `target_changed` handles multi-client conflicts: when this device is playing and the target is moved away, the client follows `players.takeover_behavior` — `pause` (default) pauses immediately and informs the user, `follow` silently turns into a pure controller.
+- `group_drift` is only emitted inside a party; after 3 `corrected=false` events the client must show a persistent "out of sync" state rather than repeating toasts.
+- After a reconnect, clients must refetch `/playback` for a full reconcile rather than trusting incremental events alone.
+
+## 8. Constraints Imposed by the Existing System
+
+### 8.1 Security model conflict (must be handled separately)
+
+DLNA/RAOP require the server to **connect into the LAN**, which directly conflicts with the "block private networks" rule in `internal/services/whitelist.go`.
+
+- Add an independent `player_output_allowlist`; do **not** reuse the resource-proxy allowlist.
+- Per `docs/pitfalls.md#private-allowlist`, the existing allowlist only affects resource and transcode proxying and never loosens HLS; player output is a third, separate path.
+- A device address must fall inside the allowlist before connecting; otherwise return 403 and write an audit log entry.
+
+### 8.2 Multicast and container networking
+
+SSDP (239.255.255.250:1900) and mDNS (224.0.0.251:5353) are invisible under Docker's default bridge network.
+
+- Documentation must state `--network host` or macvlan.
+- When discovery returns nothing, the UI must show that hint instead of an empty list.
+- Provide "add device by IP + port" as the fallback when multicast is unavailable.
+
+### 8.3 Bundle mode
+
+- iOS is restricted (mDNS permission, background execution, long-lived sockets) → speaker output is **off by default** in Bundle mode; only the `local` sink is available.
+- Desktop Bundle (macOS/Windows/Linux) may enable it explicitly.
+
+### 8.4 ffmpeg budget
+
+The existing four transcode slots (`docs/pitfalls.md#url-transcode`) must not be starved by playback.
+
+- Players use an independent counter `player_max_groups` (default 4), counted in **concurrent decoding groups**:
+  - each actively playing sync group costs one;
+  - **each group inside a party costs one** (no shared decoder, §4.7), so a 4-group party exhausts the budget;
+  - a group forced onto decoding because some member has a non-flat EQ (§4.8) costs one too.
+- Each budget throttles separately; exceeding either returns 503 with distinct messages ("transcode busy" vs "player busy"), and the player side further separates "too many simultaneous outputs" from "equalizer needs decoding, no slots left".
+- Worked example: 3 sync groups + one 2-group party = 5 > 4; the fifth request is rejected and told which target to release.
+
+### 8.5 Plugin permissions (deferred)
+
+Allowing JS plugins to control players (a new `player` bridge namespace) requires updating three whitelists in lockstep:
+
+1. Host `internal/jsplugin/permissions.go` → `AllPermissions`
+2. `plugins/toolchain` → `VALID_PERMISSIONS`
+3. Scaffold → `AVAILABLE_PERMISSIONS`
+
+Version one exposes REST/WS only, avoiding a three-repo change.
+
+## 9. Phased Plan and Acceptance
+
+| Phase | Scope | Estimate | Acceptance |
+|---|---|---|---|
+| **P0** | Queue + state machine + `local` sink + WS events | 3–4 weeks | State-machine/queue unit tests; end-to-end "server drives client playback" |
+| **P1** | RAOP with L16, single device | 2 weeks | Docker `shairport-sync` plays audio; captured PCM verified for duration and waveform |
+| **P1.5** | RAOP real-device compatibility matrix | 1–2 weeks | ≥4 device classes tested; matrix documented |
+| **P2** | DLNA discovery + SOAP + unicast | 3 weeks | Fake renderer (httptest) validates SOAP/DIDL; ≥3 real devices |
+| **P3** | Sync groups (exact RAOP + cross-protocol degradation) | 2–3 weeks | Cross-correlation delay between two instances < 20ms |
+| **P2.5** | Per-speaker EQ (Go-side RBJ biquad + preamp + hot switch) | 1 week | White noise through +12dB@1kHz lands within 0.2dB at 1kHz; no sample above 0dBFS anywhere in the chain; switching EQ produces no click (no step in the waveform) |
+| **P3.5** | Party mode (multi-group shared track + drift correction) | 2 weeks | Three-group party stays within 1.5s; one group leaving does not disturb the rest; decoder count never exceeds the budget |
+| **P4** | AirPlay 2 | — | **Not planned** unless a usable open-source sender appears |
+
+**MVP (P0+P1+P2, unicast without sync) ≈ 2.5 months; with sync + EQ ≈ 3.75 months; with party ≈ 4.25 months.**
+
+### 9.1 Automated verification
+
+- **Unit**: timeline math (injected fake clock), SDP generation, AES/RSA known-answer vectors, RTP golden bytes, queue state machine.
+- **RAOP integration**: CI runs `shairport-sync --output pipe` into a file; verify duration/sample rate with `ffprobe` and content via waveform similarity.
+- **Sync accuracy**: two shairport-sync instances piped to separate files; cross-correlate to find the delay peak and assert `< 20ms`. This makes sync accuracy automatically testable.
+- **DLNA**: `httptest` fake renderer asserting SOAP bodies and `SOAPAction` headers; real devices verified manually.
+- **EQ**: white noise / sweep input, FFT and assert each band's gain within 0.2dB of the setting; assert peak ≤ 0dBFS with all bands at `+12dB` (clipping regression); assert no step larger than 0.1 in the sample stream when hot-switching.
+- **Party**: fake sinks record the logical position of their first sample and assert the spread across 3 groups is < 1.5s; slow one group by 2s artificially and assert a `group_drift{corrected:true}` plus a corrective seek within 5s.
+
+## 10. Risks
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| L16 rejected by real AirPlay hardware | Medium-high | P1 rework | Validate on real hardware during the spike; AAC-ADTS fallback |
+| Inconsistent DLNA SOAP dialects | High | Compatibility complaints | Use `SUBSCRIBE` events instead of polling; patch by model; manual add as fallback |
+| Mixed-protocol groups ruining the experience | High | Headline feature fails | Explicit `SyncTier` degradation + UI disclosure + cross-family grouping disabled by default |
+| Multicast blocked by the user's network | Medium | No devices discovered | Manual IP entry; documented Docker network requirements |
+| Underrun on the single decode source causing pops | Medium | Audible defects | 3s ring buffer + silence fill + metrics alerting |
+| Wall-clock jump tearing the timeline | Low | Whole group desyncs | Monotonic clock only; wall clock used solely for NTP conversion |
+| Party drift heard as an echo | Medium | Experience collapses | 1.5s threshold only does coarse correction; suggest a sync group when two targets share a room; UI states that a party is not exact |
+| EQ clipping / click when switching EQ | Medium | Listening quality, possible tweeter damage | Automatic preamp + 20ms ramp + clipped-sample assertion (§9.1) |
+| EQ forcing decoding and exhausting slots | Medium | Feature unusable | Error message names the cause; the UI shows remaining slots before EQ is enabled |
+
+## 11. Appendix: Reference Index
+
+| Topic | Reference |
+|---|---|
+| Single source, multi-sink | `slimserver/Slim/Player/Source.pm` (`shift->master()`) |
+| Sync groups and delay compensation | `slimserver/Slim/Player/Sync.pm` (156 lines; the core logic is tiny) |
+| Capability negotiation / min sample rate | `slimserver/Slim/Player/CapabilitiesHelper.pm` |
+| Playback state machine | `slimserver/Slim/Player/StreamingController.pm` |
+| Queue semantics | `slimserver/Slim/Player/Playlist.pm` |
+| Resume after restart | `slimserver/Slim/Networking/Slimproto.pm:305 persistPlaybackStateForPowerOff` |
+| RAOP receiver (reverse reference) | shairport-sync |
+| RAOP sender | OwnTone `src/outputs/raop.c` |

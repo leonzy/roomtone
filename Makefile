@@ -1,5 +1,5 @@
 # 变量定义
-BINARY_NAME=songloft
+BINARY_NAME=roomtone
 GO=CGO_ENABLED=0 GOAMD64=v1 go
 GO_VERSION=1.26
 GOFLAGS=-v

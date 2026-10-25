@@ -4,9 +4,9 @@ set -e
 # Docker 容器启动入口脚本
 # 用于实现二进制文件的热替换升级功能
 
-BINARY_SOURCE="/app/songloft"
+BINARY_SOURCE="/app/roomtone"
 BINARY_TARGET="/app/data/songloft"
-BINARY_BACKUP="/app/songloft.backup"
+BINARY_BACKUP="/app/roomtone.backup"
 
 echo "Songloft Docker Entrypoint"
 echo "=========================="

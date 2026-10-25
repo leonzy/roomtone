@@ -1,4 +1,10 @@
-# 🎵 Songloft Quick Start Guide
+# 🎵 Roomtone Quick Start Guide
+
+> **This repository is a fork of [Songloft](https://github.com/songloft-org/songloft), named Roomtone.**
+> All `songloft` identifiers in the code (Go module, env vars, database filename, JS bridge
+> namespaces, client integration names) are intentionally left unchanged for compatibility with
+> upstream clients and published plugins. Only the final executable (process name) is `roomtone`.
+> See [NOTICE.en](NOTICE.en) for copyright and licensing.
 
 <p align="center">
   <a href="README.md">简体中文</a> • <strong>English</strong>

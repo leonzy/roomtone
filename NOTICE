@@ -1,3 +1,8 @@
+Roomtone is a derivative work of Songloft (https://github.com/songloft-org/songloft).
+Original work: Copyright 2026 Songloft Team, licensed under Apache License 2.0.
+Modifications in this fork: project renamed to Roomtone; executable renamed to `roomtone`.
+The upstream copyright notice below is retained as required by the License.
+
 Songloft
 Copyright 2026 Songloft Team
 

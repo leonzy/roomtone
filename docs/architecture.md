@@ -8,6 +8,8 @@ Songloft 是一个自托管的本地音乐服务器，采用前后端分离架�
 
 - **[后端架构](./architecture_backend.md)** - Go 后端 API 服务详细架构
 - **[前端架构](./architecture_frontend.md)** - Flutter 跨平台前端详细架构
+- **[播放控制与音箱输出](./architecture_playback.md)** - 服务端播放队列、AirPlay/DLNA 推送、多房间同步、派对模式与每音箱 EQ（设计稿）
+- **[播放与音箱交互（前端）](./architecture_playback_ui.md)** - 输出选择器、动态分组、播放转移、派对与每音箱 EQ 交互、本地播放器接管（设计稿）
 - **[客户端选择](./clients.md)** - Flutter、Lynx、Electron Desktop 与 TV 的平台、能力和下载入口
 - **[Lynx 客户端](./player-lynx/index.md)** - 安装、构建、测试与独立发版指南
 - **[颜色系统](./color_system.md)** - Material 3 颜色体系和主题规范

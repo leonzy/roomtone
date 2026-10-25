@@ -33,6 +33,11 @@ mimusic-player-build
 
 # songloft binaries
 /songloft
+# roomtone binary (fork 的进程名)
+/roomtone
+/roomtone-linux
+/roomtone-darwin
+/roomtone.exe
 /songloft-linux
 /songloft-linux-amd64
 /songloft-linux-arm64

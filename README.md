@@ -1,4 +1,9 @@
-# 🎵 Songloft 快速使用指南
+# 🎵 Roomtone 快速使用指南
+
+> **本仓库是 [Songloft](https://github.com/songloft-org/songloft) 的 fork，项目名 Roomtone。**
+> 代码中的 `songloft` 标识（Go module、环境变量、数据库文件名、JS 桥接命名空间、
+> 客户端集成名）保持不变，以兼容上游客户端与已发布插件；仅最终可执行文件（进程名）改为 `roomtone`。
+> 版权与许可见 [NOTICE](NOTICE)。
 
 <p align="center">
   <strong>简体中文</strong> • <a href="README.en.md">English</a>

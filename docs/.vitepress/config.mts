@@ -8,7 +8,7 @@ import llmstxt from 'vitepress-plugin-llms'
 
 export default async () => {
   return withMermaid(defineConfig({
-    title: "Songloft",
+    title: "Roomtone",
     description: "Songloft - 自托管个人音乐服务器，支持 JS 插件扩展、Flutter 与 Lynx 客户端",
     lang: 'zh-Hans',
 

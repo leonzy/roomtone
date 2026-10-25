@@ -6,6 +6,8 @@
 
 Songloft Flutter 客户端支持 **Android、iOS、macOS、Windows、Linux、Web** 六个平台。完整版服务器默认嵌入独立的 Lynx Web（`clients/player-lynx`）；旧 Flutter Web 嵌入版仍可显式选择。同时支持 **Bundle 本地模式**：将 Go 后端嵌入 Flutter 客户端（移动端通过 gomobile 原生库，桌面端通过子进程），无需单独部署服务器即可播放本地音乐。
 
+> 播放器与音箱的交互设计（输出选择器、动态分组、播放转移、派对与每音箱 EQ、本地播放器接管）是独立专题，见[播放与音箱交互设计（前端）](./architecture_playback_ui.md)；后端契约见[播放控制与音箱输出架构](./architecture_playback.md)。
+
 ## 技术栈
 
 - **框架**: Flutter 3.41+ / Dart 3.7+
