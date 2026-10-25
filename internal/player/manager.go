@@ -87,6 +87,14 @@ type Manager struct {
 	eqChains map[string]*dsp.EQ
 	// partySync 每个派对一个同步环（各自 950ms 采样）。
 	partySync map[string]*partySyncState
+	// metrics 运行指标（B8-03）：解码欠载、丢帧、偏差。
+	metrics *Metrics
+	// retiredGroups 被用户显式删除过的组 id，永不复用。
+	//
+	// 单机组的 id 是 "grp-<playerID>"，删掉一个组之后成员要各自回到单机组，
+	// 如果允许复用，前端会看到"刚删掉的 id 又冒出来"，拿旧快照做 diff 的
+	// 客户端会把新组当成旧组。所以删除过的 id 进墓碑表，重建时换带时间戳的 id。
+	retiredGroups map[string]bool
 }
 
 // NewManager 创建管理器。
@@ -112,6 +120,9 @@ func NewManager(deps ManagerDeps) *Manager {
 		parties:   make(map[string]*Party),
 		eqChains:  make(map[string]*dsp.EQ),
 		partySync: make(map[string]*partySyncState),
+
+		metrics:       NewMetrics(),
+		retiredGroups: make(map[string]bool),
 	}
 }
 
@@ -460,7 +471,7 @@ func (m *Manager) ensureSoloGroup(ctx context.Context, playerID string) error {
 	}
 	p := m.players[playerID]
 	gid := "grp-" + playerID
-	if _, exists := m.groups[gid]; exists {
+	if _, exists := m.groups[gid]; exists || m.retiredGroups[gid] {
 		gid = fmt.Sprintf("grp-%s-%d", playerID, time.Now().UnixNano())
 	}
 	g := &Group{ID: gid, Name: p.Name, MasterID: playerID, Members: []Member{{PlayerID: playerID}}}
@@ -523,6 +534,24 @@ func (m *Manager) CreateGroup(ctx context.Context, name string, memberIDs []stri
 	return m.GetGroup(gid)
 }
 
+// purgeEmptyGroups 清理并组后留下的空组（含引擎与持久化记录）。
+func (m *Manager) purgeEmptyGroups(ctx context.Context, ids []string) {
+	for _, id := range ids {
+		if e := m.engine("group", id); e != nil {
+			e.Stop()
+			e.Close()
+			m.mu.Lock()
+			delete(m.engines, "group:"+id)
+			m.mu.Unlock()
+		}
+		if m.deps.Store != nil {
+			if err := m.deps.Store.DeleteGroup(ctx, id); err != nil {
+				m.deps.Logger.Warn("delete empty group failed", "id", id, "err", err)
+			}
+		}
+	}
+}
+
 // AddMember 把设备加入组，从当前时间点接入。
 func (m *Manager) AddMember(ctx context.Context, groupID, playerID string) (GroupView, error) {
 	m.mu.Lock()
@@ -548,18 +577,31 @@ func (m *Manager) AddMember(ctx context.Context, groupID, playerID string) (Grou
 				ErrSyncTierMismatch, joining.Name)
 		}
 	}
-	// 从原组摘出。
+	// 从原组摘出。原组被摘空就必须删掉：设备并组后如果留着空壳，
+	// 列表里会多一个没有成员的幽灵组，前端拿它当"可加入的组"渲染。
+	emptied := make([]string, 0, 1)
 	for _, other := range m.groups {
 		if other.ID == groupID {
 			continue
 		}
 		if other.HasMember(playerID) {
 			other.Members = removeMember(other.Members, playerID)
+			if len(other.Members) == 0 {
+				emptied = append(emptied, other.ID)
+				continue
+			}
+			if other.MasterID == playerID {
+				other.MasterID = other.Members[0].PlayerID
+			}
 		}
+	}
+	for _, id := range emptied {
+		delete(m.groups, id)
 	}
 	g.Members = append(g.Members, Member{PlayerID: playerID})
 	snapshot := *g
 	m.mu.Unlock()
+	m.purgeEmptyGroups(ctx, emptied)
 
 	if m.deps.Store != nil {
 		_ = m.deps.Store.SaveMember(ctx, groupID, Member{PlayerID: playerID})
@@ -890,6 +932,7 @@ func (m *Manager) ensureEngine(ctx context.Context, g Group) {
 		Logger:   m.deps.Logger,
 		Clock:    m.deps.Clock,
 		Latency:  m.deps.Latency,
+		Metrics:  m.metrics,
 	})
 	m.engines[key] = e
 	m.mu.Unlock()

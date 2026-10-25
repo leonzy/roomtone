@@ -903,6 +903,123 @@
                         }
                     }
                 }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除组：先停止播放并释放解码槽位，成员各自回到自己的单机组（设备本身保留）。派对中的组不能删除，返回 409，需先退出派对。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "删除同步组",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除结果",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "组不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "组在派对中",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/master": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "把组的主控换成组内另一台设备。主控决定组音量的基准值，不参与时钟同步，因此播放中切换不会断音、不需要重新握手。设备不在该组返回 404。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "切换同步组的主控设备",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "新的主控设备",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.masterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的组",
+                        "schema": {
+                            "$ref": "#/definitions/player.GroupView"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "组不存在或设备不在组内",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/groups/{id}/members": {
@@ -3169,6 +3286,31 @@
                 }
             }
         },
+        "/playback/metrics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回一次性快照：解码槽位占用（decode_slots_used/max）、欠载补静音帧数（player_underruns_total）、分发队列丢帧（player_sink_dropped_frames_total）、偏差超限重挂次数（player_resyncs_total）、事件丢弃数（player_events_dropped_total）、各在播 owner（组/派对）的最近偏差与缓冲状态。用于排查\"声音卡\"是解码跟不上还是网络慢；不是 Prometheus 端点。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "播放子系统运行指标",
+                "responses": {
+                    "200": {
+                        "description": "指标快照",
+                        "schema": {
+                            "$ref": "#/definitions/player.MetricsSnapshot"
+                        }
+                    }
+                }
+            }
+        },
         "/playback/party": {
             "post": {
                 "security": [
@@ -3529,6 +3671,50 @@
                     },
                     "400": {
                         "description": "参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "设备不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "永久删除设备：停掉它的播放、从所有组中摘出、删除持久化记录。若它是所在组的唯一成员，该组一并删除。删掉最后一台设备后系统处于\"没有任何音箱\"的合法状态，列表返回空数组而不是报错。不可撤销。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "删除播放设备",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "设备 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除结果",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -12301,6 +12487,14 @@
                 }
             }
         },
+        "handlers.masterRequest": {
+            "type": "object",
+            "properties": {
+                "player_id": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.memberRequest": {
             "type": "object",
             "properties": {
@@ -13939,6 +14133,80 @@
                 }
             }
         },
+        "player.MetricsSnapshot": {
+            "type": "object",
+            "properties": {
+                "decode_slots_max": {
+                    "type": "integer"
+                },
+                "decode_slots_used": {
+                    "type": "integer"
+                },
+                "groups": {
+                    "description": "Groups / Players 当前规模，便于对照\"是不是只有一台设备在响\"。",
+                    "type": "integer"
+                },
+                "owners": {
+                    "description": "Owners 每个在播 owner 的明细（组或派对）。",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/player.OwnerMetrics"
+                    }
+                },
+                "player_drift_ms": {
+                    "description": "DriftMs 所有 owner 里最近一次校正偏差的最大值（前端用来判断\"组还稳不稳\"）。",
+                    "type": "integer"
+                },
+                "player_events_dropped_total": {
+                    "type": "integer"
+                },
+                "player_resyncs_total": {
+                    "type": "integer"
+                },
+                "player_sink_dropped_frames_total": {
+                    "type": "integer"
+                },
+                "player_underruns_total": {
+                    "type": "integer"
+                },
+                "players": {
+                    "type": "integer"
+                }
+            }
+        },
+        "player.OwnerMetrics": {
+            "type": "object",
+            "properties": {
+                "buffering": {
+                    "description": "Buffering 长时间停在缓冲说明下游写不进去，比 underruns 更早暴露问题。",
+                    "type": "boolean"
+                },
+                "drift_ms": {
+                    "type": "integer"
+                },
+                "group_id": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "party_id": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "number"
+                },
+                "song_id": {
+                    "type": "integer"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "targets": {
+                    "type": "integer"
+                }
+            }
+        },
         "player.Party": {
             "type": "object",
             "properties": {
@@ -13973,6 +14241,10 @@
                 },
                 "state": {
                     "type": "string"
+                },
+                "unaligned": {
+                    "description": "Unaligned 连续校正失败，已停止重试；前端应显示\"未对齐\"而不是\"正在对齐\"。",
+                    "type": "boolean"
                 }
             }
         },

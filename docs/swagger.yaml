@@ -372,6 +372,11 @@ definitions:
       level:
         type: string
     type: object
+  handlers.masterRequest:
+    properties:
+      player_id:
+        type: string
+    type: object
   handlers.memberRequest:
     properties:
       player_id:
@@ -1545,6 +1550,56 @@ definitions:
       sync_tier:
         type: string
     type: object
+  player.MetricsSnapshot:
+    properties:
+      decode_slots_max:
+        type: integer
+      decode_slots_used:
+        type: integer
+      groups:
+        description: Groups / Players 当前规模，便于对照"是不是只有一台设备在响"。
+        type: integer
+      owners:
+        description: Owners 每个在播 owner 的明细（组或派对）。
+        items:
+          $ref: '#/definitions/player.OwnerMetrics'
+        type: array
+      player_drift_ms:
+        description: DriftMs 所有 owner 里最近一次校正偏差的最大值（前端用来判断"组还稳不稳"）。
+        type: integer
+      player_events_dropped_total:
+        type: integer
+      player_resyncs_total:
+        type: integer
+      player_sink_dropped_frames_total:
+        type: integer
+      player_underruns_total:
+        type: integer
+      players:
+        type: integer
+    type: object
+  player.OwnerMetrics:
+    properties:
+      buffering:
+        description: Buffering 长时间停在缓冲说明下游写不进去，比 underruns 更早暴露问题。
+        type: boolean
+      drift_ms:
+        type: integer
+      group_id:
+        type: string
+      owner:
+        type: string
+      party_id:
+        type: string
+      position:
+        type: number
+      song_id:
+        type: integer
+      state:
+        type: string
+      targets:
+        type: integer
+    type: object
   player.Party:
     properties:
       groups:
@@ -1568,6 +1623,9 @@ definitions:
         type: integer
       state:
         type: string
+      unaligned:
+        description: Unaligned 连续校正失败，已停止重试；前端应显示"未对齐"而不是"正在对齐"。
+        type: boolean
     type: object
   player.PartyStatus:
     properties:
@@ -2588,6 +2646,40 @@ paths:
       tags:
       - 播放控制
   /groups/{id}:
+    delete:
+      description: 删除组：先停止播放并释放解码槽位，成员各自回到自己的单机组（设备本身保留）。派对中的组不能删除，返回 409，需先退出派对。
+      parameters:
+      - description: 组 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除结果
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 组不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 组在派对中
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除同步组
+      tags:
+      - 播放控制
     get:
       description: 返回单个组的成员、同步等级与播放状态。
       parameters:
@@ -2612,6 +2704,48 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取同步组详情
+      tags:
+      - 播放控制
+  /groups/{id}/master:
+    post:
+      consumes:
+      - application/json
+      description: 把组的主控换成组内另一台设备。主控决定组音量的基准值，不参与时钟同步，因此播放中切换不会断音、不需要重新握手。设备不在该组返回
+        404。
+      parameters:
+      - description: 组 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 新的主控设备
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.masterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的组
+          schema:
+            $ref: '#/definitions/player.GroupView'
+        "400":
+          description: 请求格式错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 组不存在或设备不在组内
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 切换同步组的主控设备
       tags:
       - 播放控制
   /groups/{id}/members:
@@ -4120,6 +4254,22 @@ paths:
       summary: 获取 WebSocket 一次性 ticket
       tags:
       - 播放控制
+  /playback/metrics:
+    get:
+      description: 返回一次性快照：解码槽位占用（decode_slots_used/max）、欠载补静音帧数（player_underruns_total）、分发队列丢帧（player_sink_dropped_frames_total）、偏差超限重挂次数（player_resyncs_total）、事件丢弃数（player_events_dropped_total）、各在播
+        owner（组/派对）的最近偏差与缓冲状态。用于排查"声音卡"是解码跟不上还是网络慢；不是 Prometheus 端点。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 指标快照
+          schema:
+            $ref: '#/definitions/player.MetricsSnapshot'
+      security:
+      - BearerAuth: []
+      summary: 播放子系统运行指标
+      tags:
+      - 播放控制
   /playback/party:
     post:
       consumes:
@@ -4301,6 +4451,34 @@ paths:
       tags:
       - 播放控制
   /players/{id}:
+    delete:
+      description: 永久删除设备：停掉它的播放、从所有组中摘出、删除持久化记录。若它是所在组的唯一成员，该组一并删除。删掉最后一台设备后系统处于"没有任何音箱"的合法状态，列表返回空数组而不是报错。不可撤销。
+      parameters:
+      - description: 设备 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除结果
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 设备不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除播放设备
+      tags:
+      - 播放控制
     put:
       consumes:
       - application/json

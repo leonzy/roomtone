@@ -17,11 +17,13 @@ const (
 	EventState         EventType = "state"
 	EventTargetChanged EventType = "target_changed"
 	EventMemberChanged EventType = "member_changed"
-	EventSpeakerSeen   EventType = "speaker_seen"
-	EventPartyChanged  EventType = "party_changed"
-	EventGroupDrift    EventType = "group_drift"
-	EventEQChanged     EventType = "eq_changed"
-	EventError         EventType = "error"
+	// EventGroupChanged 组本身变了：创建 / 删除 / 换主控。action 区分。
+	EventGroupChanged EventType = "group_changed"
+	EventSpeakerSeen  EventType = "speaker_seen"
+	EventPartyChanged EventType = "party_changed"
+	EventGroupDrift   EventType = "group_drift"
+	EventEQChanged    EventType = "eq_changed"
+	EventError        EventType = "error"
 )
 
 // Event 推给客户端的一条消息。

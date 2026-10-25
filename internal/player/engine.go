@@ -87,6 +87,8 @@ type EngineDeps struct {
 	Clock    func() time.Time
 	// Latency 起播提前量，默认 2s。
 	Latency time.Duration
+	// Metrics 运行指标；nil 时静默（测试与 Bundle 精简路径）。
+	Metrics *Metrics
 }
 
 // Engine 一个 owner（组或派对）的播放引擎：队列 + 传输状态机 + 解码分发。
@@ -617,12 +619,14 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 				Corrector: cr.Corrector(),
 				Clock:     e.deps.Clock,
 				OnAdjust: func(a SyncAdjustment) {
+					e.deps.Metrics.ObserveDrift(e.ownerKind+":"+e.ownerID, a.Delta)
 					e.deps.Logger.Info("sync adjust",
 						"owner", e.ownerKind+":"+e.ownerID,
 						"player", a.PlayerID, "action", string(a.Action),
 						"delta_ms", a.Delta.Milliseconds(), "applied_ms", a.Applied.Milliseconds())
 				},
 				OnDeviation: func(playerID string, delta time.Duration) {
+					e.deps.Metrics.AddResync()
 					e.deps.Logger.Warn("sync deviation too large",
 						"owner", e.ownerKind+":"+e.ownerID,
 						"player", playerID, "delta_ms", delta.Milliseconds())

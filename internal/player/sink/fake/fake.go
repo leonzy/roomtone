@@ -129,6 +129,13 @@ func (s *Sink) Close() error {
 	return nil
 }
 
+// IsClosed 是否已被 Close（测试断言用）。
+func (s *Sink) IsClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
+}
+
 // Events 实现 sink.Sink。
 func (s *Sink) Events() <-chan sink.Event { return s.events }
 

@@ -53,7 +53,18 @@ func (a *App) initPlayback() {
 			StartSample:  startSample,
 			OnProgress:   onProgress,
 			OnUnderrun: func(n int) {
+				// 欠载是"解码/磁盘跟不上"，和"某一路网络慢"是两回事，
+				// 指标分开记，否则排查时只能看到一堆数字一起涨。
+				if a.playerManager != nil {
+					a.playerManager.Metrics().AddUnderrun(n)
+				}
 				slog.Debug("player underrun, padding silence", "frames", n)
+			},
+			OnSinkDrop: func(id string, frames int) {
+				if a.playerManager != nil {
+					a.playerManager.Metrics().AddDroppedFrames(int64(frames))
+				}
+				slog.Warn("sink queue full, dropping frames", "player_id", id, "frames", frames)
 			},
 		}
 	}
