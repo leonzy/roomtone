@@ -25,7 +25,9 @@ var (
 	ErrPartyNotFound   = errors.New("派对不存在")
 	ErrPartyDisabled   = errors.New("派对模式已关闭")
 	ErrDuplicateMember = errors.New("设备已在组内")
-	ErrUnsupported     = errors.New("设备不支持该操作")
+	// ErrBadMemberOrder 成员顺序请求不是该组的全排列。
+	ErrBadMemberOrder = errors.New("成员顺序不合法")
+	ErrUnsupported    = errors.New("设备不支持该操作")
 	// ErrSyncTierMismatch 精确同步组不接受只能对齐起播的设备。
 	ErrSyncTierMismatch = errors.New("设备不支持精确同步")
 	ErrNotifyForbidden  = errors.New("事件来源不受信任")
@@ -46,6 +48,7 @@ type Store interface {
 	DeleteGroup(ctx context.Context, id string) error
 	ListAllMembers(ctx context.Context) (map[string][]Member, error)
 	SaveMember(ctx context.Context, groupID string, m Member) error
+	UpdateMemberPosition(ctx context.Context, groupID, playerID string, position int) error
 	DeleteMember(ctx context.Context, groupID, playerID string) error
 }
 
@@ -89,6 +92,10 @@ type Manager struct {
 	partySync map[string]*partySyncState
 	// metrics 运行指标（B8-03）：解码欠载、丢帧、偏差。
 	metrics *Metrics
+	// syncPending 刚入组 / 刚唤醒的设备及其"对齐中"截止时间。
+	//
+	// 只在 groupView 里读，过期即失效；不落库，重启后天然清空。
+	syncPending map[string]time.Time
 	// retiredGroups 被用户显式删除过的组 id，永不复用。
 	//
 	// 单机组的 id 是 "grp-<playerID>"，删掉一个组之后成员要各自回到单机组，
@@ -122,6 +129,7 @@ func NewManager(deps ManagerDeps) *Manager {
 		partySync: make(map[string]*partySyncState),
 
 		metrics:       NewMetrics(),
+		syncPending:   make(map[string]time.Time),
 		retiredGroups: make(map[string]bool),
 	}
 }
@@ -430,6 +438,39 @@ type MemberCaps struct {
 	Kind     string `json:"kind"`
 	Online   bool   `json:"online"`
 	SyncTier string `json:"sync_tier"`
+	// Syncing 刚入组 / 刚唤醒，还没经过一个校正周期：前端显示"对齐中"。
+	//
+	// 校正环每 950ms 采样一次，正常一轮内收敛；这里给 3 个周期（约 3s）
+	// 的窗口，超时自动消失，避免设备一直卡在"对齐中"。
+	Syncing bool `json:"syncing"`
+}
+
+// syncAlignWindow 入组 / 唤醒后显示"对齐中"的窗口。
+//
+// 三个校正周期足够让一轮 Skip/Pad 落地；再长就会掩盖真正卡住的设备。
+const syncAlignWindow = 3 * DefaultSyncInterval
+
+// markSyncing 标记设备正在对齐（入组、唤醒、重挂都算）。
+func (m *Manager) markSyncing(playerID string) {
+	if playerID == "" {
+		return
+	}
+	m.mu.Lock()
+	m.syncPending[playerID] = m.deps.Clock().Add(syncAlignWindow)
+	m.mu.Unlock()
+}
+
+// syncingLocked 设备是否仍在"对齐中"窗口内（调用方持锁）。
+func (m *Manager) syncingLocked(playerID string) bool {
+	deadline, ok := m.syncPending[playerID]
+	if !ok {
+		return false
+	}
+	if m.deps.Clock().After(deadline) {
+		delete(m.syncPending, playerID)
+		return false
+	}
+	return true
 }
 
 func (m *Manager) groupViewLocked(g *Group) GroupView {
@@ -438,7 +479,13 @@ func (m *Manager) groupViewLocked(g *Group) GroupView {
 	for _, mem := range g.Members {
 		if p, ok := m.players[mem.PlayerID]; ok {
 			players = append(players, p)
-			caps = append(caps, MemberCaps{PlayerID: p.ID, Kind: string(p.Kind), Online: p.Online, SyncTier: p.Caps.SyncTier.String()})
+			caps = append(caps, MemberCaps{
+				PlayerID: p.ID,
+				Kind:     string(p.Kind),
+				Online:   p.Online,
+				SyncTier: p.Caps.SyncTier.String(),
+				Syncing:  m.syncingLocked(p.ID),
+			})
 		}
 	}
 	tier := GroupSyncTier(players).String()
@@ -598,19 +645,71 @@ func (m *Manager) AddMember(ctx context.Context, groupID, playerID string) (Grou
 	for _, id := range emptied {
 		delete(m.groups, id)
 	}
-	g.Members = append(g.Members, Member{PlayerID: playerID})
+	// 新成员排在最后：顺序决定"主控候选"，先入组的更靠前。
+	newMember := Member{PlayerID: playerID, Position: len(g.Members)}
+	g.Members = append(g.Members, newMember)
 	snapshot := *g
 	m.mu.Unlock()
 	m.purgeEmptyGroups(ctx, emptied)
 
 	if m.deps.Store != nil {
-		_ = m.deps.Store.SaveMember(ctx, groupID, Member{PlayerID: playerID})
+		_ = m.deps.Store.SaveMember(ctx, groupID, newMember)
 	}
 	m.rebuildSinks(ctx, groupID)
+	// 刚入组的设备要经过一个校正周期才真正对齐，期间前端显示"对齐中"。
+	m.markSyncing(playerID)
 	if m.deps.Bus != nil {
 		m.deps.Bus.Publish(Event{Type: EventMemberChanged, GroupID: groupID, PlayerID: playerID, Action: "join"})
 	}
 	return m.GetGroup(snapshot.ID)
+}
+
+// ReorderMembers 调整成员在组内的顺序。
+//
+// 顺序只影响展示与"主控候选"提示，不改主控（主控是显式的 master_id）：
+// 拖错了不会突然换人出声。必须是同一组成员的全排列，少一个多一个都拒绝，
+// 否则前端一次错误请求就能把成员从列表里"弄丢"。
+func (m *Manager) ReorderMembers(ctx context.Context, groupID string, playerIDs []string) (GroupView, error) {
+	m.mu.Lock()
+	g, ok := m.groups[groupID]
+	if !ok {
+		m.mu.Unlock()
+		return GroupView{}, ErrGroupNotFound
+	}
+	if len(playerIDs) != len(g.Members) {
+		m.mu.Unlock()
+		return GroupView{}, fmt.Errorf("%w: 需要 %d 个成员，收到 %d 个", ErrBadMemberOrder, len(g.Members), len(playerIDs))
+	}
+	byID := make(map[string]Member, len(g.Members))
+	for _, mem := range g.Members {
+		byID[mem.PlayerID] = mem
+	}
+	seen := make(map[string]bool, len(playerIDs))
+	ordered := make([]Member, 0, len(playerIDs))
+	for i, id := range playerIDs {
+		mem, ok := byID[id]
+		if !ok || seen[id] {
+			m.mu.Unlock()
+			return GroupView{}, fmt.Errorf("%w: %s", ErrBadMemberOrder, id)
+		}
+		seen[id] = true
+		mem.Position = i
+		ordered = append(ordered, mem)
+	}
+	g.Members = ordered
+	m.mu.Unlock()
+
+	if m.deps.Store != nil {
+		for i, mem := range ordered {
+			if err := m.deps.Store.UpdateMemberPosition(ctx, groupID, mem.PlayerID, i); err != nil {
+				m.deps.Logger.Warn("update member position failed", "group", groupID, "player", mem.PlayerID, "err", err)
+			}
+		}
+	}
+	if m.deps.Bus != nil {
+		m.deps.Bus.Publish(Event{Type: EventMemberChanged, GroupID: groupID, Action: "reorder"})
+	}
+	return m.GetGroup(groupID)
 }
 
 // groupTierLocked 组当前同步等级（调用方持锁）。
@@ -649,10 +748,12 @@ func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, de
 		return GroupView{}, ErrGroupNotFound
 	}
 	found := false
+	position := 0
 	for i := range g.Members {
 		if g.Members[i].PlayerID == playerID {
 			g.Members[i].DelayMs = delayMs
 			g.Members[i].VolumeOffset = volumeOffset
+			position = g.Members[i].Position
 			found = true
 		}
 	}
@@ -661,7 +762,7 @@ func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, de
 		return GroupView{}, fmt.Errorf("%w: %s", ErrPlayerNotFound, playerID)
 	}
 	if m.deps.Store != nil {
-		_ = m.deps.Store.SaveMember(ctx, groupID, Member{PlayerID: playerID, DelayMs: delayMs, VolumeOffset: volumeOffset})
+		_ = m.deps.Store.SaveMember(ctx, groupID, Member{PlayerID: playerID, DelayMs: delayMs, VolumeOffset: volumeOffset, Position: position})
 	}
 	// 延迟补偿要立刻生效：重建目标时把新 Delay 带进 sink.Target。
 	m.rebuildSinks(ctx, groupID)

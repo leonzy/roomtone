@@ -54,7 +54,7 @@ func playbackStatus(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, player.ErrGroupInParty), errors.Is(err, player.ErrDuplicateMember):
 		return http.StatusConflict
-	case errors.Is(err, player.ErrSyncTierMismatch), errors.Is(err, player.ErrQueueEmpty), errors.Is(err, player.ErrQueueIndexOutOfRange):
+	case errors.Is(err, player.ErrSyncTierMismatch), errors.Is(err, player.ErrQueueEmpty), errors.Is(err, player.ErrQueueIndexOutOfRange), errors.Is(err, player.ErrBadMemberOrder):
 		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
@@ -324,6 +324,37 @@ func (h *PlaybackHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g, err := h.mgr.UpdateMember(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "player_id"), req.DelayMs, req.VolumeOffset)
+	if err != nil {
+		playbackFail(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, g)
+}
+
+type memberOrderRequest struct {
+	PlayerIDs []string `json:"player_ids"`
+}
+
+// ReorderMembers 调整成员顺序
+// @Summary 调整组成员的顺序
+// @Description 传该组全部成员 id 的目标顺序（必须是全排列，少一个多一个都返回 400）。顺序决定前端列表与"主控候选"提示，**不改主控**：主控始终是显式的 master_id，拖错了不会突然换人出声。
+// @Tags 播放控制
+// @Accept json
+// @Produce json
+// @Param id path string true "组 ID"
+// @Param request body memberOrderRequest true "成员 id 顺序"
+// @Success 200 {object} player.GroupView "更新后的组"
+// @Failure 400 {object} map[string]string "不是该组的全排列"
+// @Failure 404 {object} map[string]string "组不存在"
+// @Security BearerAuth
+// @Router /groups/{id}/members/order [put]
+func (h *PlaybackHandler) ReorderMembers(w http.ResponseWriter, r *http.Request) {
+	var req memberOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	g, err := h.mgr.ReorderMembers(r.Context(), chi.URLParam(r, "id"), req.PlayerIDs)
 	if err != nil {
 		playbackFail(w, err)
 		return

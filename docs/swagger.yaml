@@ -391,6 +391,13 @@ definitions:
       player_id:
         type: string
     type: object
+  handlers.memberOrderRequest:
+    properties:
+      player_ids:
+        items:
+          type: string
+        type: array
+    type: object
   handlers.memberRequest:
     properties:
       player_id:
@@ -1555,6 +1562,9 @@ definitions:
         type: integer
       player_id:
         type: string
+      position:
+        description: Position 组内顺序，决定列表顺序与"主控候选"顺序（0 起）。
+        type: integer
       volume_offset:
         type: integer
     type: object
@@ -1568,6 +1578,13 @@ definitions:
         type: string
       sync_tier:
         type: string
+      syncing:
+        description: |-
+          Syncing 刚入组 / 刚唤醒，还没经过一个校正周期：前端显示"对齐中"。
+
+          校正环每 950ms 采样一次，正常一轮内收敛；这里给 3 个周期（约 3s）
+          的窗口，超时自动消失，避免设备一直卡在"对齐中"。
+        type: boolean
     type: object
   player.MetricsSnapshot:
     properties:
@@ -2893,6 +2910,48 @@ paths:
       security:
       - BearerAuth: []
       summary: 调整组成员的延迟补偿与音量偏移
+      tags:
+      - 播放控制
+  /groups/{id}/members/order:
+    put:
+      consumes:
+      - application/json
+      description: 传该组全部成员 id 的目标顺序（必须是全排列，少一个多一个都返回 400）。顺序决定前端列表与"主控候选"提示，**不改主控**：主控始终是显式的
+        master_id，拖错了不会突然换人出声。
+      parameters:
+      - description: 组 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 成员 id 顺序
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.memberOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的组
+          schema:
+            $ref: '#/definitions/player.GroupView'
+        "400":
+          description: 不是该组的全排列
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 组不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 调整组成员的顺序
       tags:
       - 播放控制
   /groups/{id}/queue:

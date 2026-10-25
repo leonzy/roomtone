@@ -47,17 +47,20 @@ UPDATE player_groups SET name = ?, master_player_id = ?, party_id = ? WHERE id =
 DELETE FROM player_groups WHERE id = ?;
 
 -- name: ListAllGroupMembers :many
-SELECT * FROM player_group_members ORDER BY group_id, player_id;
+SELECT * FROM player_group_members ORDER BY group_id, position, player_id;
 
 -- name: ListGroupMembers :many
-SELECT * FROM player_group_members WHERE group_id = ? ORDER BY player_id;
+SELECT * FROM player_group_members WHERE group_id = ? ORDER BY position, player_id;
 
 -- name: InsertGroupMember :exec
-INSERT INTO player_group_members (group_id, player_id, delay_ms, volume_offset)
-VALUES (?, ?, ?, ?)
+INSERT INTO player_group_members (group_id, player_id, delay_ms, volume_offset, position)
+VALUES (?, ?, ?, ?, ?)
 ON CONFLICT(group_id, player_id) DO UPDATE SET
     delay_ms = excluded.delay_ms,
     volume_offset = excluded.volume_offset;
+
+-- name: UpdateGroupMemberPosition :exec
+UPDATE player_group_members SET position = ? WHERE group_id = ? AND player_id = ?;
 
 -- name: DeleteGroupMember :execrows
 DELETE FROM player_group_members WHERE group_id = ? AND player_id = ?;

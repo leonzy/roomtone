@@ -215,8 +215,8 @@ func (q *Queries) InsertGroup(ctx context.Context, arg InsertGroupParams) error 
 }
 
 const insertGroupMember = `-- name: InsertGroupMember :exec
-INSERT INTO player_group_members (group_id, player_id, delay_ms, volume_offset)
-VALUES (?, ?, ?, ?)
+INSERT INTO player_group_members (group_id, player_id, delay_ms, volume_offset, position)
+VALUES (?, ?, ?, ?, ?)
 ON CONFLICT(group_id, player_id) DO UPDATE SET
     delay_ms = excluded.delay_ms,
     volume_offset = excluded.volume_offset
@@ -227,6 +227,7 @@ type InsertGroupMemberParams struct {
 	PlayerID     string
 	DelayMs      int64
 	VolumeOffset int64
+	Position     int64
 }
 
 func (q *Queries) InsertGroupMember(ctx context.Context, arg InsertGroupMemberParams) error {
@@ -235,6 +236,7 @@ func (q *Queries) InsertGroupMember(ctx context.Context, arg InsertGroupMemberPa
 		arg.PlayerID,
 		arg.DelayMs,
 		arg.VolumeOffset,
+		arg.Position,
 	)
 	return err
 }
@@ -276,7 +278,7 @@ func (q *Queries) InsertQueueItem(ctx context.Context, arg InsertQueueItemParams
 }
 
 const listAllGroupMembers = `-- name: ListAllGroupMembers :many
-SELECT group_id, player_id, delay_ms, volume_offset FROM player_group_members ORDER BY group_id, player_id
+SELECT group_id, player_id, delay_ms, volume_offset, position FROM player_group_members ORDER BY group_id, position, player_id
 `
 
 func (q *Queries) ListAllGroupMembers(ctx context.Context) ([]PlayerGroupMember, error) {
@@ -293,6 +295,7 @@ func (q *Queries) ListAllGroupMembers(ctx context.Context) ([]PlayerGroupMember,
 			&i.PlayerID,
 			&i.DelayMs,
 			&i.VolumeOffset,
+			&i.Position,
 		); err != nil {
 			return nil, err
 		}
@@ -308,7 +311,7 @@ func (q *Queries) ListAllGroupMembers(ctx context.Context) ([]PlayerGroupMember,
 }
 
 const listGroupMembers = `-- name: ListGroupMembers :many
-SELECT group_id, player_id, delay_ms, volume_offset FROM player_group_members WHERE group_id = ? ORDER BY player_id
+SELECT group_id, player_id, delay_ms, volume_offset, position FROM player_group_members WHERE group_id = ? ORDER BY position, player_id
 `
 
 func (q *Queries) ListGroupMembers(ctx context.Context, groupID string) ([]PlayerGroupMember, error) {
@@ -325,6 +328,7 @@ func (q *Queries) ListGroupMembers(ctx context.Context, groupID string) ([]Playe
 			&i.PlayerID,
 			&i.DelayMs,
 			&i.VolumeOffset,
+			&i.Position,
 		); err != nil {
 			return nil, err
 		}
@@ -497,6 +501,21 @@ func (q *Queries) UpdateGroup(ctx context.Context, arg UpdateGroupParams) error 
 		arg.PartyID,
 		arg.ID,
 	)
+	return err
+}
+
+const updateGroupMemberPosition = `-- name: UpdateGroupMemberPosition :exec
+UPDATE player_group_members SET position = ? WHERE group_id = ? AND player_id = ?
+`
+
+type UpdateGroupMemberPositionParams struct {
+	Position int64
+	GroupID  string
+	PlayerID string
+}
+
+func (q *Queries) UpdateGroupMemberPosition(ctx context.Context, arg UpdateGroupMemberPositionParams) error {
+	_, err := q.db.ExecContext(ctx, updateGroupMemberPosition, arg.Position, arg.GroupID, arg.PlayerID)
 	return err
 }
 

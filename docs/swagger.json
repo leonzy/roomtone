@@ -1086,6 +1086,70 @@
                 }
             }
         },
+        "/groups/{id}/members/order": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "传该组全部成员 id 的目标顺序（必须是全排列，少一个多一个都返回 400）。顺序决定前端列表与\"主控候选\"提示，**不改主控**：主控始终是显式的 master_id，拖错了不会突然换人出声。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "调整组成员的顺序",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "成员 id 顺序",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.memberOrderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的组",
+                        "schema": {
+                            "$ref": "#/definitions/player.GroupView"
+                        }
+                    },
+                    "400": {
+                        "description": "不是该组的全排列",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "组不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/groups/{id}/members/{player_id}": {
             "delete": {
                 "security": [
@@ -12654,6 +12718,17 @@
                 }
             }
         },
+        "handlers.memberOrderRequest": {
+            "type": "object",
+            "properties": {
+                "player_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "handlers.memberRequest": {
             "type": "object",
             "properties": {
@@ -14278,6 +14353,10 @@
                 "player_id": {
                     "type": "string"
                 },
+                "position": {
+                    "description": "Position 组内顺序，决定列表顺序与\"主控候选\"顺序（0 起）。",
+                    "type": "integer"
+                },
                 "volume_offset": {
                     "type": "integer"
                 }
@@ -14297,6 +14376,10 @@
                 },
                 "sync_tier": {
                     "type": "string"
+                },
+                "syncing": {
+                    "description": "Syncing 刚入组 / 刚唤醒，还没经过一个校正周期：前端显示\"对齐中\"。\n\n校正环每 950ms 采样一次，正常一轮内收敛；这里给 3 个周期（约 3s）\n的窗口，超时自动消失，避免设备一直卡在\"对齐中\"。",
+                    "type": "boolean"
                 }
             }
         },

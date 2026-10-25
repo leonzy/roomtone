@@ -125,6 +125,19 @@ func (s *memStore) ListAllMembers(context.Context) (map[string][]player.Member, 
 	return out, nil
 }
 
+func (s *memStore) UpdateMemberPosition(_ context.Context, groupID, playerID string, position int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ms := s.members[groupID]
+	for i := range ms {
+		if ms[i].PlayerID == playerID {
+			ms[i].Position = position
+		}
+	}
+	s.members[groupID] = ms
+	return nil
+}
+
 func (s *memStore) SaveMember(_ context.Context, groupID string, m player.Member) error {
 	s.mu.Lock()
 	ms := s.members[groupID]
@@ -227,6 +240,15 @@ func (b *fakeBuilder) get(id string) *fake.Sink {
 
 func newTestManager(t *testing.T, playerIDs ...string) (*player.Manager, *fakeBuilder, *toneDecoderFactory) {
 	t.Helper()
+	return newTestManagerWithClock(t, time.Now, playerIDs...)
+}
+
+// newTestManagerWithClock 与 newTestManager 相同，但可注入可控时钟。
+//
+// 对齐窗口（3 个校正周期）这类与时间有关的断言必须能"快进"，
+// 否则测试要真等 3 秒。
+func newTestManagerWithClock(t *testing.T, clock func() time.Time, playerIDs ...string) (*player.Manager, *fakeBuilder, *toneDecoderFactory) {
+	t.Helper()
 	store := newMemStore()
 	builder := &fakeBuilder{sinks: map[string]*fake.Sink{}, caps: map[string]sink.Caps{}}
 	dec := &toneDecoderFactory{seconds: 600}
@@ -247,7 +269,7 @@ func newTestManager(t *testing.T, playerIDs ...string) (*player.Manager, *fakeBu
 			}
 		},
 		Builder: builder,
-		Clock:   time.Now,
+		Clock:   clock,
 		Latency: 200 * time.Millisecond,
 	})
 	for _, id := range playerIDs {

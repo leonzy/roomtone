@@ -102,13 +102,17 @@ func (s *playbackStore) ListAllMembers(ctx context.Context) (map[string][]player
 	}
 	out := make(map[string][]player.Member, len(rows))
 	for _, r := range rows {
-		out[r.GroupID] = append(out[r.GroupID], player.Member{PlayerID: r.PlayerID, DelayMs: r.DelayMs, VolumeOffset: r.VolumeOffset})
+		out[r.GroupID] = append(out[r.GroupID], player.Member{PlayerID: r.PlayerID, DelayMs: r.DelayMs, VolumeOffset: r.VolumeOffset, Position: r.Position})
 	}
 	return out, nil
 }
 
 func (s *playbackStore) SaveMember(ctx context.Context, groupID string, m player.Member) error {
-	return s.repo.UpsertGroupMember(ctx, database.GroupMemberRow{GroupID: groupID, PlayerID: m.PlayerID, DelayMs: m.DelayMs, VolumeOffset: m.VolumeOffset})
+	return s.repo.UpsertGroupMember(ctx, database.GroupMemberRow{GroupID: groupID, PlayerID: m.PlayerID, DelayMs: m.DelayMs, VolumeOffset: m.VolumeOffset, Position: m.Position})
+}
+
+func (s *playbackStore) UpdateMemberPosition(ctx context.Context, groupID, playerID string, position int) error {
+	return s.repo.UpdateGroupMemberPosition(ctx, groupID, playerID, position)
 }
 
 func (s *playbackStore) DeleteMember(ctx context.Context, groupID, playerID string) error {

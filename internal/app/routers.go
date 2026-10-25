@@ -255,6 +255,7 @@ func (a *App) setupAPIV1Router() {
 			r.Delete("/groups/{id}", pb.DeleteGroup)
 			r.Post("/groups/{id}/master", pb.SetMaster)
 			r.Post("/groups/{id}/members", pb.AddMember)
+			r.Put("/groups/{id}/members/order", pb.ReorderMembers)
 			r.Patch("/groups/{id}/members/{player_id}", pb.UpdateMember)
 			r.Delete("/groups/{id}/members/{player_id}", pb.RemoveMember)
 			r.Get("/groups/{id}/volume", pb.GroupVolume)

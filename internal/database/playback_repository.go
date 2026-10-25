@@ -56,6 +56,8 @@ type GroupMemberRow struct {
 	PlayerID     string
 	DelayMs      int
 	VolumeOffset int
+	// Position 组内显示顺序（决定"主控候选"顺序）。0 表示未显式指定。
+	Position int
 }
 
 // PlaybackStateRow 播放状态行（断点续播的落库形态）
@@ -247,7 +249,7 @@ func (r *PlaybackRepository) ListAllGroupMembers(ctx context.Context) ([]GroupMe
 	}
 	out := make([]GroupMemberRow, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, GroupMemberRow{GroupID: row.GroupID, PlayerID: row.PlayerID, DelayMs: int(row.DelayMs), VolumeOffset: int(row.VolumeOffset)})
+		out = append(out, GroupMemberRow{GroupID: row.GroupID, PlayerID: row.PlayerID, DelayMs: int(row.DelayMs), VolumeOffset: int(row.VolumeOffset), Position: int(row.Position)})
 	}
 	return out, nil
 }
@@ -260,7 +262,7 @@ func (r *PlaybackRepository) ListGroupMembers(ctx context.Context, groupID strin
 	}
 	out := make([]GroupMemberRow, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, GroupMemberRow{GroupID: row.GroupID, PlayerID: row.PlayerID, DelayMs: int(row.DelayMs), VolumeOffset: int(row.VolumeOffset)})
+		out = append(out, GroupMemberRow{GroupID: row.GroupID, PlayerID: row.PlayerID, DelayMs: int(row.DelayMs), VolumeOffset: int(row.VolumeOffset), Position: int(row.Position)})
 	}
 	return out, nil
 }
@@ -272,6 +274,16 @@ func (r *PlaybackRepository) UpsertGroupMember(ctx context.Context, m GroupMembe
 		PlayerID:     m.PlayerID,
 		DelayMs:      int64(m.DelayMs),
 		VolumeOffset: int64(m.VolumeOffset),
+		Position:     int64(m.Position),
+	})
+}
+
+// UpdateGroupMemberPosition 调整成员在组内的顺序
+func (r *PlaybackRepository) UpdateGroupMemberPosition(ctx context.Context, groupID, playerID string, position int) error {
+	return r.queries.UpdateGroupMemberPosition(ctx, sqlc.UpdateGroupMemberPositionParams{
+		Position: int64(position),
+		GroupID:  groupID,
+		PlayerID: playerID,
 	})
 }
 

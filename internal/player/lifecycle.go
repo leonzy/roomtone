@@ -174,6 +174,10 @@ func (m *Manager) SetPower(ctx context.Context, playerID string, on bool) (Playe
 	if gid := m.GroupIDOf(playerID); gid != "" {
 		m.rebuildSinks(ctx, gid)
 	}
+	if on {
+		// 唤醒后重新挂回组，从当前进度接入，同样要经过一次对齐。
+		m.markSyncing(playerID)
+	}
 	if m.deps.Bus != nil {
 		action := "standby"
 		if on {

@@ -125,6 +125,7 @@ type PlayerGroupMember struct {
 	PlayerID     string
 	DelayMs      int64
 	VolumeOffset int64
+	Position     int64
 }
 
 type Playlist struct {

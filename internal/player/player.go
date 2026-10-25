@@ -100,6 +100,8 @@ type Member struct {
 	PlayerID     string `json:"player_id"`
 	DelayMs      int    `json:"delay_ms"`
 	VolumeOffset int    `json:"volume_offset"`
+	// Position 组内顺序，决定列表顺序与"主控候选"顺序（0 起）。
+	Position int `json:"position"`
 }
 
 // Group 同步组。单机也有一个只含自己的组——队列与传输逻辑只写一份。
