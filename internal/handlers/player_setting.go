@@ -14,6 +14,7 @@ import (
 const (
 	playerDiscoveryKey = "player_discovery"
 	playerOutputKey    = "player_output"
+	crossfadeKey       = "crossfade"
 )
 
 // PlayerDiscoverySetting 设备发现配置。
@@ -324,4 +325,63 @@ func (h *ConfigHandler) UpdateReplayGainSetting(w http.ResponseWriter, r *http.R
 		go h.onConfigChanged(ReplayGainKey)
 	}
 	respondJSON(w, http.StatusOK, req)
+}
+
+// CrossfadeSetting 交叉淡化配置。
+//
+// 与 gapless 互斥（产品决策）：开启后交界处不再走解码器接续，而是把当前曲
+// 尾巴与下一曲开头等功率混合。默认关闭，保持原有 gapless 行为。
+type CrossfadeSetting struct {
+	Enabled bool `json:"enabled"`
+	// Seconds 淡化时长，0.5-12 秒；enabled=false 时忽略。
+	Seconds float64 `json:"seconds"`
+}
+
+func defaultCrossfade() CrossfadeSetting {
+	return CrossfadeSetting{Enabled: false, Seconds: 3}
+}
+
+// GetCrossfadeSetting 读取交叉淡化配置
+// @Summary 获取交叉淡化配置
+// @Description 返回交叉淡化（crossfade）设置。enabled=false 时走原有 gapless 接续；enabled=true 时两曲交界按 seconds 秒等功率混合，此时 gapless 自动停用。未配置时返回默认值（关闭、3 秒）。
+// @Tags 设置
+// @Produce json
+// @Success 200 {object} CrossfadeSetting "交叉淡化配置"
+// @Security BearerAuth
+// @Router /settings/crossfade [get]
+func (h *ConfigHandler) GetCrossfadeSetting(w http.ResponseWriter, r *http.Request) {
+	cfg := defaultCrossfade()
+	if err := h.configService.GetJSON(crossfadeKey, &cfg); err != nil {
+		cfg = defaultCrossfade()
+	}
+	respondJSON(w, http.StatusOK, cfg)
+}
+
+// UpdateCrossfadeSetting 更新交叉淡化配置
+// @Summary 更新交叉淡化配置
+// @Description 写入交叉淡化设置，下一曲起生效（正在播放的曲目不受影响）。seconds 范围 0.5-12；enabled=true 时 gapless 接续自动停用，交界处重新打开解码器（分发器 2s 缓冲吸收开销）。
+// @Tags 设置
+// @Accept json
+// @Produce json
+// @Param request body CrossfadeSetting true "交叉淡化配置"
+// @Success 200 {object} CrossfadeSetting "更新后的配置"
+// @Failure 400 {object} map[string]string "参数非法"
+// @Failure 500 {object} map[string]string "写入失败"
+// @Security BearerAuth
+// @Router /settings/crossfade [put]
+func (h *ConfigHandler) UpdateCrossfadeSetting(w http.ResponseWriter, r *http.Request) {
+	var cfg CrossfadeSetting
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		respondError(w, http.StatusBadRequest, "请求体解析失败", err)
+		return
+	}
+	if cfg.Enabled && (cfg.Seconds < 0.5 || cfg.Seconds > 12) {
+		respondError(w, http.StatusBadRequest, "seconds 必须在 0.5-12 之间", nil)
+		return
+	}
+	if err := h.configService.SetJSON(crossfadeKey, cfg); err != nil {
+		respondError(w, http.StatusInternalServerError, "写入交叉淡化配置失败", err)
+		return
+	}
+	respondJSON(w, http.StatusOK, cfg)
 }

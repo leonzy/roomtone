@@ -265,7 +265,7 @@ B5-01 ─► B7-01 ─► B7-03 ─► [G4]
 | X-03 | Docker 网络与发现兜底 | `docs/faq.md`、`docs/architecture.md`、前端空态 | 文档写明 `--network host` / macvlan；发现为空时 UI 给提示而非空白；手动填 IP 路径可用 | M3/M4 | 1 |
 | X-04 | Bundle 模式限制 | `docs/architecture_frontend.md`、`internal/app/app.go`（启动时判定） | iOS Bundle 默认只留 `local` sink；桌面 Bundle 需显式开启；未开启时接口返回明确原因 | M2 | 1 |
 | X-05 | 性能实测 | `scripts/tests/decode_baseline.sh`（新增） | 4 组并发解码时 CPU / 内存基线记录；单核设备上 4 组不卡顿的结论有数据支撑。**已完成：3 次实测 wall 0.14~0.17s、4 路 RSS 峰值 6~29 MiB、1085~1294× 实时** | M7 后 | 1 |
-| X-06 | 文档回填 | `docs/architecture_playback*.md`、`docs/pitfalls.md`、`docs/playback_compat_matrix.md` | 设计稿状态从"尚未实现"改为"已实现（版本号）"；踩坑按 `LESSONS.md` 流程入库；双语同步。**已完成：对照矩阵落地（42 项，35 ✅ / 4 ⚠️ / 2 ❌）；ReplayGain 与闹钟已补齐，仅 crossfade 仍列差距** | v1.0 | 1 |
+| X-06 | 文档回填 | `docs/architecture_playback*.md`、`docs/pitfalls.md`、`docs/playback_compat_matrix.md` | 设计稿状态从"尚未实现"改为"已实现（版本号）"；踩坑按 `LESSONS.md` 流程入库；双语同步。**已完成：对照矩阵落地（42 项，37 ✅ / 4 ⚠️ / 0 ❌）；ReplayGain、闹钟、crossfade 全部补齐，crossfade 按「与 gapless 互斥」的取舍实现** | v1.0 | 1 |
 | X-07 | **半成品守卫（CI）**（新） | `Makefile`（`check-playback`）、`scripts/tests/guards.sh` | 一条命令跑完：同步收敛、EQ 逐位隔离、派对回位、`rg -e BuildFilterChain -e 'equalizer=f='` 无命中、`party_test.go` 存在、新端点 swagger 有命中；任一不过则 `make check` 红 | v0.4 起持续 | 1.5 |
 
 ## 5. 前端任务分解（另一仓库）

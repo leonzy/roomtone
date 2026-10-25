@@ -567,6 +567,7 @@ Following the "user-visible switches live on business endpoints" rule:
 
 - `/settings/player-discovery` — `{enabled, protocols:["raop","dlna"], interval_seconds}`; `interval_seconds` ranges 10–600, default 30
 - `/settings/player-output` — `{max_groups, default_latency_ms, dlna_realign_interval_minutes, allow_private_network, network_sinks_enabled, party_enabled, party_drift_tolerance_ms}`
+- `/settings/crossfade` — `{enabled, seconds}`; off by default, 3 seconds, `seconds` in 0.5–12. When enabled the boundary uses equal-power (cos/sin) mixing and **gives up gapless continuation** (product decision, see compat matrix §4)
 - `/settings/replaygain` — `{mode: "off"|"track"|"album", prevent_clipping: bool}`; defaults to `off` with clipping prevention on. Tags are read by ffprobe the first time a track plays and cached, not stored at scan time (existing libraries work right after the upgrade)
 - `/settings/replaygain` — `{mode: "off"|"track"|"album", prevent_clipping: bool}`; defaults to `off` with clipping prevention on. Tags are read by ffprobe the first time a track plays and cached, not stored at scan time (existing libraries work right after the upgrade)
 - `/settings/player-output-allowlist` — `{entries:["192.168.1.0/24", …]}`; an empty array does not restrict private networks, otherwise only these ranges are allowed and public addresses are always rejected

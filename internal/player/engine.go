@@ -91,6 +91,11 @@ type EngineDeps struct {
 	Metrics *Metrics
 	// ReplayGain 每首歌的增益来源；nil 或模式为 off 时完全不加增益。
 	ReplayGain ReplayGainSource
+	// Crossfade 交叉淡化时长；返回 0 表示关闭。每次起播读一次，改设置下一曲生效。
+	//
+	// 与 gapless 互斥（产品决策）：开着 crossfade 时交界处按普通路径重新
+	// Open，不再走 GaplessSink.Continue。
+	Crossfade func() time.Duration
 }
 
 // Engine 一个 owner（组或派对）的播放引擎：队列 + 传输状态机 + 解码分发。
@@ -611,7 +616,9 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		resume := e.sinksOpen
 		e.mu.Unlock()
 		targets, _ := e.targets.Snapshot()
-		if resume && canGapless(targets) {
+		// crossfade 开启时放弃 gapless 接续（产品决策）：两条路径都要改交界处的
+		// 样本，混在一起会让时间轴对不上，只能二选一。
+		if resume && canGapless(targets) && e.crossfadeDuration() == 0 {
 			// 无缝接续：不重新握手、不重新 Start。RTP 时间戳由帧的
 			// SampleIndex 推导，跨曲本来就连着，所以这里只更新曲目信息。
 			for _, t := range targets {
@@ -665,7 +672,26 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			}
 			go loop.Run(ctx)
 		}
-		frames, runErr := runner.Run(ctx, dec)
+		// 交叉淡化：把当前曲尾巴与下一曲开头等功率混合。混合后下一曲的
+		// 头部已经被消耗，循环下一轮从 position=fade 起播。
+		fade := e.crossfadeDuration()
+		var src io.Reader = dec
+		var xf *crossfadeReader
+		if fade > 0 {
+			if nextID, ok := e.queue.PeekNext(); ok && nextID != track.SongID {
+				// 帧字节数固定 4（s16le 双声道），与 pipeline 保持一致。
+				xf = newCrossfadeReader(dec, crossfadeFrames(fade.Seconds(), format.SampleRate), 4,
+					func() (io.ReadCloser, error) {
+						return e.openCrossfadeNext(ctx, nextID, format)
+					})
+				src = xf
+			}
+		}
+		frames, runErr := runner.Run(ctx, src)
+		mixed := xf != nil && xf.Mixed()
+		if xf != nil {
+			_ = xf.Close()
+		}
 		_ = dec.Close()
 
 		e.mu.Lock()
@@ -687,7 +713,11 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		_ = state
 
 		// 自然播完：auto=true 时 repeat=one 原地重播。
+		// 做过交叉淡化时，下一曲已经播掉了 fade 秒的头部，从那里接着放。
 		position = 0
+		if mixed {
+			position = fade
+		}
 		e.mu.Lock()
 		advanced := e.queue.Next(true)
 		if advanced && e.queue.Repeat() == RepeatOne {
@@ -709,6 +739,39 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 
 // DefaultFrameSamples 与 pipeline 保持一致：20ms @ 44.1kHz。
 const DefaultFrameSamples = 882
+
+// crossfadeDuration 读当前交叉淡化时长；未配置或关闭时返回 0。
+func (e *Engine) crossfadeDuration() time.Duration {
+	if e.deps.Crossfade == nil {
+		return 0
+	}
+	return e.deps.Crossfade()
+}
+
+// openCrossfadeNext 打开交叉淡化用的下一曲解码器。
+//
+// 优先吃掉预取好的那一份（3s 预取窗口已经把它备好），没有就现开：
+// 这一步发生在当前曲 EOF 处，分发器还有 2s 缓冲兜着，几十毫秒的开销
+// 不会传到设备侧。返回的 decoder 由 crossfadeReader 负责 Close。
+func (e *Engine) openCrossfadeNext(ctx context.Context, songID int64, format Format) (io.ReadCloser, error) {
+	e.mu.Lock()
+	if e.preload != nil && e.preloadID == songID {
+		d := e.preload
+		e.preload = nil
+		e.preloadID = 0
+		e.mu.Unlock()
+		return d, nil
+	}
+	e.mu.Unlock()
+	track, err := e.resolve(ctx, songID)
+	if err != nil {
+		return nil, err
+	}
+	if e.deps.ReplayGain != nil {
+		_, _ = e.deps.ReplayGain.GainDB(ctx, track.SongID)
+	}
+	return e.deps.Decoder.Open(ctx, track, 0, format)
+}
 
 // applyReplayGain 给本曲设置线性增益。
 //

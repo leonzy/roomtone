@@ -106,6 +106,16 @@ func (a *App) initPlayback() {
 		probe: a.replayGainProbe,
 	}
 
+	// 交叉淡化：每次起播读一次配置，改完下一曲生效。enabled=false 返回 0，
+	// 引擎走原有 gapless 接续（两者互斥）。
+	crossfade := func() time.Duration {
+		var cfg handlers.CrossfadeSetting
+		if err := a.configService.GetJSON("crossfade", &cfg); err != nil || !cfg.Enabled || cfg.Seconds <= 0 {
+			return 0
+		}
+		return time.Duration(cfg.Seconds * float64(time.Second))
+	}
+
 	latency := time.Duration(output.DefaultLatencyMs) * time.Millisecond
 	a.playerManager = player.NewManager(player.ManagerDeps{
 		Store:                 store,
@@ -120,6 +130,7 @@ func (a *App) initPlayback() {
 		PartyEnabled:          output.PartyEnabled,
 		PartyDriftToleranceMs: output.PartyDriftToleranceMs,
 		ReplayGain:            replayGain,
+		Crossfade:             crossfade,
 	})
 
 	// 恢复上次的设备 / 组 / 队列。失败不阻塞启动，只是没有断点续播。

@@ -19,10 +19,10 @@
 |---|---|
 | **超过 LMS** | 输出协议覆盖（RAOP + DLNA + 本地客户端，LMS 靠插件桥接且不同步）、同步等级显式建模与降级提示、每音箱服务端 EQ、派对模式（多组粗同步）、REST + WebSocket 事件契约 |
 | **与 LMS 持平** | 单解码源多路分发、同步组（主控/成员/逐台延迟补偿）、gapless、队列与断点续播、格式协商与转码、seek、组音量 |
-| **仍有差距** | **crossfade / fade in/out**（唯一未实现项，见 §4） |
+| **仍有差距** | 无（crossfade / fade 已按「与 gapless 互斥」的取舍实现，见 §4.1） |
 | **明确不做** | AirPlay 2（无成熟开源发送端）、DLNA 精确同步（协议无共享时钟） |
 
-**判定：核心同步链路（分发 → 时间轴 → 校正环 → 逐台补偿 → gapless → 断点续播 → ReplayGain → 定时闹钟）全部达标；仅 crossfade 记为已知差距，不计入"合格"。**
+**判定：核心同步链路（分发 → 时间轴 → 校正环 → 逐台补偿 → gapless / crossfade → 断点续播 → ReplayGain → 定时闹钟）全部达标，对照项全部持平或超过 LMS。**
 
 ## 3. 逐项对照
 
@@ -63,8 +63,8 @@
 |---|---|---|---|
 | gapless（专辑连播不断） | ✅ 播放器保持解码器不重开（`strm` flags `0x40`） | ✅ `GaplessSink.Continue`，样本序号连续，预取窗口 3s | ✅ |
 | 下一曲预开 | ✅ 服务端提前下发 | ✅ `prefetch.go`，剩余 <3s 预开下一曲解码器 | ✅ |
-| crossfade | ✅ `strm` 的 `trans_type` 1~4 + `trans_period` | ❌ 未实现 | ❌ |
-| fade in/out（单曲淡入淡出） | ✅ 同上（`trans_type` 2/3） | ❌ 未实现 | ❌ |
+| crossfade | ✅ `strm` 的 `trans_type` 1~4 + `trans_period`，播放器侧做 | ✅ 服务端 `crossfadeReader` 等功率混音（`/settings/crossfade`），开启时放弃 gapless 接续 | ✅ |
+| fade in/out（单曲淡入淡出） | ✅ 同上（`trans_type` 2/3） | ✅ 交叉淡化的首尾曲线即淡入/淡出（`cos`/`sin` 半窗）；闹钟另有音量渐强 | ✅ |
 | 欠载处理 | ✅ `STMu`/`STMo` 上报 + 重新缓冲 | ✅ 环形缓冲 + 补静音 + `underruns` 指标 | ✅ |
 
 ### 3.4 响度与音质
@@ -106,15 +106,15 @@
 |---|---|---|---|---|
 | 传输与分发 | 7 | 6 | 0 | 0（1 项双方都不做） |
 | 同步 | 12 | 10 | 2 | 0 |
-| 播放连续性 | 5 | 3 | 0 | 2 |
+| 播放连续性 | 5 | 5 | 0 | 0 |
 | 响度与音质 | 4 | 3 | 1 | 0 |
 | 定时与自动化 | 3 | 2 | 1 | 0 |
 | 队列/库/接口 | 11 | 11 | 0 | 0 |
-| **合计** | **42** | **35** | **4** | **2**（1 项为双方都不做） |
+| **合计** | **42** | **37** | **4** | **0**（1 项为双方都不做） |
 
 ## 4. 已知差距（不计入合格）
 
-ReplayGain 与闹钟已于本轮补齐（实现要点见 §3.4 / §3.5），剩下的一项也**不是**架构限制，是排期取舍：
+对照项已全部补齐（ReplayGain / 闹钟 / crossfade 的实现要点见 §4.1）。仍有一个**产品取舍**需要使用者知情：
 
 | 差距 | LMS 怎么做 | 我们缺什么 | 补齐路径 | 代价 |
 |---|---|---|---|---|
@@ -126,6 +126,7 @@ ReplayGain 与闹钟已于本轮补齐（实现要点见 §3.4 / §3.5），剩�
 | 能力 | 实现位置 | 取舍 |
 |---|---|---|
 | ReplayGain | `internal/player/replaygain.go`（增益计算 / 缩放）、`pipeline/distribute.go`（`Gain`/`SetGain`）、`internal/app/replaygain.go`（ffprobe 读 `REPLAYGAIN_*` + 缓存）、`/settings/replaygain` | 标签在**首次播放该曲时**读一次并缓存，不进扫描入库：存量曲库升级后立即可用，不需整库重扫；预取路径预热缓存，ffprobe 的几十毫秒落在 3s 预取窗口里，gapless 交界不受影响 |
+| crossfade | `internal/player/crossfade.go`（`crossfadeReader` 等功率混音）、`engine.go`（交界处接入 + 跳过已消耗头部）、`/settings/crossfade` | 扣住当前曲最后 `fade` 秒不输出，到 EOF 与下一曲开头等功率混合，输出总长 = 两曲之和 − 淡化窗；下一曲从 `position=fade` 续播。开启时不走 `GaplessSink.Continue` |
 | 服务端闹钟 | `0042_alarms.sql`、`internal/database/alarm_repository.go`、`internal/app/alarms.go`、`/alarms` | 15 秒轮询 + `last_fired_at` 分钟去重（重启不补响、同一分钟不重复）；`time_of_day` 存本地 `HH:MM` 而非绝对时间，避免夏令时错位；渐强由逐级下发组音量实现，引擎侧不额外加增益曲线 |
 
 ## 5. 验证记录

@@ -342,6 +342,7 @@ func (m *Manager) ensurePartyEngine(ctx context.Context, p Party) {
 		Clock:      m.deps.Clock,
 		Latency:    m.deps.Latency,
 		ReplayGain: m.deps.ReplayGain,
+		Crossfade:  m.deps.Crossfade,
 	})
 	m.engines[key] = e
 	m.mu.Unlock()

@@ -6495,6 +6495,86 @@
                 }
             }
         },
+        "/settings/crossfade": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回交叉淡化（crossfade）设置。enabled=false 时走原有 gapless 接续；enabled=true 时两曲交界按 seconds 秒等功率混合，此时 gapless 自动停用。未配置时返回默认值（关闭、3 秒）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "获取交叉淡化配置",
+                "responses": {
+                    "200": {
+                        "description": "交叉淡化配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CrossfadeSetting"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "写入交叉淡化设置，下一曲起生效（正在播放的曲目不受影响）。seconds 范围 0.5-12；enabled=true 时 gapless 接续自动停用，交界处重新打开解码器（分发器 2s 缓冲吸收开销）。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "更新交叉淡化配置",
+                "parameters": [
+                    {
+                        "description": "交叉淡化配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CrossfadeSetting"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CrossfadeSetting"
+                        }
+                    },
+                    "400": {
+                        "description": "参数非法",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "写入失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/settings/equalizer": {
             "get": {
                 "security": [
@@ -12664,6 +12744,18 @@
                 },
                 "interval_seconds": {
                     "type": "integer"
+                }
+            }
+        },
+        "handlers.CrossfadeSetting": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "seconds": {
+                    "description": "Seconds 淡化时长，0.5-12 秒；enabled=false 时忽略。",
+                    "type": "number"
                 }
             }
         },

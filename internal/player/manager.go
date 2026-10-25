@@ -77,6 +77,8 @@ type ManagerDeps struct {
 	PartyDriftToleranceMs int
 	// ReplayGain 每首歌的增益来源；nil 表示不启用。
 	ReplayGain ReplayGainSource
+	// Crossfade 交叉淡化时长；返回 0 表示关闭（与 gapless 互斥）。
+	Crossfade func() time.Duration
 }
 
 // Manager 设备 / 组 / 派对 / 引擎的编排者。
@@ -1037,6 +1039,7 @@ func (m *Manager) ensureEngine(ctx context.Context, g Group) {
 		Latency:    m.deps.Latency,
 		Metrics:    m.metrics,
 		ReplayGain: m.deps.ReplayGain,
+		Crossfade:  m.deps.Crossfade,
 	})
 	m.engines[key] = e
 	m.mu.Unlock()

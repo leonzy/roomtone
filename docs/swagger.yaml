@@ -137,6 +137,14 @@ definitions:
       interval_seconds:
         type: integer
     type: object
+  handlers.CrossfadeSetting:
+    properties:
+      enabled:
+        type: boolean
+      seconds:
+        description: Seconds 淡化时长，0.5-12 秒；enabled=false 时忽略。
+        type: number
+    type: object
   handlers.FingerprintStatus:
     properties:
       auto_enabled:
@@ -6449,6 +6457,58 @@ paths:
       summary: 更新自动扫描配置
       tags:
       - 扫描管理
+  /settings/crossfade:
+    get:
+      description: 返回交叉淡化（crossfade）设置。enabled=false 时走原有 gapless 接续；enabled=true
+        时两曲交界按 seconds 秒等功率混合，此时 gapless 自动停用。未配置时返回默认值（关闭、3 秒）。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 交叉淡化配置
+          schema:
+            $ref: '#/definitions/handlers.CrossfadeSetting'
+      security:
+      - BearerAuth: []
+      summary: 获取交叉淡化配置
+      tags:
+      - 设置
+    put:
+      consumes:
+      - application/json
+      description: 写入交叉淡化设置，下一曲起生效（正在播放的曲目不受影响）。seconds 范围 0.5-12；enabled=true 时 gapless
+        接续自动停用，交界处重新打开解码器（分发器 2s 缓冲吸收开销）。
+      parameters:
+      - description: 交叉淡化配置
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.CrossfadeSetting'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的配置
+          schema:
+            $ref: '#/definitions/handlers.CrossfadeSetting'
+        "400":
+          description: 参数非法
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 写入失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新交叉淡化配置
+      tags:
+      - 设置
   /settings/equalizer:
     get:
       description: 获取全局均衡器（EQ）配置，包含启用状态、预设名称和 10 段频段增益（31Hz–16kHz，单位 dB，范围 -12 ~ +12）。未配置时返回默认值（关闭

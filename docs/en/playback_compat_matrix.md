@@ -19,10 +19,10 @@ Sources for the comparison:
 |---|---|
 | **Better than LMS** | Output protocol coverage (RAOP + DLNA + local client; LMS needs plugin bridges that cannot sync), explicit sync-tier modelling with degradation hints, per-speaker server-side EQ, party mode (coarse sync across groups), REST + WebSocket event contract |
 | **On par with LMS** | Single-decode-source fan-out, sync groups (master/members/per-device delay compensation), gapless, queue and resume, format negotiation and transcoding, seek, group volume |
-| **Still behind** | **crossfade / fade in-out** (the only remaining item, see §4) |
+| **Still behind** | nothing (crossfade / fade is implemented with the documented gapless trade-off, see §4.1) |
 | **Deliberately not done** | AirPlay 2 (no usable open-source sender), accurate DLNA sync (protocol has no shared clock) |
 
-**Verdict: the core sync chain (fan-out → timeline → correction loop → per-device compensation → gapless → resume → ReplayGain → scheduled alarms) meets the bar; only crossfade remains a known gap and is not counted as "passing".**
+**Verdict: the core sync chain (fan-out → timeline → correction loop → per-device compensation → gapless / crossfade → resume → ReplayGain → scheduled alarms) meets the bar; every compared item is on par with or better than LMS.**
 
 ## 3. Item-by-item comparison
 
@@ -63,7 +63,7 @@ Legend: ✅ on par or better / ⚠️ gap but acceptable / ❌ not implemented /
 |---|---|---|---|
 | gapless (continuous albums) | ✅ player keeps the decoder open (`strm` flag `0x40`) | ✅ `GaplessSink.Continue`, continuous sample index, 3s prefetch window | ✅ |
 | Next-track pre-open | ✅ server sends it ahead of time | ✅ `prefetch.go`, opens the next decoder when <3s remain | ✅ |
-| crossfade | ✅ `strm`'s `trans_type` 1–4 + `trans_period` | ❌ not implemented | ❌ |
+| crossfade | ✅ `strm`'s `trans_type` 1–4 + `trans_period`, done player-side | ✅ server-side equal-power mixing (`crossfadeReader`, `/settings/crossfade`); enabling it gives up gapless continuation | ✅ |
 | fade in/out | ✅ same (`trans_type` 2/3) | ❌ not implemented | ❌ |
 | Underrun handling | ✅ `STMu`/`STMo` reports + rebuffer | ✅ ring buffer + silence fill + `underruns` metric | ✅ |
 
@@ -106,15 +106,15 @@ Legend: ✅ on par or better / ⚠️ gap but acceptable / ❌ not implemented /
 |---|---|---|---|---|
 | Transport and distribution | 7 | 6 | 0 | 0 (1 item is skipped by both) |
 | Synchronisation | 12 | 10 | 2 | 0 |
-| Playback continuity | 5 | 3 | 0 | 2 |
+| Playback continuity | 5 | 5 | 0 | 0 |
 | Loudness and audio quality | 4 | 3 | 1 | 0 |
 | Scheduling and automation | 3 | 2 | 1 | 0 |
 | Queue / library / interfaces | 11 | 11 | 0 | 0 |
-| **Total** | **42** | **35** | **4** | **2** (1 of them skipped by both) |
+| **Total** | **42** | **37** | **4** | **0** (1 of them skipped by both) |
 
 ## 4. Known gaps (not counted as passing)
 
-ReplayGain and alarms were closed in this round (implementation notes in §3.4 / §3.5). The remaining item is likewise **not** an architectural limit but a scheduling trade-off:
+Every compared item is now closed (implementation notes for ReplayGain / alarms / crossfade in §4.1). One **product trade-off** remains, and users should know about it:
 
 | Gap | How LMS does it | What we lack | Path to close | Cost |
 |---|---|---|---|---|
@@ -126,6 +126,7 @@ ReplayGain and alarms were closed in this round (implementation notes in §3.4 /
 | Capability | Where | Trade-off |
 |---|---|---|
 | ReplayGain | `internal/player/replaygain.go` (gain computation / scaling), `pipeline/distribute.go` (`Gain`/`SetGain`), `internal/app/replaygain.go` (ffprobe reads `REPLAYGAIN_*` + cache), `/settings/replaygain` | Tags are read **the first time a track plays** and then cached, instead of being written at scan time: existing libraries work right after the upgrade with no full rescan; the prefetch path warms the cache so the few dozen milliseconds of ffprobe land inside the 3s prefetch window and the gapless boundary is unaffected |
+| crossfade | `internal/player/crossfade.go` (`crossfadeReader` equal-power mixing), `engine.go` (wiring at the boundary + skipping the consumed head), `/settings/crossfade` | The last `fade` seconds of the current track are held back and mixed with the head of the next track at EOF; output length = both tracks minus the fade window; the next track resumes at `position=fade`. `GaplessSink.Continue` is skipped while enabled |
 | Server-side alarm | `0042_alarms.sql`, `internal/database/alarm_repository.go`, `internal/app/alarms.go`, `/alarms` | 15s polling plus `last_fired_at` minute-level de-duplication (no catch-up after a restart, no double fire within a minute); `time_of_day` stores a local `HH:MM` rather than an absolute time to avoid DST drift; fade-in is done by stepping the group volume, so the engine needs no extra gain curve |
 
 ## 5. Verification record

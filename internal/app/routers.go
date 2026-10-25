@@ -286,6 +286,8 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/settings/player-output-allowlist", configHandler.UpdatePlayerOutputAllowlistSetting)
 			r.Get("/settings/player-output", configHandler.GetPlayerOutputSetting)
 			r.Put("/settings/player-output", configHandler.UpdatePlayerOutputSetting)
+			r.Get("/settings/crossfade", configHandler.GetCrossfadeSetting)
+			r.Put("/settings/crossfade", configHandler.UpdateCrossfadeSetting)
 			r.Get("/settings/replaygain", configHandler.GetReplayGainSetting)
 			r.Put("/settings/replaygain", configHandler.UpdateReplayGainSetting)
 

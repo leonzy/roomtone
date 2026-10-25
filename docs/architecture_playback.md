@@ -568,6 +568,7 @@ CREATE TABLE playback_states (
 
 - `/settings/player-discovery` — `{enabled, protocols:["raop","dlna"], interval_seconds}`；`interval_seconds` 范围 10–600，默认 30
 - `/settings/player-output` — `{max_groups, default_latency_ms, dlna_realign_interval_minutes, allow_private_network, network_sinks_enabled, party_enabled, party_drift_tolerance_ms}`
+- `/settings/crossfade` — `{enabled, seconds}`；默认关闭、3 秒，`seconds` 范围 0.5–12。开启时交界处用等功率（cos/sin）混合，**放弃 gapless 接续**（产品决策，见对照矩阵 §4）
 - `/settings/replaygain` — `{mode: "off"|"track"|"album", prevent_clipping: bool}`；默认 `off` + 防削波开启。标签在首次播放该曲时由 ffprobe 读取并缓存，不进扫描入库（存量曲库升级后立即可用）
 - `/settings/player-output-allowlist` — `{entries:["192.168.1.0/24", …]}`；空数组表示不限制私网，配置后只允许这些网段，公网地址恒拒绝
 
