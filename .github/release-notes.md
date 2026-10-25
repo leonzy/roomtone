@@ -11,7 +11,7 @@
 
 **直接运行服务器：** Linux/macOS 为文件添加执行权限后运行，例如 `chmod +x roomtone-linux-amd64`、`./roomtone-linux-amd64`；Windows 在 PowerShell 中运行对应的 `.exe`。首次启动可通过 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 设置管理员账号与密码；默认端口为 `58091`，未设置凭证时初始账号为 `admin/admin`。数据保存在运行目录的 `data/`，升级时保留数据目录。
 
-**Docker 在线安装：** 正式 Full 使用 `roomtone/roomtone:latest`，正式 Lite 使用 `roomtone/roomtone:lite`；开发版分别使用 `:dev`、`:dev-lite`。完整启动配置见[中文安装指南](https://github.com/leonzy/roomtone/blob/main/README.md)。
+**Docker 在线安装：** 正式 Full 使用 `ghcr.io/leonzy/roomtone:latest`，正式 Lite 使用 `ghcr.io/leonzy/roomtone:lite`；开发版分别使用 `:dev`、`:dev-lite`。完整启动配置见[中文安装指南](https://github.com/leonzy/roomtone/blob/main/README.md)。
 
 **Bundle 安装包：** Android 选择对应架构的 `songloft-bundled-android-*.apk`；Linux 解压 `songloft-bundled-linux-x64.tar.gz`，Windows 解压 `songloft-bundled-windows-x64.zip`，保留完整目录后运行应用。macOS 解压 `songloft-bundled-macos.zip` 并将应用移动到「应用程序」。iOS 的 `songloft-bundled-ios-nosign.ipa` 未签名，需要自己的开发者证书及设备 provisioning profile 重签后安装。附件以本页实际提供的文件为准。
 
@@ -30,7 +30,7 @@ Choose files under **Assets** by purpose, operating system, and CPU architecture
 
 **Run the server directly:** On Linux/macOS, make the file executable and run it, for example `chmod +x roomtone-linux-amd64` followed by `./roomtone-linux-amd64`. On Windows, run the matching `.exe` from PowerShell. Set `ADMIN_USERNAME` / `ADMIN_PASSWORD` for the initial administrator credentials. The default port is `58091`; without custom credentials, a fresh installation uses `admin/admin`. Data is stored in `data/` under the working directory; preserve it when upgrading.
 
-**Online Docker installation:** Use `roomtone/roomtone:latest` for stable Full and `roomtone/roomtone:lite` for stable Lite. Development images use `:dev` and `:dev-lite`, respectively. See the [English installation guide](https://github.com/leonzy/roomtone/blob/main/README.en.md) for complete startup configuration.
+**Online Docker installation:** Use `ghcr.io/leonzy/roomtone:latest` for stable Full and `ghcr.io/leonzy/roomtone:lite` for stable Lite. Development images use `:dev` and `:dev-lite`, respectively. See the [English installation guide](https://github.com/leonzy/roomtone/blob/main/README.en.md) for complete startup configuration.
 
 **Bundled packages:** On Android, choose the matching `songloft-bundled-android-*.apk`. Extract `songloft-bundled-linux-x64.tar.gz` on Linux or `songloft-bundled-windows-x64.zip` on Windows, and launch the app with its complete directory. On macOS, extract `songloft-bundled-macos.zip` and move the app into Applications. The iOS `songloft-bundled-ios-nosign.ipa` is unsigned: re-sign with your developer certificate and a provisioning profile for your device before installing. Check the files actually attached to this release.
 

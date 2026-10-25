@@ -33,8 +33,9 @@ env:
   GO_VERSION: "1.26"
   # Flutter 原生 bundle（桌面/移动）；完整版 Web 单独使用 Lynx。
   FLUTTER_VERSION: "3.44.6"
-  DOCKER_USERNAME: roomtone
-  IMAGE_NAME: roomtone
+  # 只发布到 GHCR：GITHUB_TOKEN 自带 packages:write，无需额外 secret
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
   RELEASE_REPO: ${{ github.repository }}
 
 jobs:
@@ -188,12 +189,6 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -229,13 +224,13 @@ jobs:
 
           retry skopeo copy --all --preserve-digests \
             docker://docker.io/library/golang:1.26-alpine \
-            docker://ghcr.io/songloft-org/songloft-base-golang:1.26-alpine
+            docker://ghcr.io/leonzy/roomtone-base-golang:1.26-alpine
           retry skopeo copy --all --preserve-digests \
             docker://docker.io/library/alpine:3.24 \
-            docker://ghcr.io/songloft-org/songloft-base-alpine:3.24
+            docker://ghcr.io/leonzy/roomtone-base-alpine:3.24
           retry skopeo copy --all --preserve-digests \
             docker://docker.io/hanxi/ffmpeg:latest \
-            docker://ghcr.io/songloft-org/songloft-base-ffmpeg:latest
+            docker://ghcr.io/leonzy/roomtone-base-ffmpeg:latest
 
   # ============================================================
   # Job 2: 构建 Lynx Web（嵌入模式）
@@ -411,7 +406,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
+      # 只发 GHCR，需要用 GITHUB_TOKEN 推送镜像，故为 write
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -437,12 +433,6 @@ jobs:
         with:
           driver-opts: network=host
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -466,12 +456,12 @@ jobs:
           # 计算 Docker 标签（默认 = 完整版，-lite = 精简版）
           if [[ "${IS_PRERELEASE}" == "false" ]]; then
             # tag 触发：完整版用 :版本号 + :latest，精简版用 :版本号-lite + :lite
-            FULL_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${VERSION_TAG},${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
-            LITE_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}-lite,${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:lite"
+            FULL_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION_TAG},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            LITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}-lite,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:lite"
           else
             # dispatch：仅打分支名标签，用 release_tag 而非 version_tag
-            FULL_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.release_tag }}"
-            LITE_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.release_tag }}-lite"
+            FULL_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.release_tag }}"
+            LITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.release_tag }}-lite"
           fi
 
           echo "FULL_TAGS=${FULL_TAGS}" >> $GITHUB_OUTPUT
@@ -520,14 +510,14 @@ jobs:
             --build-arg TRACELY_APP_SECRET="${{ secrets.TRACELY_APP_SECRET }}" \
             --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --platform linux/amd64 \
-            --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-amd64 \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-full-amd64 \
             --cache-from type=gha,scope=full-linux-amd64 \
             --cache-to type=gha,scope=full-linux-amd64,mode=max \
             --load \
             .
-          docker save ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-amd64 \
+          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-full-amd64 \
             -o docker-tars/roomtone-docker-linux-amd64.tar
-          docker rmi ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-amd64 2>/dev/null || true
+          docker rmi ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-full-amd64 2>/dev/null || true
 
       - name: Build & save full linux/arm64
         run: |
@@ -539,14 +529,14 @@ jobs:
             --build-arg TRACELY_APP_SECRET="${{ secrets.TRACELY_APP_SECRET }}" \
             --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --platform linux/arm64 \
-            --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-arm64 \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-full-arm64 \
             --cache-from type=gha,scope=full-linux-arm64 \
             --cache-to type=gha,scope=full-linux-arm64,mode=max \
             --load \
             .
-          docker save ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-arm64 \
+          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-full-arm64 \
             -o docker-tars/roomtone-docker-linux-arm64.tar
-          docker rmi ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-arm64 2>/dev/null || true
+          docker rmi ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-full-arm64 2>/dev/null || true
 
       - name: Build & save full linux/arm/v7
         run: |
@@ -558,14 +548,14 @@ jobs:
             --build-arg TRACELY_APP_SECRET="${{ secrets.TRACELY_APP_SECRET }}" \
             --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --platform linux/arm/v7 \
-            --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-armv7 \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-full-armv7 \
             --cache-from type=gha,scope=full-linux-armv7 \
             --cache-to type=gha,scope=full-linux-armv7,mode=max \
             --load \
             .
-          docker save ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-armv7 \
+          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-full-armv7 \
             -o docker-tars/roomtone-docker-linux-arm-v7.tar
-          docker rmi ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-armv7 2>/dev/null || true
+          docker rmi ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-full-armv7 2>/dev/null || true
 
       # ---------- 推送完整版多架构 manifest（命中上面的 GHA cache，无需重新编译）----------
       - name: Push full multi-arch manifest
@@ -602,14 +592,14 @@ jobs:
             --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --build-arg LITE_BUILD=true \
             --platform linux/amd64 \
-            --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-amd64 \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-lite-amd64 \
             --cache-from type=gha,scope=lite-linux-amd64 \
             --cache-to type=gha,scope=lite-linux-amd64,mode=max \
             --load \
             .
-          docker save ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-amd64 \
+          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-lite-amd64 \
             -o docker-tars/roomtone-docker-linux-amd64-lite.tar
-          docker rmi ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-amd64 2>/dev/null || true
+          docker rmi ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-lite-amd64 2>/dev/null || true
 
       - name: Build & save lite linux/arm64
         run: |
@@ -622,14 +612,14 @@ jobs:
             --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --build-arg LITE_BUILD=true \
             --platform linux/arm64 \
-            --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-arm64 \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-lite-arm64 \
             --cache-from type=gha,scope=lite-linux-arm64 \
             --cache-to type=gha,scope=lite-linux-arm64,mode=max \
             --load \
             .
-          docker save ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-arm64 \
+          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-lite-arm64 \
             -o docker-tars/roomtone-docker-linux-arm64-lite.tar
-          docker rmi ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-arm64 2>/dev/null || true
+          docker rmi ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-lite-arm64 2>/dev/null || true
 
       - name: Build & save lite linux/arm/v7
         run: |
@@ -642,14 +632,14 @@ jobs:
             --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --build-arg LITE_BUILD=true \
             --platform linux/arm/v7 \
-            --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-armv7 \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-lite-armv7 \
             --cache-from type=gha,scope=lite-linux-armv7 \
             --cache-to type=gha,scope=lite-linux-armv7,mode=max \
             --load \
             .
-          docker save ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-armv7 \
+          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-lite-armv7 \
             -o docker-tars/roomtone-docker-linux-arm-v7-lite.tar
-          docker rmi ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-armv7 2>/dev/null || true
+          docker rmi ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:tmp-lite-armv7 2>/dev/null || true
 
       # ---------- 推送精简版多架构 manifest（命中上面的 GHA cache）----------
       - name: Push lite multi-arch manifest

@@ -98,4 +98,4 @@ push tag 后，[`release.yml`](../.github/workflows/release.yml) 会自动：
 ## 📍 仓库说明
 
 - **代码 & 发布仓库**：https://github.com/songloft-org/songloft
-- **Docker 镜像**：[roomtone/roomtone](https://hub.docker.com/r/roomtone/roomtone)
+- **Docker 镜像**：[ghcr.io/leonzy/roomtone](https://github.com/leonzy/roomtone/pkgs/container/roomtone)

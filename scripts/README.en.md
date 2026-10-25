@@ -98,4 +98,4 @@ A manual smoke test for the `cmd/tag`, `cmd/sum`, and `cmd/check` command-line t
 ## 📍 Repository Notes
 
 - **Code & release repository**: https://github.com/songloft-org/songloft
-- **Docker image**: [roomtone/roomtone](https://hub.docker.com/r/roomtone/roomtone)
+- **Docker image**: [ghcr.io/leonzy/roomtone](https://github.com/leonzy/roomtone/pkgs/container/roomtone)

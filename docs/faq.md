@@ -90,7 +90,7 @@ A: 确保使用绝对路径挂载卷：
 docker run -d \
   -v /absolute/path/to/music:/app/music \
   -v /absolute/path/to/data:/app/data \
-  roomtone/roomtone:latest
+  ghcr.io/leonzy/roomtone:latest
 ```
 
 ### Q: Docker 部署时定时任务时间不对（时区错误）怎么办？
@@ -102,7 +102,7 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -v /absolute/path/to/music:/app/music \
   -v /absolute/path/to/data:/app/data \
-  roomtone/roomtone:latest
+  ghcr.io/leonzy/roomtone:latest
 ```
 
 Docker Compose 中同样添加：
@@ -169,7 +169,7 @@ ln -s /home/user/downloads/music /app/music/downloads
 ```yaml
 services:
   songloft:
-    image: roomtone/roomtone:latest
+    image: ghcr.io/leonzy/roomtone:latest
     volumes:
       - /path/to/data:/app/data
       - /mnt/nas/music:/app/music/nas-music
@@ -207,14 +207,14 @@ docker run -d \
   -v /path/to/data:/app/data \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD=your_secure_password \
-  roomtone/roomtone:latest
+  ghcr.io/leonzy/roomtone:latest
 ```
 
 **Docker Compose 启动**：修改 `docker-compose.yml` 中的 `ADMIN_PASSWORD`：
 ```yaml
 services:
   songloft:
-    image: roomtone/roomtone:latest
+    image: ghcr.io/leonzy/roomtone:latest
     container_name: songloft
     restart: always
     ports:

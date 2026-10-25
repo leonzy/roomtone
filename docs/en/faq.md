@@ -90,7 +90,7 @@ A: Make sure you mount volumes using absolute paths:
 docker run -d \
   -v /absolute/path/to/music:/app/music \
   -v /absolute/path/to/data:/app/data \
-  roomtone/roomtone:latest
+  ghcr.io/leonzy/roomtone:latest
 ```
 
 ### Q: What should I do if scheduled task times are wrong (incorrect timezone) during Docker deployment?
@@ -102,7 +102,7 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -v /absolute/path/to/music:/app/music \
   -v /absolute/path/to/data:/app/data \
-  roomtone/roomtone:latest
+  ghcr.io/leonzy/roomtone:latest
 ```
 
 Add it in Docker Compose as well:
@@ -169,7 +169,7 @@ The scanner automatically follows symlinks and scans recursively, and detects ci
 ```yaml
 services:
   songloft:
-    image: roomtone/roomtone:latest
+    image: ghcr.io/leonzy/roomtone:latest
     volumes:
       - /path/to/data:/app/data
       - /mnt/nas/music:/app/music/nas-music
@@ -207,14 +207,14 @@ docker run -d \
   -v /path/to/data:/app/data \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD=your_secure_password \
-  roomtone/roomtone:latest
+  ghcr.io/leonzy/roomtone:latest
 ```
 
 **Docker Compose startup**: Modify `ADMIN_PASSWORD` in `docker-compose.yml`:
 ```yaml
 services:
   songloft:
-    image: roomtone/roomtone:latest
+    image: ghcr.io/leonzy/roomtone:latest
     container_name: songloft
     restart: always
     ports:

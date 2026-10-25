@@ -15,8 +15,6 @@
 </p>
 
 [![GitHub License](https://img.shields.io/github/license/leonzy/roomtone)](https://github.com/leonzy/roomtone)
-[![Docker Image Version](https://img.shields.io/docker/v/roomtone/roomtone?sort=semver&label=docker%20image)](https://hub.docker.com/r/roomtone/roomtone)
-[![Docker Pulls](https://img.shields.io/docker/pulls/roomtone/roomtone)](https://hub.docker.com/r/roomtone/roomtone)
 [![GitHub Release](https://img.shields.io/github/v/release/leonzy/roomtone)](https://github.com/leonzy/roomtone/releases)
 
 <p align="center">
@@ -288,14 +286,14 @@ $env:ADMIN_PASSWORD = "your_strong_password"
 
 > **ARMv7 users**: An outdated host libseccomp on older Armbian / Debian systems may cause the container to crash at startup. If you see `futexwakeup` / `SIGSEGV`, see the [FAQ troubleshooting steps](https://songloft.hanxi.cc/en/faq#docker-armv7-seccomp).
 
-#### 🌐 Pull from Docker Hub (Recommended)
+#### 🌐 Pull from GitHub Container Registry (Recommended)
 
 ```bash
 # 🌟 Full edition (recommended, includes the web frontend; :latest is the full edition)
-docker pull roomtone/roomtone:latest
+docker pull ghcr.io/leonzy/roomtone:latest
 
 # 📦 Lite edition (no web frontend, must be paired with the Flutter client)
-docker pull roomtone/roomtone:lite
+docker pull ghcr.io/leonzy/roomtone:lite
 
 # Run the container
 docker run -d \
@@ -306,14 +304,14 @@ docker run -d \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD='your_strong_password' \
   -e PUID=$(id -u) -e PGID=$(id -g) \
-  roomtone/roomtone:latest
+  ghcr.io/leonzy/roomtone:latest
 ```
 
 > 👤 **Run as non-root (optional)**: adding `-e PUID=$(id -u) -e PGID=$(id -g)` makes the container's main process run as your current host user, so newly created files under the mounted directories are no longer owned by root. Omit it to keep the container's default root-based startup — existing deployments are unaffected.
 
 #### 📥 Import the Image Offline from a Release
 
-Suitable for environments that cannot access Docker Hub directly:
+Suitable for environments that cannot access GHCR directly:
 
 ```bash
 # 1️⃣ Download the Docker image tar file for your platform (the default is the full edition)
@@ -337,7 +335,7 @@ version: '3.8'
 
 services:
   songloft:
-    image: roomtone/roomtone:latest
+    image: ghcr.io/leonzy/roomtone:latest
     container_name: songloft
     restart: always
     ports:
@@ -474,7 +472,7 @@ docker run -d \
   -e ADMIN_PASSWORD='your_strong_password' \
   -e BASE_PATH=/songloft \
   -e PUID=$(id -u) -e PGID=$(id -g) \
-  roomtone/roomtone:latest
+  ghcr.io/leonzy/roomtone:latest
 ```
 
 **2. Configure the Nginx reverse proxy:**
@@ -505,7 +503,7 @@ version: '3.8'
 
 services:
   songloft:
-    image: roomtone/roomtone:latest
+    image: ghcr.io/leonzy/roomtone:latest
     container_name: songloft
     restart: always
     ports:
