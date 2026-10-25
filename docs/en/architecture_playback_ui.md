@@ -536,10 +536,10 @@ error           {group_id, code, message}
 | **F0** | Speaker settings page + output picker (read-only listing, transfer between standalone targets) + WS client | P0 (`local` sink) |
 | **F1** | Local player takeover (`isLocal` dual mode) + takeover preference (pause/follow) | P0 |
 | **F2** | Dynamic member add/remove, group/member volume, sync badges | P2 |
-| **F3** | Split playback, master switching, delay compensation | P3 |
+| **F3** | Split playback, master switching, delay compensation, deleting a device/group (with confirmation) | P3 |
 | **F4** | Per-speaker EQ (faders, presets, preamp display, double-application guard) | P2.5 |
 | **F5** | Party (start/join/leave, drift hints, long-press exclusivity) | P3.5 |
-| **F6** | TV/Lynx adaptation, drag-to-reorder | F2 |
+| **F6** | TV/Lynx adaptation, drag-to-reorder, standby/wake (standby members greyed out, cannot join an exact group) | F2 |
 
 F4 and F5 are independent and can run in parallel; both touch only the picker and the settings page, not the player page structure.
 

@@ -1,6 +1,8 @@
 # 播放控制与音箱输出架构（设计稿）
 
-> **状态：设计提案，尚未实现。** 本文描述 Songloft 从"客户端权威的媒体服务器"扩展为"服务端持有播放状态、可推送到局域网音箱"的目标架构。
+> **状态（2026-10-25 审计后）。** 本文描述 Songloft 从"客户端权威的媒体服务器"扩展为"服务端持有播放状态、可推送到局域网音箱"的目标架构。
+>
+> 落地进度：**M0–M4（队列/状态机、解码管线、`local`/`raop`/`dlna` sink、设备发现）已实现**，真机项 `Not run`；**M5 同步校正、M6 每音箱 EQ、M7 派对校正、M8 可观测为部分实现**，逐项状态与补齐顺序见[开发计划 v2](./playback_development_plan.md#01-v2-修订审计结论2026-10-25)。凡是本文写了、代码里只做了一半的，一律以开发计划的验收断言为准。
 >
 > **实施路径见[开发计划](./playback_development_plan.md)**（任务拆分、涉及文件、门禁与排期）。
 >
@@ -110,6 +112,8 @@ internal/player/
 
 同步因此退化为"每路按自己的时间戳播放"，精度只取决于协议时钟能力，与 Go 侧调度无关。
 
+**但这只是「起播对齐」，不是持续同步**：设备侧缓冲深度差异、Wi-Fi 抖动与重传会让偏移随时间累积，10 分钟后两台音箱就是两个声音。要长期维持 ±20ms 必须叠加 §4.3.1 的校正环——这也是 LMS 与所有成熟多房间系统的必备组件。
+
 **副产品**：单解码源天然支持**无缝播放**——下一首直接续写同一个 RTP 时间轴，不需要设备支持 gapless。DLNA 侧仍需 `SetNextAVTransportURI`。
 
 **唯一的例外是 EQ**：每台音箱的均衡器不同，分发出去的字节必然不同。EQ 因此插在**分发之后、编码之前**，但因为它保样本数，时间轴仍然共用（§4.8）。
@@ -153,13 +157,36 @@ const (
 
 可选项（默认关闭）：`dlna_realign_interval`，每 N 分钟静默 stop→seek→play 重对齐，代价是一次可听断点。
 
+### 4.3.1 同步校正环（v2 新增，`SyncExact` 的必要条件）
+
+对齐起播只能保证"一起开始"，保证不了"一直一起"。校正环是 LMS `StreamingController.pm:483 _CheckSync` 的等价物，参数与动作直接对应：
+
+| 参数 | 值 | 说明 |
+|---|---|---|
+| `sync_check_interval_ms` | 950 | 每周期采一次各成员实际播放位置 |
+| `min_sync_adjust_ms` | 10 | 小于此值不动，避免来回抖 |
+| `max_deviation_ms` | 10000 | 超过视为设备异常，交给掉线流程（B8-02） |
+| 参考设备 | 组内**位置最落后且不可跳帧**的成员 | 追最慢的，而不是追最快的：追快的要丢弃大量音频，必然可听 |
+
+动作：
+
+- **偏快**（`pos > ref + eps`）→ `SkipFrames(delta)`：RAOP 丢弃对应 RTP 时间戳的帧，时间戳连续、不产生空洞；`local` 下发 `skip`。
+- **偏慢**（`pos < ref − eps`）→ 注入静音帧补齐（**不暂停解码器、不改时间轴**）；对 DLNA 等价于暂时降速拉流。
+- 位置来源：RAOP = 已发送 RTP 时间戳换算 − 协议缓冲；`local` = 客户端 500ms 上报；DLNA = 已发送字节 / 码率 + 估计缓冲（精度差，因此 DLNA 组只做 `SyncAligned`）。
+
+**为什么不是「整组停下来等最慢的」**：那会让整个组反复卡顿；校正环是"快的等一点、慢的补一点"，用户听到的是稳态。
+
+**为什么还需要每设备 `delay_ms`**：不同型号的 DSP 与缓冲差异是**恒定偏移**，校正环只能修漂移，修不了恒定偏移（强行修会让那台设备长期处于跳帧状态）。因此每台设备一个 `delay_ms`（±500ms），起播时一次性施加，校正环只处理残余。
+
+**可听性约束**：单周期单成员只调一次；单次调整超过 200ms 时改用静音补齐而非连续跳帧；所有调整都记 `player_drift_ms` 与 `slog`，便于事后定位是哪台设备在拖。
+
 ### 4.4 队列与传输状态机
 
 队列语义对齐 LMS `Playlist.pm`：
 
 - `currentIndex` + `repeat(all|one|off)` + `shuffle`
 - `jump(index)`、`next/prev`、`insertNext`（插播）
-- **预加载**：当前曲目剩余 < 30s 时启动下一首解码，保证无缝
+- **预加载**：当前曲目剩余 ≤30s 启动下一首解码（填环形缓冲），剩余 ≤3s 完成 sink 预开（RAOP 续写同一 RTP 时间轴；DLNA 调 `SetNextAVTransportURI`），保证无缝
 
 状态机：
 
@@ -354,6 +381,25 @@ SUBSCRIBE <eventSubURL>                      ← 设备主动上报状态
 - 漂移不可避免：各设备 buffer 深度不同，实测 200~500ms 且持续累积。按 §4.3 降级处理。
 - 国产音箱 SOAP 方言差异大（`CurrentURIMetaData` 空值容忍度、`Seek` 单位、事件订阅缺失），需要按 `modelName` 打兼容补丁，并保留"手动填 IP 添加"兜底。
 
+### 5.5 设备发现（`internal/player/discovery`）
+
+```
+mDNS  _raop._tcp  →  ServiceEntry(Name/Host/Port/TXT)  →  raop.Found
+SSDP  M-SEARCH    →  200 OK(LOCATION)                  →  desc.xml  →  dlna.Device
+                     ↓
+             Scanner（每种协议一个）→ Speaker{ID,Kind,Name,Address,Caps}
+                     ↓
+   Discovery：并发扫描 → 按 id 去重 → 跳过 pw=true → Manager.RegisterPlayer
+```
+
+- **扫描与登记分开**：`sink/raop`、`sink/dlna` 只解析协议报文，翻译成 `Speaker` 的逻辑在 `discovery.Scanner`，登记（建组、落库、发 `speaker_seen`）交给 `player.Manager`。协议层因此不需要认识数据库。
+- **多网卡逐个发包**：SSDP 绑定的源地址取自 `net.Interfaces()` 的每个 IPv4，Docker macvlan / 双网卡机器上只发默认路由那张会漏设备；mDNS 由 `hashicorp/mdns` 内部遍历网卡。
+- **MX 与重发**：`M-SEARCH` 带 `MX: 2`，默认重发 2 次（间隔按超时均分）。UDP 丢包在局域网里很常见，只发一次会漏掉一半设备。
+- **地址归一**：RAOP 的 `pk` 是 base64 的 DER，入库前统一转 PEM（`raop.NormalizePublicKey`）；DLNA 的 `Address` 存完整的 `LOCATION` URL，因为 `desc.xml` 路径各家不同，只存 `host:port` 建 sink 时还得再猜。
+- **跳过需要密码的设备**：RAOP 的 `pw=true` 是 FairPlay 认证，不是明文密码，做了也放不出声，直接记入 `skipped` 并在 UI 提示。
+- **配置**：`/settings/player-discovery` 的 `enabled` 只控制周期扫描；手动 `POST /players/discover` 始终可用，受 `protocols` 限制。保存后立即唤醒扫描循环，不用等旧间隔睡完。
+- **手动添加兜底**：`POST /players` 收 `{address, kind}`，DLNA 先取 `desc.xml` 校验 AVTransport，RAOP 需要 `device_id`（RTSP 路径里的 MAC）。`/settings/player-output` 的 `allow_private_network` 为 false 时拒绝私网地址。
+
 ## 6. 数据模型
 
 迁移 `0040_players.sql`：
@@ -436,6 +482,7 @@ CREATE TABLE playback_states (
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/players` | 设备列表（在线、能力、音量、状态） |
+| POST | `/players` | 手动添加设备 `{address, kind, device_id?}`（发现不到时兜底） |
 | POST | `/players/discover` | 手动触发 SSDP + mDNS 扫描，返回新增设备 |
 | PUT | `/players/{id}` | 重命名 / 启用停用 / `takeover_behavior`（仅 local） |
 | POST | `/players/{id}/volume` | `{volume, muted}` |
@@ -552,18 +599,20 @@ SSDP（239.255.255.250:1900）与 mDNS（224.0.0.251:5353）在 Docker bridge �
 | **P1** | RAOP 打通（L16）单设备 | 2 周 | Docker `shairport-sync` 出声，抓 PCM 校验时长与波形 |
 | **P1.5** | RAOP 真机兼容矩阵 | 1~2 周 | ≥4 类设备实测，产出矩阵表入文档 |
 | **P2** | DLNA 发现 + SOAP + 单播 | 3 周 | 假 renderer（httptest）校验 SOAP/DIDL；真机 ≥3 款 |
-| **P3** | 同步组（RAOP 精确 + 跨协议降级） | 2~3 周 | 两实例互相关延迟 < 20ms |
+| **P3** | 同步组（RAOP 精确 + 跨协议降级 + **校正环**） | 3~4 周 | 两实例互相关延迟 < 20ms；人为拖慢 2s 能在 5s 内回位；播放中加入成员 ≤70ms 出声 |
 | **P2.5** | 每音箱 EQ（Go 侧 RBJ biquad + preamp + 热切换） | 1 周 | 白噪经 +12dB@1kHz 后 1kHz 增益误差 < 0.2dB；全链路无 >0dBFS 样本；切 EQ 无爆音（波形无阶跃） |
-| **P3.5** | 派对模式（多组同播 + 漂移校正） | 2 周 | 3 组派对粗对齐 < 1.5s；单组退出不影响其余；解码器计数不超限 |
+| **P3.5** | 派对模式（多组同播 + 漂移检测与校正） | 2~2.5 周 | 3 组派对粗对齐 < 1.5s；拖慢一组 5s 内回位；单组退出不影响其余；解码器计数不超限 |
 | **P4** | AirPlay 2 | — | **不做**，除非出现可用开源发送端 |
 
-**MVP（P0+P1+P2，单播不同步）≈ 2.5 个月；含同步 + EQ ≈ 3.75 个月；含派对 ≈ 4.25 个月。**
+**MVP（P0+P1+P2，单播不同步）≈ 2.5 个月；含同步（含校正环）+ EQ ≈ 3.6 个月；含派对与工程收尾 ≈ 4.4 个月（19 周，~103 人日）。**
 
 ### 9.1 自动化验证方法
 
 - **单元**：时间轴换算（注入假时钟）、SDP 生成、AES/RSA 已知向量、RTP 包 golden bytes、队列状态机。
 - **RAOP 集成**：CI 起 `shairport-sync --output pipe` 写入文件，用 `ffprobe` 校验时长/采样率，用波形相似度校验内容。
 - **同步精度**：两个 shairport-sync 实例各 pipe 到独立文件，互相关求峰值延迟，断言 `< 20ms`。这是可自动化的同步精度测试。
+- **校正收敛**：假时钟 + 假 sink 注入 ±50ms / ±2s 偏差，断言 **1 个 950ms 周期内收敛到 ≤10ms**，10 分钟仿真残余漂移 ≤5ms（B5-08）。
+- **逐位隔离**：组内只给 A 开 EQ，断言 B 收到的样本与原信号 max diff = 0（B6-03）。
 - **DLNA**：`httptest` 起假 renderer，断言 SOAP body 与 `SOAPAction` 头；真机矩阵人工验收。
 - **EQ**：白噪 / 扫频输入，FFT 后断言各频点增益与设定值误差 < 0.2dB；`+12dB` 全开时断言峰值 ≤ 0dBFS（削波回归）；热切换时断言样本差无 >0.1 的阶跃。
 - **派对**：假 sink 记录每组首个样本的"逻辑位置"，断言 3 组互差 < 1.5s；注入一组人为拖慢 2s，断言 5s 内发出 `group_drift{corrected:true}` 并 seek 回位。
@@ -581,6 +630,7 @@ SSDP（239.255.255.250:1900）与 mDNS（224.0.0.251:5353）在 Docker bridge �
 | 派对漂移被用户听成"回声" | 中 | 体验崩塌 | 1.5s 阈值只做粗校正；两个目标在同一房间时提示改用同步组；UI 明示派对不保证精确同步 |
 | EQ 削波 / 切 EQ 爆音 | 中 | 听感、可能伤高音单元 | 自动 preamp + 20ms 斜坡 + 削波样本断言（§9.1） |
 | EQ 强制解码把槽位吃满 | 中 | 功能不可用 | 错误信息区分原因；UI 在打开 EQ 前就提示当前槽位 |
+| 校正环引入可听跳帧 | 中 | 听感变差 | 只在 >10ms 时动、单周期单成员一次、>200ms 改用静音补齐；`player_drift_ms` 留痕 |
 
 ## 11. 附录：参考实现索引
 

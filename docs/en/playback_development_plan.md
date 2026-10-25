@@ -1,6 +1,6 @@
 # Playback Control and Speaker Output · Development Plan
 
-> **Status: executable plan v1 (2026-10-25).** For design and decisions see [Playback Control and Speaker Output Architecture](./architecture_playback.md) (backend) and [Playback and Speaker Interaction Design](./architecture_playback_ui.md) (frontend). This document does not repeat the reasoning; it answers three things: **in what order, which files, and what counts as done**.
+> **Status: executable plan v2 (2026-10-25, post-audit revision).** For design and decisions see [Playback Control and Speaker Output Architecture](./architecture_playback.md) (backend) and [Playback and Speaker Interaction Design](./architecture_playback_ui.md) (frontend). This document does not repeat the reasoning; it answers three things: **in what order, which files, and what counts as done**.
 >
 > Task granularity = one independently committable, independently verifiable change. Task IDs go into commit messages (`feat(player): queue semantics and transport state machine (B1-02)`), so implementation and traceability map one to one.
 
@@ -11,6 +11,35 @@
 - Estimates are **person-days for one full-time developer, including self-testing and docs**, excluding time waiting for real hardware (called out separately).
 - Run a full `make check` at the end of each week; do not change acceptance criteria mid-week.
 
+## 0.1 v2 revision: audit findings (2026-10-25)
+
+v1 did not fail by missing tasks; it failed by **writing acceptance criteria as prose**. B5-04 said "`delay_ms` takes effect", B6-03 said "per-sink instances", B7-03 said "triggers correction" — and each degraded into "the field exists", "one copy per group", "an event is emitted". `make check` stayed green while the feature was half-built.
+
+v2 does exactly two things:
+
+1. **Acceptance criteria become executable assertions** — fake-sink frame offsets, FFT error, cross-correlation peaks, HTTP status codes, `rg` finding no leftovers. A task that cannot state an assertion does not start; a task whose assertion fails is not done.
+2. **Close the 9 gaps the audit found**, each with its own task ID, none folded into another task as an afterthought.
+
+| Audit finding (evidence) | Task | v2 handling |
+|---|---|---|
+| `AddMember` has no tier check; DLNA can join an exact group (`manager.go:519`) | B5-02 | Acceptance adds an "HTTP 400 + `detail` text" assertion |
+| Mid-playback joins wait for the next track (`engine.go:499` captures the sink slice) | B5-01 | Split out **B5-09** hot-swap; B5-01 acceptance becomes "audible within 3 frames" |
+| No drift-correction loop; only detection exists (`party.go:296`) | — | New **B5-08** |
+| No `delay_ms` / `volume_offset` fields | B5-04 | Kept; acceptance becomes "frame offset error ≤1 frame" |
+| Transfer has no +800ms compensation (`manager.go:615`) | B5-05 | Acceptance becomes "first-frame position delta ∈ [780,820]ms" |
+| Sync accuracy script does not exist | B5-06 | Kept; location fixed as `scripts/tests/sync_correlation.py` |
+| No group volume, no sync power | — | New **B5-10**, **B8-05** |
+| Decoder and sinks reopened per track; no prefetch | — | New **B5-11** |
+| EQ runs through ffmpeg `-af` and only the master's profile (`pipeline/eq.go:22`, `manager.go:724`) | B6-01/03/06 | Rewritten acceptance + new **B6-07** to delete the old path |
+| No `GET /players/{id}/eq/presets` | B6-05 | Add the endpoint and a constant-reuse assertion |
+| Party only detects, never corrects; no `party_test.go` | B7-03/06 | B7-03 becomes detection only; new **B7-07** closes the loop |
+| No `metrics.go` | B8-03 | Kept |
+| No `DELETE /players` or `DELETE /groups`, no master-switch endpoint | — | New **B8-04** |
+| No power (standby/wake) | — | New **B8-05** |
+| No CI guard; half-built features pass `make check` | — | New **X-07** |
+
+**Every M5 / M6 / M7 task is re-run against the v2 criteria.** Results that already pass are kept; only the new assertions need re-running. Nothing is skipped because "it passed before".
+
 ## 1. Delivery scope
 
 | Version | Milestones | What the user can perceive | Cumulative person-days |
@@ -18,9 +47,11 @@
 | **v0.1 (internal)** | M0 + M1 + M2 | Server holds a queue and playback state, can drive client playback (`local` sink) | ~31 |
 | **v0.2** | + M3 | **Audio actually comes out of an AirPlay speaker**, single device, no sync | ~44 |
 | **v0.3** | + M4 | DLNA speakers added; single or multiple devices playing independently | ~54 |
-| **v0.4** | + M5 | **Multi-room sync** (exact over RAOP, degraded with DLNA) | ~62 |
-| **v0.5** | + M6 | Per-speaker EQ | ~68 |
-| **v1.0** | + M7 + M8 + X | Party mode, resume after restart, observability, security and docs wrap-up | ~85 |
+| **v0.4** | + M5 | **Multi-room sync** (exact over RAOP, degraded with DLNA, including the drift-correction loop) | ~71.5 |
+| **v0.5** | + M6 | Per-speaker EQ (server-side biquads, not filters) | ~78.5 |
+| **v1.0** | + M7 + M8 + X | Party mode (with correction), resume after restart, observability, security and docs wrap-up | ~103 |
+
+> **v2's definition of "done"**: every acceptance item must be an executable assertion. No assertion, no start; failing assertion, not done; "the field exists", "the event fires" and "it can be found in the code" do not count.
 
 Non-goals follow design §1.2: **AirPlay 2**, Chromecast / native Sonos, video push, plugin control of players. They are repeated here so that "should we build this?" has a documented answer instead of being re-litigated every time.
 
@@ -78,11 +109,12 @@ B0-08 ────────────────────────�
         └─► B2-04 ─► B3-02 ─► B3-03 ─► B3-04 ─► B3-05 ─► [G1] ─► B3-08
         └─► B2-04 ─► B4-03 ─► B4-06 ─► [G2]
 B3-05 + B4-03 ─► B5-01 ─► B5-05 ─► B5-06 ─► [G2]
+B5-01 ─► B5-09 ─► B5-08 ─► [G2]
 B2-01 ─► B6-01 ─► B6-03 ─► [G3]
 B5-01 ─► B7-01 ─► B7-03 ─► [G4]
 ```
 
-Critical path: `B0-01 → B1-02 → B2-01 → B2-04 → B3-05 → G1 → B5-01 → B5-06 → G2 → B7-03 → G4`.
+Critical path: `B0-01 → B1-02 → B2-01 → B2-04 → B3-05 → G1 → B5-01 → B5-09 → B5-08 → G2 → B7-07 → G4`.
 
 Frontend F0 can start before B1-05 (stub `/playback/targets`). That is the only line that truly parallelizes without adding rework risk.
 
@@ -162,55 +194,67 @@ No user-visible functionality, but every later milestone stands on it.
 
 **Exit criteria (v0.3)**: ≥3 real devices can pull and play, pause/seek/volume work; manual entry works when multicast is unavailable.
 
-### M5 Sync groups (B5, 8.5 person-days) → gate G2
+### M5 Sync groups (B5, 17.5 person-days) → gate G2
+
+> This is where v1 accumulated the most half-built work. **"The field exists", "the group can be created" and "the event fires" never count as done**; every acceptance item below is stated as an executable assertion.
 
 | ID | Task | Files | Acceptance | d |
 |---|---|---|---|---|
-| B5-01 | Group master/follower and dynamic members | `internal/player/group.go` | A member joining mid-playback starts from **the current point** without interrupting existing members; removal supports both `continue` and `stop` | 2 |
-| B5-02 | SyncTier determination | `internal/player/group.go` | Any DLNA member makes the whole group `aligned` and returns `sync_tier`; **reject** adding DLNA to an existing exact group (400 with a clear message) | 0.5 |
-| B5-03 | Capability negotiation | `internal/player/caps.go` | Sample rate is the minimum across the group; codec fallback `l16→aac→mp3`; upmix to 2ch | 1 |
-| B5-04 | Delay compensation and per-member volume | `internal/player/group.go` | `delay_ms` takes effect (fake sink asserts frame offset); rules for combining `volume_offset` with device volume are explicit | 1 |
-| B5-05 | Transfer and split | `internal/player/transfer.go` | `POST /groups/{id}/transfer` supports `only_player_id` for splitting; the target starts at `position + 800ms` and **compensation happens exactly once** | 1.5 |
-| B5-06 | **Sync accuracy test** | `scripts/tests/` (new) | Two shairport-sync instances pipe to separate files; cross-correlate to find the peak delay and assert `< 20ms`; no drift over 10 minutes | 2 |
-| B5-07 | Master switching | `internal/player/group.go` | Switching the master does not interrupt audio (same timeline, only the holder changes); not allowed for single-member groups | 0.5 |
+| B5-01 | Group master/follower and dynamic members | `internal/player/manager.go`, `group.go` | A member joining mid-playback is audible **within 3 frames (≤70ms)** while existing members' `underruns` stay flat; removal supports both `continue` and `stop` without reopening the track | 2 |
+| B5-02 | SyncTier determination and admission | `internal/player/manager.go`, `handlers/playback.go` | Adding a `dlna` member to a `raop/local` group returns **400** with `detail` containing "no exact sync"; a pure RAOP group is always `exact`; `sync_tier` updates live as members change | 0.5 |
+| B5-03 | Capability negotiation | `internal/player/player.go` | Sample rate is the minimum across the group; codec fallback `l16→aac→mp3`; 2ch upmix (a mono source yields two identical channels) | 1 |
+| B5-04 | Delay compensation and volume offset | `internal/player/group.go`, `sink/*` | `delay_ms` converts to a frame count applied as the sink start offset; fake sink asserts offset error **≤1 frame**; `volume_offset` combines with device volume (`clamp(base+offset,0,100)`) with lower/upper boundary cases | 1.5 |
+| B5-05 | Transfer and split | `internal/player/transfer.go` | `only_player_id` split; target first-frame position minus source position **∈ [780,820]ms** (fake-sink assertion); compensation applied once, two consecutive transfers do not stack | 1.5 |
+| B5-06 | **Sync accuracy test** | `scripts/tests/sync_correlation.py` (new) | Two shairport-sync instances pipe to separate files; cross-correlate to find the peak delay and assert `< 20ms`; no drift over 10 minutes; result recorded in `docs/playback_compat_matrix.md` | 2 |
+| B5-07 | Master switching | `internal/player/manager.go` | Switching the master does not interrupt audio (same timeline, only the holder changes); single-member group returns 400 | 0.5 |
+| B5-08 | **Sync correction loop** (new) | `internal/player/sync_loop.go` (new), `engine.go` | Every 950ms (`sync_check_interval_ms`) sample each member's actual position; reference = the **most-behind member that cannot skip frames**; deviation < `min_sync_adjust_ms` (10) is ignored, > 10s is abandoned; too-fast members `SkipFrames`, too-slow members get injected silence (**timeline unchanged, decoder never paused**). Fake clock injects ±50ms / ±2s and must converge to **≤10ms within one cycle**; residual drift ≤5ms over a 10-minute simulation; `-race` clean | 3 |
+| B5-09 | **Sink hot-swap + per-sink writer** (new) | `pipeline/distribute.go`, `sink/sink.go` | `Sinks` becomes an atomic snapshot so `SetSinks` takes effect **on the next frame**; each sink gets its own bounded queue (drop-oldest with a counter); stalling one fake sink for 500ms must not raise other members' `underruns` | 2 |
+| B5-10 | Group volume sync (new) | `manager.go`, `handlers/playback.go` | `POST /groups/{id}/volume` fans out with each member's `volume_offset`; `GET` returns the effective per-member value; partial failure returns `failed[]` without rolling back the successes | 1.5 |
+| B5-11 | Gapless prefetch (new) | `engine.go`, `pipeline/`, `sink/dlna` | With ≤3s left, pre-open the next decoder and sinks; the junction has continuous sample numbering, no `underrun`, gap <5ms; DLNA uses `SetNextAVTransportURI` and falls back to a normal switch with a log line when unsupported | 2 |
 
-**Exit criteria (v0.4)**: two identical AirPlay speakers in one group sound simultaneous to the ear; automated cross-correlation < 20ms.
+**Exit criteria (v0.4)**: two identical AirPlay speakers in one group sound simultaneous to the ear; automated cross-correlation < 20ms; **artificially slowing one by 2s recovers within 5s**; adding a third speaker mid-playback is audible within 70ms without interrupting the first two.
 
-### M6 Per-speaker EQ (B6, 6 person-days) → gate G3
+### M6 Per-speaker EQ (B6, 7 person-days) → gate G3
+
+> The current implementation builds an ffmpeg `-af equalizer=...` chain in `pipeline/eq.go`, and `manager.groupEQ` returns only the master's profile. **That is the wrong approach and must be removed**, not "optimised later": one ffmpeg per speaker means multiple decode sources and the sync foundation collapses. B6-07 deletes the old path.
 
 | ID | Task | Files | Acceptance | d |
 |---|---|---|---|---|
 | B6-01 | RBJ peaking biquad cascade | `internal/player/pipeline/biquad.go` | 10 bands (31/62/125/250/500/1k/2k/4k/8k/16k Hz), Q=1.41; white-noise/sweep FFT asserts per-band gain error **< 0.2dB**; **sample count preserved** (N in, N out) | 2 |
 | B6-02 | Preamp and clipping protection | `internal/player/pipeline/biquad.go` | `preamp = -max(0, max(band))`; peak ≤ 0dBFS end to end with all bands at +12dB; API returns the actual preamp | 0.5 |
-| B6-03 | Per-sink instances + live switching | `internal/player/pipeline/` | EQ state isolated per path; live parameter changes use a 20ms linear ramp with no waveform step (assert sample delta ≤ 0.1); hard reset only when `idle` | 1 |
+| B6-03 | Per-sink instances + live switching | `internal/player/pipeline/` | EQ runs **after the Distributor and before encoding**, sample by sample, with isolated state per path; with +12dB on A only, B receives bit-identical samples (assert max diff = 0); live changes use a 20ms linear ramp with no waveform step (assert adjacent-sample delta ≤ 0.1); hard reset only when `idle` | 1 |
 | B6-04 | Forced decoding rule + budget | `internal/player/budget.go`, `group.go` | Any non-flat EQ in the group forces server-side decoding and consumes a slot; full budget returns 503 with codes distinguishing "too many concurrent playbacks" from "EQ requires decoding, no slots left" | 1 |
 | B6-05 | EQ REST + preset reuse | `internal/handlers/playback.go`, `internal/services/equalizer_preset.go` | `GET/PUT /players/{id}/eq`, `GET /players/{id}/eq/presets`; presets share **one constant set** with `/settings/equalizer` | 1 |
 | B6-06 | `local` sink consistency | `internal/player/sink/local/` | EQ is applied server-side when the local device is in a group; a field tells the client to disable its local EQ and show "EQ applied by server" | 0.5 |
+| B6-07 | **Delete the ffmpeg filter EQ path** (new) | `internal/player/pipeline/eq.go` (delete), `decoder.go` | `rg -e BuildFilterChain -e 'equalizer=f='` finds nothing under `internal/`; the decoder no longer accepts EQ parameters; with non-flat EQ the ffmpeg command line contains no `-af`; `/settings/equalizer` behaviour unchanged | 1 |
 
-**Exit criteria (v0.5)**: +12dB@1kHz on a single speaker is audible with no clipping; other speakers in the group are unaffected; switching EQ produces no pop.
+**Exit criteria (v0.5)**: +12dB@1kHz on a single speaker is audible with no clipping; other speakers in the group are **bit-for-bit unaffected**; switching EQ produces no pop; `equalizer` cannot be found in ffmpeg's arguments.
 
-### M7 Party (B7, 7.5 person-days) → gate G4
+### M7 Party (B7, 9.5 person-days) → gate G4
 
 | ID | Task | Files | Acceptance | d |
 |---|---|---|---|---|
 | B7-01 | Party core | `internal/player/party.go` | `leader_group_id` advances the logical position; `owner_kind='party'` reuses the same queue/state-machine code (no second implementation); no master volume | 2 |
 | B7-02 | Join / leave | `internal/player/party.go` | Joining starts from the current logical position; leaving supports `continue` (own queue) and `stop`; one group leaving never disturbs the rest | 1 |
-| B7-03 | Drift detection and correction | `internal/player/party.go` | Exceeding `party_drift_tolerance_ms` (default 1500) triggers correction and broadcasts `group_drift{corrected}`; after 3 consecutive failures stop retrying and set `unaligned` | 1.5 |
+| B7-03 | Drift **detection** (split out) | `internal/player/party.go` | Compute the offset every 950ms; exceeding `party_drift_tolerance_ms` (default 1500) emits `group_drift{corrected:false, offset_ms}`; the correction itself is not part of this task (B7-07) | 1 |
 | B7-04 | Party transport broadcast + budget | `internal/player/party.go` | `POST /playback/party/transport` broadcasts to all groups; **each group consumes its own decode slot**, so a 4-group party exhausts the budget and is rejected explicitly | 1 |
 | B7-05 | `party_enabled=false` rejection | `internal/handlers/playback.go` | Starting a party returns 403 with a readable reason; groups already in a party are unaffected | 0.5 |
-| B7-06 | Party tests | `internal/player/party_test.go` | Fake sink records each group's first-sample logical position, asserting 3 groups within 1.5s; slowing one group by 2s produces `corrected:true` and realignment within 5s | 1.5 |
+| B7-06 | Party tests | `internal/player/party_test.go` (**the file must exist and run in CI**) | Fake sink records each group's first-sample logical position, asserting 3 groups within 1.5s; after a group leaves, neighbouring `position` jitter stays < 100ms | 1.5 |
+| B7-07 | **Party correction loop** (new) | `internal/player/party.go` | Reuses B5-08 sampling but only aligns **logical progress** (a lagging group seeks to the leader's position, a leading group waits); converges below 1.5s within 5s; after 3 consecutive failures set `unaligned`, stop retrying and broadcast once; a fake sink slowed by 2s must produce `corrected:true` with offset < 1500ms within 5s | 2 |
 
-**Exit criteria (v1.0 feature surface)**: three groups play together, positions within 1.5s, independent volume, and any group leaving leaves the rest uninterrupted.
+**Exit criteria (v1.0 feature surface)**: three groups play together, positions within 1.5s, independent volume, and any group leaving leaves the rest uninterrupted; **an artificially slowed group realigns by itself**; `party_test.go` runs in CI.
 
-### M8 Resilience and observability (B8, 3 person-days)
+### M8 Resilience and observability (B8, 6.5 person-days)
 
 | ID | Task | Files | Acceptance | d |
 |---|---|---|---|---|
 | B8-01 | Restart recovery | `internal/player/snapshot.go`, `manager.go` | After restart, resume the previous track and position (< 2s error); devices reconnect automatically | 1 |
 | B8-02 | Offline / online | `internal/player/manager.go` | A member going offline only sets `member_offline`; group state is unchanged; on reconnect it rejoins and starts from the current point | 1 |
-| B8-03 | Metrics and logging | `internal/player/metrics.go` | `player_underruns_total`, `player_decode_slots_used`, `player_drift_ms`; hot paths log `player_id`/`group_id` | 1 |
+| B8-03 | Metrics and logging | `internal/player/metrics.go` | `player_underruns_total`, `player_decode_slots_used`, `player_drift_ms`, `player_sink_dropped_frames_total`; `GET /playback/metrics` returns a snapshot; hot paths log `player_id`/`group_id` | 1 |
+| B8-04 | Device/group lifecycle endpoints (new) | `handlers/playback.go`, `manager.go` | `DELETE /players/{id}` (stop first, detach from every group, clean orphan groups), `DELETE /groups/{id}` (stop first), `POST /groups/{id}/master`; all three have swagger and unit tests, including "delete the last device" and "delete a playing group" | 2 |
+| B8-05 | Player power / standby (new) | `manager.go`, `sink/raop`, `sink/dlna` | `POST /players/{id}/power`; DLNA sends `Stop` and clears the URI, RAOP stops sending RTP and is marked `standby` (RTSP has no standard standby command — never pretend otherwise); group-level `sync_power` defaults off; standby members are excluded from the sync loop | 1.5 |
 
-### X Cross-cutting and engineering wrap-up (not a milestone, 6.5 person-days, runs throughout)
+### X Cross-cutting and engineering wrap-up (not a milestone, 8 person-days, runs throughout)
 
 These are not tied to a milestone but **must be completed within the relevant milestone**; deferring them all to the end turns them into one big patch.
 
@@ -222,6 +266,7 @@ These are not tied to a milestone but **must be completed within the relevant mi
 | X-04 | Bundle mode restrictions | `docs/en/architecture_frontend.md`, `internal/app/app.go` (startup detection) | iOS Bundle keeps only the `local` sink by default; desktop Bundle requires explicit opt-in; APIs return an explicit reason when disabled | M2 | 1 |
 | X-05 | Performance measurement | `scripts/tests/` (new benchmark) | CPU / memory baseline with 4 concurrent decode groups; the "4 groups run smoothly on a single-core device" claim is backed by data | After M7 | 1 |
 | X-06 | Documentation backfill | `docs/en/architecture_playback*.md`, `docs/en/pitfalls.md`, `docs/en/playback_compat_matrix.md` | Design docs change from "not implemented" to "implemented (version)"; gotchas recorded per `LESSONS.md`; bilingual sync | v1.0 | 1 |
+| X-07 | **Half-built guard (CI)** (new) | `Makefile` (`check-playback`), `scripts/tests/guards.sh` | One command runs: sync convergence, bit-exact EQ isolation, party realignment, `rg -e BuildFilterChain -e 'equalizer=f='` finds nothing, `party_test.go` exists, new endpoints appear in swagger; any failure turns `make check` red | From v0.4 onwards | 1.5 |
 
 ## 5. Frontend task breakdown (separate repo)
 
@@ -244,8 +289,11 @@ The frontend lives in `clients/player`; landing points are in [interaction desig
 | F5-01 | Party create/join/leave | `widgets/party_section.dart`, `use_cases/party_edit.dart` | Tapping another target during a party joins it, undoable for 5s; no master volume control | B7-02 | 2 |
 | F5-02 | Drift indicator | `widgets/drift_indicator.dart` | Two states: "aligning…" → "unaligned"; no repeated toasts on repeated failures | B7-03 | 1 |
 | F6-01 | TV / Lynx adaptation + drag reorder | `features/output/**` | Every action reachable by D-pad; drag reorder degrades to buttons on TV | F2 | 3 |
+| F2-03 | Group volume and offsets (new) | `widgets/group_volume.dart` | Group slider sends immediately; per-member ±10 trim echoes back instantly; partial failures name the failing members | B5-10 | 1 |
+| F3-03 | Delete device/group (new) | `use_cases/speaker_manage.dart` | Double confirmation; deleting a playing group warns "playback will stop"; failure rolls back without reordering the list | B8-04 | 1 |
+| F6-02 | Standby / wake (new) | `widgets/power_toggle.dart` | Standby members are greyed out and cannot join an exact group; on wake they rejoin automatically and show "aligning" | B8-05 | 1 |
 
-Frontend total ≈ 25 person-days. F4 and F5 are independent and can run in parallel.
+Frontend total ≈ 28 person-days. F4 and F5 are independent and can run in parallel.
 
 ## 6. Gates
 
@@ -254,9 +302,9 @@ When a gate fails, **do not change the acceptance criteria**; change scope or te
 | Gate | Method | Pass criteria | Fallback | Decision point |
 |---|---|---|---|---|
 | **G1** L16 compatibility | B3-07 automated audio-out + B3-08 real-device matrix | ≥4 device classes accept L16; volume/seek work | Try AAC-ADTS first (compatibility bought with lossy audio); if that still fails, mark RAOP experimental and drop it from v0.2, pulling DLNA forward | End of M3 |
-| **G2** Sync accuracy | B5-06 two-instance cross-correlation | Peak delay < 20ms with no drift over 10 minutes | If only some devices fail → per-device default `delay_ms` compensation; if all fail → position becomes `SyncAligned` ("approximate") and product wording follows | End of M5 |
-| **G3** EQ quality | B6-01/02/03 assertions | Frequency response error < 0.2dB; no sample > 0dBFS; no step on live switch | Live switch fails → only allow EQ edits when `idle` (UI disables editing during playback); clipping fails → add 1dB preamp headroom and retest | End of M6 |
-| **G4** Party alignment | B7-06 fake sink | 3 groups < 1.5s; leaving does not disturb others | If unreachable → party degrades to "same song in multiple groups, independent progress" with the UI stating it is not synced | End of M7 |
+| **G2** Sync accuracy | B5-06 two-instance cross-correlation + B5-08 simulation + B5-09 hot-swap | ①Peak delay < 20ms with no drift over 10 minutes; ②slowing one member by 2s **recovers within 5s**; ③mid-playback join is **audible within 70ms** with no extra `underruns` elsewhere; ④with `delay_ms=50` the frame offset error is ≤1 frame | ①Fails → per-device `delay_ms`; only if all fail does the position become `SyncAligned`. ②③fail → **v0.4 must not ship**; "DLNA is never exact anyway" is not an excuse for a broken RAOP group | End of M5 |
+| **G3** EQ quality | B6-01/02/03/07 assertions | Response error < 0.2dB; no sample > 0dBFS; no step on live switch; **members without EQ are bit-identical (max diff = 0)**; `rg 'equalizer=f='` finds nothing | Live switch fails → only allow EQ edits when `idle`. Bit-exact isolation fails → fall back to group-level EQ and **state "shared by the group" in the UI**, never pretend it is per-speaker | End of M6 |
+| **G4** Party alignment | B7-06 + B7-07 fake sink | 3 groups < 1.5s; **a 2s slowdown realigns within 5s**; consecutive failures set `unaligned` and broadcast once; leaving does not disturb others | If unreachable → party degrades to "same song in multiple groups, independent progress" with the UI stating it is not synced | End of M7 |
 
 ## 7. Verification matrix
 
@@ -269,9 +317,9 @@ Anything automatable lives in CI; only real-device items are manual.
 | M2 | Pipeline integration (fake sink asserting frames/timestamps/silence fill) | Client integration listening test |
 | M3 | SDP/RTP/crypto golden bytes; in-container shairport-sync audio-out + waveform comparison | **Real devices ≥4 classes** (G1) |
 | M4 | SOAP call-sequence assertions against a fake renderer | ≥3 real devices |
-| M5 | Two-instance cross-correlation < 20ms (G2) | Listening test in one group |
-| M6 | FFT response, clipping, step assertions (G3) | Listening (pops, volume change) |
-| M7 | Fake-sink logical position delta < 1.5s, correction convergence (G4) | Three-room test |
+| M5 | Two-instance cross-correlation < 20ms; fake-clock convergence simulation; hot-swap ≤70ms; `delay_ms` frame offset; `-race` (G2) | Listening test in one group |
+| M6 | FFT response, clipping, step, **bit-exact per-member isolation**, `rg` finds no filter leftovers (G3) | Listening (pops, volume change) |
+| M7 | Fake-sink logical position delta < 1.5s, **2s slowdown realignment**, `unaligned` broadcast once (G4) | Three-room test |
 | M8 | Restart recovery, offline reconnect | Power-pull / network-cut drill |
 
 The only real-hardware stand-ins available in CI are shairport-sync (Linux container) and a fake DLNA renderer — so real-device conclusions for DLNA and AirPlay must land in `docs/playback_compat_matrix.md`, not just in an issue comment.
@@ -287,12 +335,12 @@ One full-time developer, including verification. Weeks count from kickoff, not t
 | W5–W6 | M2 decode + local sink → **v0.1** | F0-02/03 selector | Client integration |
 | W7–W9 | M3 RAOP → **G1** → **v0.2** | F0-04 speaker management | Real-device matrix (needs hardware) |
 | W10–W12 | M4 DLNA → **v0.3** | F1 dual-mode takeover | Real devices ≥3 |
-| W13–W14 | M5 sync groups → **G2** → **v0.4** | F2 + F3 | Sync accuracy test |
-| W15 | M6 EQ → **G3** → **v0.5** | F4 EQ | EQ listening test |
-| W16–W17 | M7 party → **G4** | F5 party | Three-room test |
-| W18 | M8 resilience + X wrap-up → **v1.0** | F6 TV/Lynx | Full regression |
+| W13–W15 | M5 sync groups (correction loop / hot-swap / prefetch) → **G2** → **v0.4** | F2 + F3 | Sync accuracy + convergence simulation |
+| W16 | M6 EQ (biquad rewrite + delete the filter path) → **G3** → **v0.5** | F4 EQ | EQ listening test |
+| W17–W18 | M7 party (detection + correction) → **G4** | F5 party | Three-room test |
+| W19 | M8 resilience + X wrap-up → **v1.0** | F6 TV/Lynx | Full regression |
 
-This matches design §9 (P0~P3.5 ≈ 3.75 months). If blocked waiting for hardware, push forward on M6 / M7 (testable with fake sinks) rather than idling.
+v2 is 4 weeks longer than v1 (~19 weeks ≈ 4.4 months). All of it is "finishing what was half-built": correction loop 3d, hot-swap and per-sink writers 2d, prefetch 2d, biquad rewrite and removing the old path 3d, party correction 2d, lifecycle and power 3.5d, CI guard 1.5d. If blocked waiting for hardware, push forward on the hardware-independent parts (M5-08/09, M6, M7 — all testable with fake sinks) rather than idling.
 
 ## 9. Commit and collaboration conventions
 
@@ -318,17 +366,28 @@ This matches design §9 (P0~P3.5 ≈ 3.75 months). If blocked waiting for hardwa
 
 Task detail lives in §4 / §5; only milestones are tracked here so the two never disagree.
 
-- [ ] M0 foundations (B0-01 ~ B0-09)
-- [ ] M1 queue and transport (B1-01 ~ B1-06)
-- [ ] M2 decode and local sink (B2-01 ~ B2-06) → v0.1
-- [ ] M3 RAOP (B3-01 ~ B3-08) → G1 → v0.2
-- [ ] M4 DLNA (B4-01 ~ B4-08) → v0.3
-- [ ] M5 sync groups (B5-01 ~ B5-07) → G2 → v0.4
-- [ ] M6 per-speaker EQ (B6-01 ~ B6-06) → G3 → v0.5
-- [ ] M7 party (B7-01 ~ B7-06) → G4
-- [ ] M8 resilience and observability (B8-01 ~ B8-03) → v1.0
-- [ ] Frontend F0 ~ F6
-- [ ] X wrap-up: full swagger, `player_output_allowlist`, Docker networking docs, Bundle restrictions, performance measurement, design-doc status update
+- [x] M0 foundations (B0-01 ~ B0-09) — done
+- [x] M1 queue and transport (B1-01 ~ B1-06) — done
+- [x] M2 decode and local sink (B2-01 ~ B2-06) → v0.1 — done; client integration Not run
+- [x] M3 RAOP (B3-01 ~ B3-08) → G1 → v0.2 — code complete; **G1 real-device matrix Not run**
+- [x] M4 DLNA (B4-01 ~ B4-08) → v0.3 — code complete; real devices Not run
+- [~] M5 sync groups (B5-01 ~ B5-11) → G2 → v0.4 — done: B5-02/03/05 (no +800ms)/07; **pending: B5-01/04/06/08/09/10/11**
+- [~] M6 per-speaker EQ (B6-01 ~ B6-07) → G3 → v0.5 — done: B6-02/04; **pending: B6-01/03/05 (presets)/06/07**
+- [~] M7 party (B7-01 ~ B7-07) → G4 — done: B7-01/02/04/05; **pending: B7-03 rewrite, B7-06/07**
+- [~] M8 resilience and observability (B8-01 ~ B8-05) → v1.0 — done: B8-01; **pending: B8-02 event, B8-03/04/05**
+- [ ] Frontend F0 ~ F6 (0%; no `output` directory under `clients/player/lib/features/`)
+- [ ] X wrap-up: X-01 partial, X-03 partial; **X-02/04/05/07 not started**
+
+### 11.1 Next commit sequence (dependency order, one commit each)
+
+1. **Close the sync loop**: `B5-09` (hot-swap + per-sink writers) → `B5-08` (correction loop) → `B5-04` (delay/offset) → `B5-02` (400 admission) → `B5-01` (70ms join) → `B5-05` (+800ms) → re-run `B5-06` and pass G2 once.
+2. **EQ rewrite**: `B6-01` (biquad) → `B6-03` (per-sink instances + ramp) → `B6-07` (delete the filter path) → `B6-06` (local consistency) → `B6-05` (presets) → G3.
+3. **Party loop**: `B7-03` (detection rewrite) → `B7-07` (correction) → `B7-06` (`party_test.go`) → G4.
+4. **Lifecycle and resilience**: `B8-04` (DELETE/master) → `B8-03` (metrics) → `B8-05` (power) → `B5-11` (prefetch) → `B5-10` (group volume) → `B8-02` (offline event).
+5. **Guard and wrap-up**: `X-07` (`make check-playback`) → `X-02` → `X-04` → `X-05` → `X-06`.
+6. **Frontend**: `F0` → `F1` → `F2` → `F3` → `F4` → `F5` → `F6` (one F stage right after each milestone; never all at the end).
+
+> Every step is only committed once the X-07 guard is green. If the guard fails, do not commit — do not hand the problem to the next batch.
 
 ## 12. Risks and buffers
 
@@ -341,3 +400,6 @@ The risk table in design §10 still applies; only the ones that **change the sha
 | Single-source underrun clicks | M2 rework affecting every later milestone | Do B0-04 buffering and silence fill thoroughly in M0 |
 | Party drift heard as echo | M7 degraded, product positioning shifts | Fallback already defined in gate G4 |
 | ~~Frontend repo decision delayed (D1)~~ | Eliminated: `leonzy/roomtone-player` exists and the submodule points at it | — |
+| **Acceptance written as prose → half-built features** | Already happened in v1: three tasks "done" with no closed loop, 4 weeks of rework | From v2 on, acceptance must be executable; X-07 enters CI; prose acceptance is rejected at self-review |
+| Correction loop touches the engine core | Possible M2 regression | Do B5-09 first (isolated writers), then B5-08 as sample-and-inject only; never touch the decoder |
+| Claiming "implemented" without hardware | Docs diverge from reality; expensive to debug later | Anything unverified on hardware is reported as Not run, never as done |

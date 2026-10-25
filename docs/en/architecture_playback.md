@@ -1,6 +1,8 @@
 # Playback Control and Speaker Output Architecture (Design Draft)
 
-> **Status: design proposal, not implemented.** This document describes how Songloft extends from a "client-authoritative media server" into one that owns playback state and pushes audio to speakers on the local network.
+> **Status (after the 2026-10-25 audit).** This document describes how Songloft extends from a "client-authoritative media server" into one that owns playback state and pushes audio to speakers on the local network.
+>
+> Implementation progress: **M0–M4 (queue/state machine, decode pipeline, `local`/`raop`/`dlna` sinks, device discovery) are implemented**, with real-device items `Not run`; **M5 sync correction, M6 per-speaker EQ, M7 party correction and M8 observability are partially implemented**. Per-item status and the closing order live in [development plan v2](./playback_development_plan.md#01-v2-revision-audit-findings-2026-10-25). Wherever this document says something the code only half does, the plan's assertions win.
 >
 > **For the implementation path see the [development plan](./playback_development_plan.md)** (task breakdown, files touched, gates, and schedule).
 >
@@ -110,6 +112,8 @@ one ffmpeg process → s16le/44100/2ch → ring buffer (3s) → 882 frames every
 
 Sync then degenerates into "each sink plays according to its own timestamp"; accuracy depends only on the protocol's clock capability, not on Go-side scheduling.
 
+**But that is only start alignment, not continuous sync.** Per-device buffer depth, Wi-Fi jitter and retransmits accumulate offset over time — ten minutes later two speakers are two distinct sounds. Sustaining ±20ms requires the correction loop in §4.3.1, which is why every mature multi-room system (including LMS) has one.
+
 **Side benefit:** a single decode source gives **gapless playback for free** — the next track simply continues the same RTP timeline, with no device-side gapless support required. DLNA still needs `SetNextAVTransportURI`.
 
 **The one exception is EQ**: every speaker has a different equalizer, so the bytes leaving the fan-out necessarily differ. EQ therefore sits **after fan-out and before encoding**, yet shares the same timeline because it preserves the sample count (§4.8).
@@ -153,13 +157,36 @@ Rules:
 
 Optional (default off): `dlna_realign_interval`, silently re-align every N minutes via stop→seek→play, at the cost of one audible gap.
 
+### 4.3.1 Sync correction loop (new in v2, a prerequisite for `SyncExact`)
+
+Aligned start only guarantees "started together", never "stays together". The correction loop is the equivalent of LMS `StreamingController.pm:483 _CheckSync`; parameters and actions map one to one:
+
+| Parameter | Value | Meaning |
+|---|---|---|
+| `sync_check_interval_ms` | 950 | Sample every member's actual position each cycle |
+| `min_sync_adjust_ms` | 10 | Below this, do nothing — avoids oscillating |
+| `max_deviation_ms` | 10000 | Above this, treat the device as faulty and hand it to the offline flow (B8-02) |
+| Reference device | the **most-behind member that cannot skip frames** | Chase the slowest, never the fastest: chasing the fastest means dropping large amounts of audio, which is audible |
+
+Actions:
+
+- **Too fast** (`pos > ref + eps`) → `SkipFrames(delta)`: RAOP drops the frames for the corresponding RTP timestamps (timestamps stay contiguous, no hole); `local` receives a `skip`.
+- **Too slow** (`pos < ref − eps`) → inject silence to fill (**never pause the decoder, never move the timeline**); for DLNA this is equivalent to briefly slowing the pull rate.
+- Position sources: RAOP = sent RTP timestamps minus protocol buffering; `local` = client 500ms reports; DLNA = bytes sent / bitrate + estimated buffer (imprecise, hence DLNA groups stay `SyncAligned`).
+
+**Why not "stop the whole group and wait for the slowest"**: that makes the whole group stutter repeatedly; the loop makes the fast ones wait a little and the slow ones catch up a little, so the user hears a steady state.
+
+**Why `delay_ms` is still needed per device**: different models have **constant** DSP/buffer offsets. The loop fixes drift, not constants (forcing it would leave that device permanently skipping). So each device gets a `delay_ms` (±500ms) applied once at start, and the loop only handles the residue.
+
+**Audibility constraints**: one adjustment per member per cycle; adjustments above 200ms use silence fill instead of continuous skipping; every adjustment is recorded in `player_drift_ms` and `slog` so the culprit device can be identified later.
+
 ### 4.4 Queue and transport state machine
 
 Queue semantics mirror LMS `Playlist.pm`:
 
 - `currentIndex` + `repeat(all|one|off)` + `shuffle`
 - `jump(index)`, `next/prev`, `insertNext`
-- **Preload**: start decoding the next track when the current one has < 30s left, guaranteeing gapless
+- **Preload**: start decoding the next track when ≤30s remain (filling the ring buffer), and pre-open the sinks when ≤3s remain (RAOP continues the same RTP timeline; DLNA uses `SetNextAVTransportURI`), guaranteeing gapless
 
 State machine:
 
@@ -354,6 +381,25 @@ SUBSCRIBE <eventSubURL>                      ← device pushes state
 - Drift is unavoidable: buffer depths differ per device; measured 200–500ms and accumulating. Handle it via §4.3.
 - Chinese-brand speakers differ widely in SOAP dialect (tolerance for empty `CurrentURIMetaData`, `Seek` units, missing event subscriptions). Patch by `modelName` and always keep "add device by IP" as a fallback.
 
+### 5.5 Device discovery (`internal/player/discovery`)
+
+```
+mDNS  _raop._tcp  →  ServiceEntry(Name/Host/Port/TXT)  →  raop.Found
+SSDP  M-SEARCH    →  200 OK(LOCATION)                  →  desc.xml  →  dlna.Device
+                     ↓
+             Scanner (one per protocol) → Speaker{ID,Kind,Name,Address,Caps}
+                     ↓
+   Discovery: concurrent scan → dedupe by id → skip pw=true → Manager.RegisterPlayer
+```
+
+- **Scanning is separate from registration**: `sink/raop` and `sink/dlna` only parse protocol messages; translating them into `Speaker` lives in `discovery.Scanner`, and registration (solo group, persistence, `speaker_seen` event) is left to `player.Manager`. Protocol layers therefore never need to know about the database.
+- **Send from every NIC**: SSDP binds one socket per IPv4 from `net.Interfaces()`. On Docker macvlan or dual-NIC hosts, sending only from the default-route interface misses devices. mDNS walks interfaces inside `hashicorp/mdns`.
+- **MX and retransmission**: `M-SEARCH` carries `MX: 2` and is retransmitted twice by default (interval derived from the timeout). UDP loss is common on LANs; a single shot misses roughly half the devices.
+- **Address normalization**: the RAOP `pk` TXT value is base64 DER and is converted to PEM before storage (`raop.NormalizePublicKey`); DLNA `Address` keeps the full `LOCATION` URL because `desc.xml` paths differ per vendor.
+- **Password-protected devices are skipped**: RAOP `pw=true` means FairPlay authentication, not a plain password, so such devices are reported in `skipped` instead of failing later.
+- **Configuration**: `enabled` in `/settings/player-discovery` only controls periodic scanning; manual `POST /players/discover` always works and is limited by `protocols`. Saving wakes the scan loop immediately instead of waiting out the old interval.
+- **Manual fallback**: `POST /players` takes `{address, kind}`; DLNA validates AVTransport via `desc.xml`, RAOP requires `device_id` (the MAC in the RTSP path). Private addresses are rejected when `allow_private_network` in `/settings/player-output` is false.
+
 ## 6. Data Model
 
 Migration `0040_players.sql`:
@@ -436,6 +482,7 @@ How clients consume these endpoints (picker, transfer, dynamic grouping, dual-mo
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/players` | Device list (online, caps, volume, state) |
+| POST | `/players` | Add a device manually `{address, kind, device_id?}` (fallback when discovery finds nothing) |
 | POST | `/players/discover` | Trigger SSDP + mDNS scan, return newly found devices |
 | PUT | `/players/{id}` | Rename / enable / disable / `takeover_behavior` (local only) |
 | POST | `/players/{id}/volume` | `{volume, muted}` |
@@ -552,18 +599,20 @@ Version one exposes REST/WS only, avoiding a three-repo change.
 | **P1** | RAOP with L16, single device | 2 weeks | Docker `shairport-sync` plays audio; captured PCM verified for duration and waveform |
 | **P1.5** | RAOP real-device compatibility matrix | 1–2 weeks | ≥4 device classes tested; matrix documented |
 | **P2** | DLNA discovery + SOAP + unicast | 3 weeks | Fake renderer (httptest) validates SOAP/DIDL; ≥3 real devices |
-| **P3** | Sync groups (exact RAOP + cross-protocol degradation) | 2–3 weeks | Cross-correlation delay between two instances < 20ms |
+| **P3** | Sync groups (exact RAOP + cross-protocol degradation + **correction loop**) | 3–4 weeks | Cross-correlation delay between two instances < 20ms; slowing one by 2s realigns within 5s; mid-playback join is audible within 70ms |
 | **P2.5** | Per-speaker EQ (Go-side RBJ biquad + preamp + hot switch) | 1 week | White noise through +12dB@1kHz lands within 0.2dB at 1kHz; no sample above 0dBFS anywhere in the chain; switching EQ produces no click (no step in the waveform) |
-| **P3.5** | Party mode (multi-group shared track + drift correction) | 2 weeks | Three-group party stays within 1.5s; one group leaving does not disturb the rest; decoder count never exceeds the budget |
+| **P3.5** | Party mode (multi-group shared track + drift detection and correction) | 2–2.5 weeks | Three-group party stays within 1.5s; a 2s slowdown realigns within 5s; one group leaving does not disturb the rest; decoder count never exceeds the budget |
 | **P4** | AirPlay 2 | — | **Not planned** unless a usable open-source sender appears |
 
-**MVP (P0+P1+P2, unicast without sync) ≈ 2.5 months; with sync + EQ ≈ 3.75 months; with party ≈ 4.25 months.**
+**MVP (P0+P1+P2, unicast without sync) ≈ 2.5 months; with sync (including the correction loop) + EQ ≈ 3.6 months; with party and engineering wrap-up ≈ 4.4 months (19 weeks, ~103 person-days).**
 
 ### 9.1 Automated verification
 
 - **Unit**: timeline math (injected fake clock), SDP generation, AES/RSA known-answer vectors, RTP golden bytes, queue state machine.
 - **RAOP integration**: CI runs `shairport-sync --output pipe` into a file; verify duration/sample rate with `ffprobe` and content via waveform similarity.
 - **Sync accuracy**: two shairport-sync instances piped to separate files; cross-correlate to find the delay peak and assert `< 20ms`. This makes sync accuracy automatically testable.
+- **Correction convergence**: fake clock + fake sinks injected with ±50ms / ±2s; assert convergence to **≤10ms within one 950ms cycle**, with residual drift ≤5ms over a 10-minute simulation (B5-08).
+- **Bit-exact isolation**: with EQ enabled on A only, assert the samples reaching B are identical to the source (max diff = 0) (B6-03).
 - **DLNA**: `httptest` fake renderer asserting SOAP bodies and `SOAPAction` headers; real devices verified manually.
 - **EQ**: white noise / sweep input, FFT and assert each band's gain within 0.2dB of the setting; assert peak ≤ 0dBFS with all bands at `+12dB` (clipping regression); assert no step larger than 0.1 in the sample stream when hot-switching.
 - **Party**: fake sinks record the logical position of their first sample and assert the spread across 3 groups is < 1.5s; slow one group by 2s artificially and assert a `group_drift{corrected:true}` plus a corrective seek within 5s.
@@ -580,6 +629,7 @@ Version one exposes REST/WS only, avoiding a three-repo change.
 | Wall-clock jump tearing the timeline | Low | Whole group desyncs | Monotonic clock only; wall clock used solely for NTP conversion |
 | Party drift heard as an echo | Medium | Experience collapses | 1.5s threshold only does coarse correction; suggest a sync group when two targets share a room; UI states that a party is not exact |
 | EQ clipping / click when switching EQ | Medium | Listening quality, possible tweeter damage | Automatic preamp + 20ms ramp + clipped-sample assertion (§9.1) |
+| The correction loop introduces audible skips | Medium | Worse listening experience | Only act above 10ms, once per member per cycle, silence fill above 200ms; `player_drift_ms` records every adjustment |
 | EQ forcing decoding and exhausting slots | Medium | Feature unusable | Error message names the cause; the UI shows remaining slots before EQ is enabled |
 
 ## 11. Appendix: Reference Index
