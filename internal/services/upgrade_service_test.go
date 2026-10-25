@@ -87,7 +87,7 @@ func main() {
     mode := os.Getenv("SONGLOFT_TEST_UPGRADE_MODE")
     if mode == "timeout" { time.Sleep(30 * time.Second) }
     if mode == "invalid-version" { fmt.Println("some other program"); return }
-    fmt.Println("Songloft Version: dev\nBuild Type: full")
+    fmt.Println("Roomtone Version: dev\nBuild Type: full")
     if mode == "exit-error" { os.Exit(2) }
 }`), 0600); err != nil {
 		t.Fatal(err)

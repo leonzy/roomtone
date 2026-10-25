@@ -31,7 +31,7 @@ const (
 
 	// 二进制文件路径
 	// 注意：临时文件必须与目标文件在同一目录，才能使用原子 rename 替换正在运行的二进制文件
-	binarySource = "/app/songloft" // Docker 镜像中的原始底包
+	binarySource = "/app/roomtone" // Docker 镜像中的原始底包（Dockerfile COPY 到 /app/roomtone）
 	binaryTarget = "/app/data/songloft"
 	binaryBackup = "/app/data/songloft.backup"
 	binaryTemp   = "/app/data/songloft.new"
@@ -579,7 +579,7 @@ func (s *UpgradeService) restoreBackup() error {
 }
 
 // ResetToBaseImage 回退到 Docker 镜像底包
-// 将 /app/songloft（Docker 镜像中的原始二进制）复制回 /app/data/songloft，然后重启服务
+// 将 /app/roomtone（Docker 镜像中的原始二进制）复制回 /app/data/songloft，然后重启服务
 func (s *UpgradeService) ResetToBaseImage() error {
 	s.updateProgress(models.UpgradeStatusResetting, 0, "开始回退到底包版本...")
 
@@ -659,8 +659,11 @@ func (s *UpgradeService) ExtractBinaryInfo(binaryPath string) (*models.UploadedB
 	for _, line := range strings.Split(string(output), "\n") {
 		line = strings.TrimSpace(line)
 		switch {
-		case strings.HasPrefix(line, "Songloft Version:"):
-			info.Version = strings.TrimSpace(strings.TrimPrefix(line, "Songloft Version:"))
+		case strings.HasPrefix(line, version.VersionBannerPrefix):
+			info.Version = strings.TrimSpace(strings.TrimPrefix(line, version.VersionBannerPrefix))
+		case strings.HasPrefix(line, version.LegacyVersionBannerPrefix):
+			// 兼容旧版 Songloft 二进制的 -version 输出（回退/混用场景）
+			info.Version = strings.TrimSpace(strings.TrimPrefix(line, version.LegacyVersionBannerPrefix))
 		case strings.HasPrefix(line, "Build Time:"):
 			info.BuildTime = strings.TrimSpace(strings.TrimPrefix(line, "Build Time:"))
 		case strings.HasPrefix(line, "Build Type:"):

@@ -56,8 +56,8 @@ runc --version
 
 ```bash
 songloft_image_id=$(docker inspect --format '{{.Image}}' songloft)
-docker run --rm --entrypoint /app/songloft "$songloft_image_id" -version
-docker run --rm --security-opt seccomp=unconfined --entrypoint /app/songloft "$songloft_image_id" -version
+docker run --rm --entrypoint /app/roomtone "$songloft_image_id" -version
+docker run --rm --security-opt seccomp=unconfined --entrypoint /app/roomtone "$songloft_image_id" -version
 ```
 
 如果默认配置下崩溃、临时关闭 seccomp 后正常输出版本，说明启动失败与 seccomp 限制有关，接下来检查宿主机 libseccomp、Docker / runc 及自定义 seccomp 规则。`seccomp=unconfined` 会关闭系统调用过滤，**仅用于临时定位，不建议作为长期运行配置**。

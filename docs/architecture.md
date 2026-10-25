@@ -174,7 +174,7 @@ make build-frontend-all            # 当前系统支持的所有平台
 
 ## Docker 入口与热替换
 
-镜像内底包为 `/app/songloft`，持久化 data 卷运行 `/app/data/songloft`。容器启动时由 `scripts/docker-entrypoint.sh` 决定是否用底包覆盖 data：
+镜像内底包为 `/app/roomtone`，持久化 data 卷运行 `/app/data/songloft`。容器启动时由 `scripts/docker-entrypoint.sh` 决定是否用底包覆盖 data：
 
 **核心原则：底包代表用户意图；dev/release 通道或 full/lite 变体不一致时用底包覆盖。只有「同通道 + 同 BUILD_TYPE」才比较新旧：dev 按 Build Time，release 按版本号。**
 

@@ -10,7 +10,7 @@ const entrypoint = readFileSync(new URL("../docker-entrypoint.sh", import.meta.u
 function binary(version, buildType = "full", buildTime = "2026-10-19_00:00:00") {
   return `#!/bin/sh
 if [ "$1" = "-version" ]; then
-  echo "Songloft Version: ${version}"
+  echo "Roomtone Version: ${version}"
   echo "Build Type: ${buildType}"
   echo "Build Time: ${buildTime}"
 else
@@ -24,7 +24,8 @@ function runEntrypoint(t, target, source = binary("2.13.3")) {
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "data"));
   mkdirSync(join(root, "music"));
-  writeFileSync(join(root, "songloft"), source, { mode: 0o755 });
+  // BINARY_SOURCE 在镜像内是 /app/roomtone，replaceAll("/app", root) 后即 <root>/roomtone
+  writeFileSync(join(root, "roomtone"), source, { mode: 0o755 });
   if (target !== null) writeFileSync(join(root, "data/songloft"), target, { mode: 0o755 });
   const script = join(root, "entrypoint.sh");
   writeFileSync(script, entrypoint.replaceAll("/app", root));
@@ -38,11 +39,11 @@ test("entrypoint restores base image when the upgraded executable cannot run", t
   const { root, output } = runEntrypoint(t, "#!/missing-songloft-loader\n");
   assert.match(output, /RUNNING 2\.13\.3 full/);
   assert.equal(readFileSync(join(root, "data/songloft"), "utf8"), binary("2.13.3"));
-  assert.match(readFileSync(join(root, "songloft.backup"), "utf8"), /missing-songloft-loader/);
+  assert.match(readFileSync(join(root, "roomtone.backup"), "utf8"), /missing-songloft-loader/);
 });
 
 test("entrypoint recovers an executable whose version command fails", t => {
-  const { output } = runEntrypoint(t, "#!/bin/sh\necho 'Songloft Version: 99.0.0'\nexit 1\n");
+  const { output } = runEntrypoint(t, "#!/bin/sh\necho 'Roomtone Version: 99.0.0'\nexit 1\n");
   assert.match(output, /RUNNING 2\.13\.3 full/);
 });
 

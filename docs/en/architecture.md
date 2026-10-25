@@ -173,7 +173,7 @@ make build-frontend-all            # All platforms supported by the current syst
 
 ## Docker Entry and Hot Swap
 
-The image contains a base package at `/app/songloft`, while the persistent data volume runs `/app/data/songloft`. On startup, `scripts/docker-entrypoint.sh` decides whether to overwrite data with the base package:
+The image contains a base package at `/app/roomtone`, while the persistent data volume runs `/app/data/songloft`. On startup, `scripts/docker-entrypoint.sh` decides whether to overwrite data with the base package:
 
 **Core principle: the base package represents the user's intent; when the dev/release channel or the full/lite variant differs, overwrite with the base package. Only compare old vs. new when "same channel + same BUILD_TYPE": dev by Build Time, release by version number.**
 

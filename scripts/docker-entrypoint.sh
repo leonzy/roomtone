@@ -8,7 +8,7 @@ BINARY_SOURCE="/app/roomtone"
 BINARY_TARGET="/app/data/songloft"
 BINARY_BACKUP="/app/roomtone.backup"
 
-echo "Songloft Docker Entrypoint"
+echo "Roomtone Docker Entrypoint"
 echo "=========================="
 
 # 版本比较函数
@@ -68,7 +68,8 @@ get_version() {
     binary_path="$1"
     if [ -f "$binary_path" ]; then
         if version_output=$("$binary_path" -version 2>&1); then
-            echo "$version_output" | grep "Songloft Version:" | awk '{print $3}'
+            # 兼容旧版 Songloft 二进制的 -version 输出
+            echo "$version_output" | grep -E "(Roomtone|Songloft) Version:" | awk '{print $3}'
         else
             echo "unknown"
         fi
@@ -306,7 +307,7 @@ if [ -n "$PUID" ] || [ -n "$PGID" ]; then
 fi
 
 echo ""
-echo "启动 Songloft..."
+echo "启动 Roomtone..."
 echo ""
 
 # 执行二进制文件，传递所有参数；启用 PUID/PGID 时通过 su-exec 降权执行

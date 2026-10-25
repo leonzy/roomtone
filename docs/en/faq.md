@@ -56,8 +56,8 @@ These commands assume the existing container is named `songloft`; replace it if 
 
 ```bash
 songloft_image_id=$(docker inspect --format '{{.Image}}' songloft)
-docker run --rm --entrypoint /app/songloft "$songloft_image_id" -version
-docker run --rm --security-opt seccomp=unconfined --entrypoint /app/songloft "$songloft_image_id" -version
+docker run --rm --entrypoint /app/roomtone "$songloft_image_id" -version
+docker run --rm --security-opt seccomp=unconfined --entrypoint /app/roomtone "$songloft_image_id" -version
 ```
 
 If the default profile crashes but disabling seccomp prints the version successfully, the startup failure is related to seccomp restrictions. Next, check the host's libseccomp, Docker / runc, and any custom seccomp rules. `seccomp=unconfined` disables system call filtering; **use it only for temporary diagnosis, not as a permanent configuration**.

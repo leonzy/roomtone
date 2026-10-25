@@ -702,7 +702,7 @@ func ParseConfig() (*config.AppConfig, error) {
 
 	// 显示版本信息
 	if *showVer {
-		fmt.Printf("Songloft Version: %s\n", version.GetVersion())
+		fmt.Println(version.FormatVersionLine())
 		fmt.Printf("Git Commit: %s\n", version.GitCommit)
 		fmt.Printf("Build Time: %s\n", version.BuildTime)
 		if version.BuildType != "" {

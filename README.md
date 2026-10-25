@@ -558,7 +558,7 @@ curl http://localhost:58091/api/v1/version
 输出示例：
 
 ```text
-Songloft Version: x.y.z
+Roomtone Version: x.y.z
 Git Commit: abc1234
 Build Time: 2026-01-01_00:00:00
 Build Type: full
