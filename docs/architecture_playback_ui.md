@@ -1,6 +1,6 @@
 # 播放与音箱交互设计（前端）
 
-> **状态：设计提案，尚未实现。** 后端契约见 [播放控制与音箱输出架构](./architecture_playback.md)；本文只描述客户端（`clients/player`，独立仓库）的交互、状态与代码落点。实施顺序与任务拆分见[开发计划](./playback_development_plan.md)。
+> **状态：已实现（F0 ~ F6）。** 后端契约见 [播放控制与音箱输出架构](./architecture_playback.md)；本文只描述客户端（`clients/player`，独立仓库）的交互、状态与代码落点。实施顺序与任务拆分见[开发计划](./playback_development_plan.md)；**真机与 TV/Lynx 走查 `Not run`**。
 >
 > 适用客户端：Flutter 六端。TV 与 Lynx 的差异见 §8。
 >
@@ -507,6 +507,7 @@ Bundle 模式：只保留 `local` 目标，输出按钮显示"本机"，并在�
 | POST | `/groups/{id}/members` | 播放中加入成员 `{player_id}`（从当前时间点接入） |
 | PATCH | `/groups/{id}/members/{player_id}` | 调整成员 `{delay_ms?, volume_offset?}` |
 | DELETE | `/groups/{id}/members/{player_id}` | 移出成员 `?mode=continue\|stop` |
+| PUT | `/groups/{id}/members/order` | 成员排序 `{player_ids[]}`（全排列，400 表示顺序非法；不改主控） |
 | POST | `/players/{id}/reconnect` | 手动重连离线音箱 |
 | POST | `/players/{id}/power` | 待机 / 唤醒 `{on}`；待机成员不在同步环里 |
 | POST | `/playback/party` | 发起派对 `{name?, group_ids[]}` |
@@ -524,7 +525,7 @@ WS 事件：
 ```
 state           {group_id, song_id, position_ms, status}
 target_changed  {group_id, from_group_id, reason}
-member_changed  {group_id?, player_id, action: join|update|leave|offline|online|deleted|standby|wake}
+member_changed  {group_id?, player_id, action: join|update|leave|offline|online|deleted|standby|wake|reorder}
 group_changed   {group_id, player_id?, action: deleted|master_changed}   // 建组不发事件，需拉 /playback
 speaker_seen    {player_id, name, kind}
 party_changed   {party_id, group_id?, name?, action: created|joined|left|ended}
@@ -545,7 +546,7 @@ error           {group_id?, code, message}
 | **F3** | 拆分播放、主控切换、延迟补偿、删除设备/组（二次确认） | P3 |
 | **F4** | 每音箱 EQ（推子、预设、preamp 展示、本机叠加保护） | P2.5 |
 | **F5** | 派对（发起/加入/退出/漂移提示/长按独占） | P3.5 |
-| **F6** | TV/Lynx 适配、待机/唤醒（待机成员置灰、不可入精确组）；拖拽排序待后端提供接口 | F2 |
+| **F6** | TV/Lynx 适配、待机/唤醒（待机成员置灰、不可入精确组）、成员排序（上移/下移按钮，TV 无拖拽）、`member_caps.syncing` → 「对齐中」 | F2 |
 
 F4 与 F5 互不依赖，可以并行；两者都只改选择器与设置页，不碰播放页主结构，风险可控。
 

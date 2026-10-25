@@ -132,6 +132,15 @@
 - Not run：完整后端测试、平台打包及远端工作流运行，本次仅修改发布脚本与文档，工作树尚未提交/推送。
 - Seen 1× (2026-10-15)。状态：经验。
 
+### TEST-001：macOS 上有两个与平台绑定的既有测试失败，不得当成回归
+
+- 范围：`internal/services` 与 `internal/jsplugin` 的扫描/UDP 用例；本机（Darwin/APFS）跑 `go test -tags lite ./...` 的判读。
+- 失败证据：2026-10-25，基线 `b094c0a`（工作树无 Go 源码改动）跑全量：`TestScanAndImportDSFWithDefaultConfig` 报 `imported 1 songs, want both .dsf and .DSF`——该用例把 `sample.dsf` 与 `sample.DSF` 写进同一 `t.TempDir()`，macOS 默认 APFS **大小写不敏感**，两个名字是同一个文件（实测 `ls -li` 只剩一个 inode）；`TestNetUDPBind_ReuseAddress` 报 `listen udp4 127.0.0.1:PORT: bind: address already in use`——复用同一 UDP 端口在 Linux 靠 `SO_REUSEADDR` 即可，macOS 需要 `SO_REUSEPORT`，Go 的 `ListenConfig` 不会自动加。
+- 规则：在 macOS 本地判定"全量测试是否通过"时，先把这两条作为**环境已知失败**排除，再判断有没有真回归；改动扫描或 UDP 相关代码时才需要处理它们，其余任务不要顺手改测试。
+- Done right：本轮验证以 `go test -tags lite ./internal/player ./internal/database ./internal/handlers`（全绿）+ `make check-playback`（全绿）作为播放子系统的判据，并显式记录这两条 `Not run/环境失败`。
+- 边界：CI 跑 Linux，两条用例预期通过；本轮未在 Linux 复跑确认。
+- Seen 1× (2026-10-25)。状态：经验。
+
 ## 条目格式
 
 ```text

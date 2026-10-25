@@ -8,8 +8,9 @@ Server Mode supports Flutter, ReactLynx, official Electron Desktop, and Android 
 
 - **[Backend Architecture](./architecture_backend.md)** - Detailed architecture of the Go backend API service
 - **[Frontend Architecture](./architecture_frontend.md)** - Detailed architecture of the Flutter cross-platform frontend
-- **[Playback Control and Speaker Output](./architecture_playback.md)** - Server-side queue, AirPlay/DLNA push, multi-room sync, party mode, and per-speaker EQ (design draft)
-- **[Playback and Speaker Interaction (Frontend)](./architecture_playback_ui.md)** - Output picker, dynamic grouping, playback transfer, party and per-speaker EQ interaction, and local player takeover (design draft)
+- **[Playback Control and Speaker Output](./architecture_playback.md)** - Server-side queue, AirPlay/DLNA push, multi-room sync, party mode, and per-speaker EQ (architecture and implementation)
+- **[Playback and Speaker Interaction (Frontend)](./architecture_playback_ui.md)** - Output picker, dynamic grouping, playback transfer, party and per-speaker EQ interaction, and local player takeover (F0~F6 implemented)
+- **[Playback Capability Matrix](./playback_compat_matrix.md)** - Item-by-item comparison against SlimServer (LMS): sync, gapless, EQ, party, queue and interfaces, with known gaps and verification records
 - **[Choosing a Client](./clients.md)** - Flutter, Lynx, Electron Desktop, and TV platforms, capabilities, and downloads
 - **[Lynx Client](./player-lynx/index.md)** - Installation, builds, testing, and independent releases
 - **[Color System](./color_system.md)** - Material 3 color system and theming conventions

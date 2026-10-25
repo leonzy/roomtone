@@ -12,7 +12,7 @@
 | 数据库操作 | [docs/database_migrations.md](docs/database_migrations.md) |
 | API 响应格式 / Swagger UI | [docs/api_response.md](docs/api_response.md) / 开发模式 `/swagger/index.html` |
 | 前端踩坑 / UI 验证 | [docs/frontend_gotchas.md](docs/frontend_gotchas.md) |
-| 播放控制 / 音箱输出（设计 + 开发计划） | [架构](docs/architecture_playback.md)、[交互](docs/architecture_playback_ui.md)、[开发计划](docs/playback_development_plan.md) |
+| 播放控制 / 音箱输出（架构 + 交互 + 计划 + 对照） | [架构](docs/architecture_playback.md)、[交互](docs/architecture_playback_ui.md)、[开发计划](docs/playback_development_plan.md)、[SlimServer 对照矩阵](docs/playback_compat_matrix.md) |
 | 文档站维护 | [docs/development.md](docs/development.md) |
 | JS 插件 / 插件源 | [插件开发指南](docs/js-plugin-development-guide.md)、[插件源制作](docs/plugin_registry.md)、`plugins/toolchain/README.md` |
 

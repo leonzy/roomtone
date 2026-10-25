@@ -1,6 +1,6 @@
 # 播放控制与音箱输出 · 开发计划
 
-> **状态：可执行计划 v2（2026-10-25 审计后修订）。** 设计与决策见[播放控制与音箱输出架构](./architecture_playback.md)（后端）与[播放与音箱交互设计](./architecture_playback_ui.md)（前端）。本文不重复设计理由，只回答三件事：**按什么顺序做、动哪些文件、怎么算做完**。
+> **状态：可执行计划 v2（2026-10-25 审计后修订）。** 设计与决策见[播放控制与音箱输出架构](./architecture_playback.md)（后端）与[播放与音箱交互设计](./architecture_playback_ui.md)（前端）；与 SlimServer 的能力对照与验收结论见[播放能力对照矩阵](./playback_compat_matrix.md)。本文不重复设计理由，只回答三件事：**按什么顺序做、动哪些文件、怎么算做完**。
 >
 > 任务粒度 = 一次可独立提交、可独立验证的变更。任务 ID 写进提交信息（`feat(player): 队列语义与传输状态机 (B1-02)`），实现与追溯一一对应。
 
@@ -205,7 +205,7 @@ B5-01 ─► B7-01 ─► B7-03 ─► [G4]
 | B5-03 | 能力协商 | `internal/player/player.go` | 采样率取组内最小；编码降级 `l16→aac→mp3`；2ch 上混（单声道源升 2ch 后两路样本相等） | 1 |
 | B5-04 | 延迟补偿与音量偏移 | `internal/player/group.go`、`sink/*` | `delay_ms` 换算成帧数写入 sink 起播偏移，假 sink 断言偏移误差 **≤1 帧**；`volume_offset` 与设备音量叠加（`clamp(base+offset,0,100)`）有上下边界用例 | 1.5 |
 | B5-05 | 转移与拆分 | `internal/player/transfer.go` | `only_player_id` 拆分；目标首帧位置 − 源当前位置 **∈ [780,820]ms**（假 sink 断言）；补偿只做一次，连续两次转移不叠加 | 1.5 |
-| B5-06 | **同步精度测试** | `scripts/tests/sync_correlation.py`（新增） | 两个 shairport-sync 实例各 pipe 到独立文件，互相关求峰值延迟，断言 `< 20ms`；连续 10 分钟不漂移；结果写进 `docs/playback_compat_matrix.md` | 2 |
+| B5-06 | **同步精度测试** | `scripts/tests/sync_correlation.py`（新增） | 两个 shairport-sync 实例各 pipe 到独立文件，互相关求峰值延迟，断言 `< 20ms`；连续 10 分钟不漂移；结果写进 `docs/playback_compat_matrix.md`。**已完成脚本与自检：`--selftest` 注入 12ms 测得 12.0ms（相关 1.000），`--window 2` 分段无漂移；真实双实例 Not run** | 2 |
 | B5-07 | 主控切换 | `internal/player/manager.go` | 切换主控不断流（时间轴不变，仅换持有者）；单成员组返回 400 | 0.5 |
 | B5-08 | **同步校正环**（新） | `internal/player/sync_loop.go`（新）、`engine.go` | 每 950ms（`sync_check_interval_ms`）采一次各成员实际位置；参考设备 = 组内**最落后且不可跳帧**的成员；偏差 < `min_sync_adjust_ms`(10) 不动、> 10s 放弃；偏快 `SkipFrames`、偏慢注入静音（**不改变时间轴、不暂停解码器**）。假时钟注入 ±50ms / ±2s，**1 个周期内收敛到 ≤10ms**；10 分钟仿真残余漂移 ≤5ms；`-race` 干净 | 3 |
 | B5-09 | **sink 热替换 + 每 sink 独立写协程**（新） | `pipeline/distribute.go`、`sink/sink.go` | `Sinks` 改原子快照，`SetSinks` **下一帧**生效；每 sink 独立有界队列（满则丢最旧并计数）；假 sink 注入 500ms 卡顿，**其他成员 `underruns` 不增** | 2 |
@@ -264,8 +264,8 @@ B5-01 ─► B7-01 ─► B7-03 ─► [G4]
 | X-02 | 播放器出口白名单 | `internal/services/whitelist.go`（新增独立入口）、`internal/handlers/player_setting.go` | `player_output_allowlist` 与代理白名单**互不影响**（双向用例：只开 A 时 B 仍被封）；拒绝时记审计日志 | M3 前 | 1.5 |
 | X-03 | Docker 网络与发现兜底 | `docs/faq.md`、`docs/architecture.md`、前端空态 | 文档写明 `--network host` / macvlan；发现为空时 UI 给提示而非空白；手动填 IP 路径可用 | M3/M4 | 1 |
 | X-04 | Bundle 模式限制 | `docs/architecture_frontend.md`、`internal/app/app.go`（启动时判定） | iOS Bundle 默认只留 `local` sink；桌面 Bundle 需显式开启；未开启时接口返回明确原因 | M2 | 1 |
-| X-05 | 性能实测 | `scripts/tests/`（新增基准） | 4 组并发解码时 CPU / 内存基线记录；单核设备上 4 组不卡顿的结论有数据支撑 | M7 后 | 1 |
-| X-06 | 文档回填 | `docs/architecture_playback*.md`、`docs/pitfalls.md`、`docs/playback_compat_matrix.md` | 设计稿状态从"尚未实现"改为"已实现（版本号）"；踩坑按 `LESSONS.md` 流程入库；双语同步 | v1.0 | 1 |
+| X-05 | 性能实测 | `scripts/tests/decode_baseline.sh`（新增） | 4 组并发解码时 CPU / 内存基线记录；单核设备上 4 组不卡顿的结论有数据支撑。**已完成：3 次实测 wall 0.14~0.17s、4 路 RSS 峰值 6~29 MiB、1085~1294× 实时** | M7 后 | 1 |
+| X-06 | 文档回填 | `docs/architecture_playback*.md`、`docs/pitfalls.md`、`docs/playback_compat_matrix.md` | 设计稿状态从"尚未实现"改为"已实现（版本号）"；踩坑按 `LESSONS.md` 流程入库；双语同步。**已完成：对照矩阵落地（42 项，33 ✅ / 4 ⚠️ / 4 ❌），差距项 crossfade / ReplayGain / 闹钟单列** | v1.0 | 1 |
 | X-07 | **半成品守卫（CI）**（新） | `Makefile`（`check-playback`）、`scripts/tests/guards.sh` | 一条命令跑完：同步收敛、EQ 逐位隔离、派对回位、`rg -e BuildFilterChain -e 'equalizer=f='` 无命中、`party_test.go` 存在、新端点 swagger 有命中；任一不过则 `make check` 红 | v0.4 起持续 | 1.5 |
 
 ## 5. 前端任务分解（另一仓库）
@@ -371,12 +371,12 @@ v2 比 v1 多 4 周（~19 周 ≈ 4.4 月），多出来的全是“把半成品
 - [x] M2 解码与 local sink（B2-01 ~ B2-06）→ v0.1——已完成；客户端联调 Not run
 - [x] M3 RAOP（B3-01 ~ B3-08）→ G1 → v0.2——代码完成；**G1 真机矩阵 Not run**
 - [x] M4 DLNA（B4-01 ~ B4-08）→ v0.3——代码完成；真机 Not run
-- [~] M5 同步组（B5-01 ~ B5-11）→ G2 → v0.4——已：B5-01/02/03/04/05/07/08/09/10；**待：B5-06（双设备互相关脚本）、B5-11（gapless 预取）**
+- [x] M5 同步组（B5-01 ~ B5-11）→ G2 → v0.4——代码与脚本全部完成；**G2 真机双设备互相关 Not run**（脚本自检通过，见 X-06）
 - [x] M6 每音箱 EQ（B6-01 ~ B6-07）→ G3 → v0.5——已完成；G3 真机听感 Not run
 - [x] M7 派对（B7-01 ~ B7-07）→ G4——已完成（`party_test.go` 在 CI）；G4 真机 Not run
 - [x] M8 韧性与可观测（B8-01 ~ B8-05）→ v1.0——已完成（B8-04 生命周期端点、B8-03 metrics、B8-05 power）
-- [x] 前端 F0 ~ F6——已完成（`clients/player`：F0 面板/待机、F1 建组与成员参数、F2 转移、F3 EQ、F4 派对、F5 指标、F6 待机置灰）；真机与 TV/Lynx 走查 Not run；拖拽排序与"对齐中"标记待后端接口（无 reorder 端点、无对齐状态字段）
-- [~] X 收尾：X-01/X-03 部分完成、**X-02 白名单 / X-04 Bundle 限制 / X-07 守卫已完成**；**待：X-05/06**
+- [x] 前端 F0 ~ F6——已完成（`clients/player`：F0 面板/待机、F1 建组与成员参数、F2 转移、F3 EQ、F4 派对、F5 指标、F6 待机置灰）；真机与 TV/Lynx 走查 Not run；成员排序用上移/下移（TV 无拖拽）接 `PUT /groups/{id}/members/order`，"对齐中"接 `member_caps[].syncing`
+- [~] X 收尾：X-02 白名单 / X-04 Bundle 限制 / X-05 性能基线 / X-06 文档回填（含对照矩阵）/ X-07 守卫已完成；**X-01/X-03 部分完成**（Swagger 已全量核对至本轮新增端点，Docker 发现兜底文档待补真机结论）
 
 ### 11.1 下一批提交顺序（按依赖排，一次一个提交）
 

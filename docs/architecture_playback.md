@@ -1,8 +1,10 @@
-# 播放控制与音箱输出架构（设计稿）
+# 播放控制与音箱输出架构（架构与实现）
 
-> **状态（2026-10-25 审计后）。** 本文描述 Songloft 从"客户端权威的媒体服务器"扩展为"服务端持有播放状态、可推送到局域网音箱"的目标架构。
+> **状态（2026-10-25 验收后）。** 本文描述 Songloft 从"客户端权威的媒体服务器"扩展为"服务端持有播放状态、可推送到局域网音箱"的架构。
 >
-> 落地进度：**M0–M4（队列/状态机、解码管线、`local`/`raop`/`dlna` sink、设备发现）已实现**，真机项 `Not run`；**M5 同步校正、M6 每音箱 EQ、M7 派对校正、M8 可观测为部分实现**，逐项状态与补齐顺序见[开发计划 v2](./playback_development_plan.md#01-v2-修订审计结论2026-10-25)。凡是本文写了、代码里只做了一半的，一律以开发计划的验收断言为准。
+> 落地进度：**M0–M8 全部实现**（队列/状态机、解码管线、`local`/`raop`/`dlna` sink、设备发现、同步组与校正环、每音箱 EQ、派对、可观测），逐项验收断言见[开发计划](./playback_development_plan.md)；**真机项（G1 矩阵、G2 双设备互相关、G3 听感、G4 派对）一律 `Not run`**。
+>
+> 与 SlimServer（LMS）的逐项能力对照见**[播放能力对照矩阵](./playback_compat_matrix.md)**（42 项：33 持平或超过、4 有差距、4 未实现）。
 >
 > **实施路径见[开发计划](./playback_development_plan.md)**（任务拆分、涉及文件、门禁与排期）。
 >
@@ -440,6 +442,7 @@ CREATE TABLE party_sessions (
 CREATE TABLE player_group_members (
     group_id      TEXT NOT NULL,
     player_id     TEXT NOT NULL,
+    position      INTEGER NOT NULL DEFAULT 0,  -- 列表顺序，不改 master
     delay_ms      INTEGER NOT NULL DEFAULT 0,  -- 人工延迟补偿
     volume_offset INTEGER NOT NULL DEFAULT 0,  -- 组内相对音量
     PRIMARY KEY (group_id, player_id)
@@ -501,7 +504,7 @@ CREATE TABLE playback_states (
 
 | 方法 | 路径 | 请求体 / 参数 | 说明 |
 |---|---|---|---|
-| GET | `/groups` | — | 组列表（含 `sync_tier`、`member_caps`、`status`） |
+| GET | `/groups` | — | 组列表（含 `sync_tier`、`member_caps`、`status`）；`member_caps[].syncing` 为真表示该成员入组/唤醒后仍在收敛 |
 | POST | `/groups` | `{name, member_ids, master_id?}` | 201；成员已在别的组 409，同步等级不匹配 400 |
 | GET | `/groups/{id}` | — | 单组详情 |
 | DELETE | `/groups/{id}` | — | 解散组，成员各自回到单机组；组在派对中 409（先退出派对） |
@@ -509,6 +512,7 @@ CREATE TABLE playback_states (
 | POST | `/groups/{id}/members` | `{player_id}` | 播放中加入成员，从当前时间点接入；已在别的组 409 |
 | PATCH | `/groups/{id}/members/{player_id}` | `{delay_ms?, volume_offset?}` | 每成员延迟补偿与音量偏移 |
 | DELETE | `/groups/{id}/members/{player_id}` | `?mode=continue\|stop` | 移出成员 |
+| PUT | `/groups/{id}/members/order` | `{player_ids[]}` | 调整成员顺序；必须是该组全排列，否则 400。只改 `position`，**不改 `master_id`** |
 | GET | `/groups/{id}/volume` | — | 组音量 + 每成员实际值（含失败明细） |
 | POST | `/groups/{id}/volume` | `{volume, muted}` | 逐设备下发，单台失败不回滚其余 |
 | POST | `/groups/{id}/transfer` | `{from_group_id, only_player_id?}` | 路径里的 `{id}` 是**目标组**；`only_player_id` 非空时后端先把它拆成单机组，目标组被忽略 |
@@ -570,7 +574,7 @@ CREATE TABLE playback_states (
 |---|---|---|---|
 | `state` | `group_id, song_id, position_ms, status` | 播放状态、曲目、位置变化 | 唯一播放状态来源，据 `group_id` 判断是否与自己相关 |
 | `target_changed` | `group_id, from_group_id, reason` | 播放被转移到别的组（`reason=transfer`） | 按 `players.takeover_behavior` 处理：`pause` 立即暂停并提示，`follow` 静默转为纯控制器 |
-| `member_changed` | `group_id?, player_id, action` | `action=join\|update\|leave\|offline\|online\|deleted\|standby\|wake`；`join`/`update`/`leave` 带 `group_id`，`offline`/`online` 每个所属组各发一条 | 待机/唤醒只走这里，没有独立的 `power` / `standby` / `wake` 事件 |
+| `member_changed` | `group_id?, player_id, action` | `action=join\|update\|leave\|offline\|online\|deleted\|standby\|wake\|reorder`；`join`/`update`/`leave`/`reorder` 带 `group_id`（`reorder` 不带 `player_id`），`offline`/`online` 每个所属组各发一条 | 待机/唤醒只走这里，没有独立的 `power` / `standby` / `wake` 事件 |
 | `group_changed` | `group_id, player_id?, action` | `action=deleted`（解散）、`master_changed`（换主控，带 `player_id`） | **建组不发事件**：新建后由调用方自行拉 `/playback` 或等首条 `state` |
 | `speaker_seen` | `player_id, name, kind` | 发现流程扫到新设备 | 提示"发现新音箱"，不自动加入任何组 |
 | `party_changed` | `party_id, group_id?, name?, action` | `action=created`（带 `name`）、`joined` / `left`（带 `group_id`）、`ended` | 重拉 `/playback/party/{id}`；`ended` 后清空派对态 |

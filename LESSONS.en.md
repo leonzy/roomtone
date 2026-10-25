@@ -132,6 +132,15 @@ Both clients pass Chinese/English 390px browser checks for name order in both di
 - Not run: full backend tests, platform builds, and remote workflow execution; this task changes only release scripts and documentation, and the worktree remains uncommitted/unpushed.
 - Seen 1× (2026-10-15). Status: lesson.
 
+### TEST-001: Two existing tests fail on macOS for platform reasons; do not treat them as regressions
+
+- Scope: the scan/UDP cases in `internal/services` and `internal/jsplugin`; how to read `go test -tags lite ./...` on this machine (Darwin/APFS).
+- Failure evidence: 2026-10-25, baseline `b094c0a` (working tree has no Go source changes), full run: `TestScanAndImportDSFWithDefaultConfig` reports `imported 1 songs, want both .dsf and .DSF` — the case writes `sample.dsf` and `sample.DSF` into one `t.TempDir()`, and default APFS on macOS is **case-insensitive**, so both names are the same file (`ls -li` shows a single inode); `TestNetUDPBind_ReuseAddress` reports `listen udp4 127.0.0.1:PORT: bind: address already in use` — reusing one UDP port works on Linux via `SO_REUSEADDR`, but macOS needs `SO_REUSEPORT`, which Go's `ListenConfig` does not add automatically.
+- Rule: when judging "does the full suite pass" locally on macOS, exclude these two as **known environment failures** before looking for real regressions; only touch them when the task actually changes scanning or UDP code.
+- Done right: this round used `go test -tags lite ./internal/player ./internal/database ./internal/handlers` (all green) plus `make check-playback` (all green) as the playback criterion, and recorded both cases explicitly as `Not run / environment failure`.
+- Boundary: CI runs Linux, where both cases are expected to pass; not re-verified on Linux this round.
+- Seen 1× (2026-10-25). Status: lesson.
+
 ## Entry Format
 
 ```text

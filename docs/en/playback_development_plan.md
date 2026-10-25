@@ -1,6 +1,6 @@
 # Playback Control and Speaker Output · Development Plan
 
-> **Status: executable plan v2 (2026-10-25, post-audit revision).** For design and decisions see [Playback Control and Speaker Output Architecture](./architecture_playback.md) (backend) and [Playback and Speaker Interaction Design](./architecture_playback_ui.md) (frontend). This document does not repeat the reasoning; it answers three things: **in what order, which files, and what counts as done**.
+> **Status: executable plan v2 (2026-10-25, post-audit revision).** For design and decisions see [Playback Control and Speaker Output Architecture](./architecture_playback.md) (backend) and [Playback and Speaker Interaction Design](./architecture_playback_ui.md) (frontend); for the capability comparison against SlimServer and the acceptance verdict see the [playback capability matrix](./playback_compat_matrix.md). This document does not repeat the reasoning; it answers three things: **in what order, which files, and what counts as done**.
 >
 > Task granularity = one independently committable, independently verifiable change. Task IDs go into commit messages (`feat(player): queue semantics and transport state machine (B1-02)`), so implementation and traceability map one to one.
 
@@ -205,7 +205,7 @@ No user-visible functionality, but every later milestone stands on it.
 | B5-03 | Capability negotiation | `internal/player/player.go` | Sample rate is the minimum across the group; codec fallback `l16→aac→mp3`; 2ch upmix (a mono source yields two identical channels) | 1 |
 | B5-04 | Delay compensation and volume offset | `internal/player/group.go`, `sink/*` | `delay_ms` converts to a frame count applied as the sink start offset; fake sink asserts offset error **≤1 frame**; `volume_offset` combines with device volume (`clamp(base+offset,0,100)`) with lower/upper boundary cases | 1.5 |
 | B5-05 | Transfer and split | `internal/player/transfer.go` | `only_player_id` split; target first-frame position minus source position **∈ [780,820]ms** (fake-sink assertion); compensation applied once, two consecutive transfers do not stack | 1.5 |
-| B5-06 | **Sync accuracy test** | `scripts/tests/sync_correlation.py` (new) | Two shairport-sync instances pipe to separate files; cross-correlate to find the peak delay and assert `< 20ms`; no drift over 10 minutes; result recorded in `docs/playback_compat_matrix.md` | 2 |
+| B5-06 | **Sync accuracy test** | `scripts/tests/sync_correlation.py` (new) | Two shairport-sync instances pipe to separate files; cross-correlate to find the peak delay and assert `< 20ms`; no drift over 10 minutes; result recorded in `docs/playback_compat_matrix.md`. **Script and self-test done: `--selftest` injected 12ms and measured 12.0ms (correlation 1.000); `--window 2` segments show no drift; real dual instances Not run** | 2 |
 | B5-07 | Master switching | `internal/player/manager.go` | Switching the master does not interrupt audio (same timeline, only the holder changes); single-member group returns 400 | 0.5 |
 | B5-08 | **Sync correction loop** (new) | `internal/player/sync_loop.go` (new), `engine.go` | Every 950ms (`sync_check_interval_ms`) sample each member's actual position; reference = the **most-behind member that cannot skip frames**; deviation < `min_sync_adjust_ms` (10) is ignored, > 10s is abandoned; too-fast members `SkipFrames`, too-slow members get injected silence (**timeline unchanged, decoder never paused**). Fake clock injects ±50ms / ±2s and must converge to **≤10ms within one cycle**; residual drift ≤5ms over a 10-minute simulation; `-race` clean | 3 |
 | B5-09 | **Sink hot-swap + per-sink writer** (new) | `pipeline/distribute.go`, `sink/sink.go` | `Sinks` becomes an atomic snapshot so `SetSinks` takes effect **on the next frame**; each sink gets its own bounded queue (drop-oldest with a counter); stalling one fake sink for 500ms must not raise other members' `underruns` | 2 |
@@ -264,8 +264,8 @@ These are not tied to a milestone but **must be completed within the relevant mi
 | X-02 | Player egress allowlist | `internal/services/whitelist.go` (new independent entry), `internal/handlers/player_setting.go` | `player_output_allowlist` and the proxy allowlist **do not affect each other** (bidirectional cases: enabling only A still blocks B); rejections are audit-logged | Before M3 | 1.5 |
 | X-03 | Docker networking and discovery fallback | `docs/en/faq.md`, `docs/en/architecture.md`, frontend empty state | Docs state `--network host` / macvlan; empty discovery shows a hint instead of a blank panel; manual IP entry works | M3/M4 | 1 |
 | X-04 | Bundle mode restrictions | `docs/en/architecture_frontend.md`, `internal/app/app.go` (startup detection) | iOS Bundle keeps only the `local` sink by default; desktop Bundle requires explicit opt-in; APIs return an explicit reason when disabled | M2 | 1 |
-| X-05 | Performance measurement | `scripts/tests/` (new benchmark) | CPU / memory baseline with 4 concurrent decode groups; the "4 groups run smoothly on a single-core device" claim is backed by data | After M7 | 1 |
-| X-06 | Documentation backfill | `docs/en/architecture_playback*.md`, `docs/en/pitfalls.md`, `docs/en/playback_compat_matrix.md` | Design docs change from "not implemented" to "implemented (version)"; gotchas recorded per `LESSONS.md`; bilingual sync | v1.0 | 1 |
+| X-05 | Performance measurement | `scripts/tests/decode_baseline.sh` (new) | CPU / memory baseline with 4 concurrent decode groups; the "4 groups run smoothly on a single-core device" claim is backed by data. **Done: 3 runs, wall 0.14–0.17s, peak RSS 6–29 MiB across 4 streams, 1085–1294× realtime** | After M7 | 1 |
+| X-06 | Documentation backfill | `docs/en/architecture_playback*.md`, `docs/en/pitfalls.md`, `docs/en/playback_compat_matrix.md` | Design docs change from "not implemented" to "implemented (version)"; gotchas recorded per `LESSONS.md`; bilingual sync. **Done: the compatibility matrix landed (42 items, 33 ✅ / 4 ⚠️ / 4 ❌), with crossfade / ReplayGain / alarm listed as separate gaps** | v1.0 | 1 |
 | X-07 | **Half-built guard (CI)** (new) | `Makefile` (`check-playback`), `scripts/tests/guards.sh` | One command runs: sync convergence, bit-exact EQ isolation, party realignment, `rg -e BuildFilterChain -e 'equalizer=f='` finds nothing, `party_test.go` exists, new endpoints appear in swagger; any failure turns `make check` red | From v0.4 onwards | 1.5 |
 
 ## 5. Frontend task breakdown (separate repo)
@@ -371,12 +371,12 @@ Task detail lives in §4 / §5; only milestones are tracked here so the two neve
 - [x] M2 decode and local sink (B2-01 ~ B2-06) → v0.1 — done; client integration Not run
 - [x] M3 RAOP (B3-01 ~ B3-08) → G1 → v0.2 — code complete; **G1 real-device matrix Not run**
 - [x] M4 DLNA (B4-01 ~ B4-08) → v0.3 — code complete; real devices Not run
-- [~] M5 sync groups (B5-01 ~ B5-11) → G2 → v0.4 — done: B5-02/03/05 (no +800ms)/07; **pending: B5-01/04/06/08/09/10/11**
-- [~] M6 per-speaker EQ (B6-01 ~ B6-07) → G3 → v0.5 — done: B6-02/04; **pending: B6-01/03/05 (presets)/06/07**
-- [~] M7 party (B7-01 ~ B7-07) → G4 — done: B7-01/02/04/05; **pending: B7-03 rewrite, B7-06/07**
-- [~] M8 resilience and observability (B8-01 ~ B8-05) → v1.0 — done: B8-01; **pending: B8-02 event, B8-03/04/05**
-- [x] Frontend F0 ~ F6 — done (`clients/player`: F0 panel/standby, F1 group creation and member params, F2 transfer, F3 EQ, F4 party, F5 metrics, F6 standby greying); real-device and TV/Lynx walkthroughs Not run; drag-to-reorder and the "aligning" badge await backend support (no reorder endpoint, no alignment state field)
-- [~] X wrap-up: X-01/X-03 partial; **X-02 allowlist, X-04 Bundle limits, X-07 guard done**; **pending: X-05/06**
+- [x] M5 sync groups (B5-01 ~ B5-11) → G2 → v0.4 — code and scripts complete; **G2 real dual-device cross-correlation Not run** (script self-test passes, see X-06)
+- [x] M6 per-speaker EQ (B6-01 ~ B6-07) → G3 → v0.5 — done; G3 real-device listening Not run
+- [x] M7 party (B7-01 ~ B7-07) → G4 — done (`party_test.go` in CI); G4 real devices Not run
+- [x] M8 resilience and observability (B8-01 ~ B8-05) → v1.0 — done (B8-04 lifecycle endpoints, B8-03 metrics, B8-05 power)
+- [x] Frontend F0 ~ F6 — done (`clients/player`: F0 panel/standby, F1 group creation and member params, F2 transfer, F3 EQ, F4 party, F5 metrics, F6 standby greying); real-device and TV/Lynx walkthroughs Not run; member ordering uses up/down buttons (no drag on TV) against `PUT /groups/{id}/members/order`, and the "aligning" badge uses `member_caps[].syncing`
+- [~] X wrap-up: X-02 allowlist / X-04 Bundle limits / X-05 performance baseline / X-06 documentation backfill (incl. the compatibility matrix) / X-07 guard done; **X-01/X-03 partial** (Swagger fully checked through this round's new endpoints; the Docker discovery fallback doc awaits real-device conclusions)
 
 ### 11.1 Next commit sequence (dependency order, one commit each)
 

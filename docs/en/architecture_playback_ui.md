@@ -1,6 +1,6 @@
 # Playback and Speaker Interaction Design (Frontend)
 
-> **Status: design proposal, not implemented.** For the backend contract see [Playback Control and Speaker Output Architecture](./architecture_playback.md); this document covers only the client (`clients/player`, a separate repository) — interaction, state, and where the code lands. For delivery order and task breakdown see the [development plan](./playback_development_plan.md).
+> **Status: implemented (F0 ~ F6).** For the backend contract see [Playback Control and Speaker Output Architecture](./architecture_playback.md); this document covers only the client (`clients/player`, a separate repository) — interaction, state, and where the code lands. For delivery order and task breakdown see the [development plan](./playback_development_plan.md); **real-device and TV/Lynx walkthroughs are `Not run`**.
 >
 > Applies to the six Flutter platforms. TV and Lynx differences are covered in §8.
 >
@@ -524,7 +524,7 @@ The full contract is in backend doc §7.4; the frontend only uses these:
 ```
 state           {group_id, song_id, position_ms, status}
 target_changed  {group_id, from_group_id, reason}
-member_changed  {group_id?, player_id, action: join|update|leave|offline|online|deleted|standby|wake}
+member_changed  {group_id?, player_id, action: join|update|leave|offline|online|deleted|standby|wake|reorder}
 group_changed   {group_id, player_id?, action: deleted|master_changed}   // creation emits nothing; refetch /playback
 speaker_seen    {player_id, name, kind}
 party_changed   {party_id, group_id?, name?, action: created|joined|left|ended}
@@ -545,7 +545,7 @@ Metrics (decode slots, underruns, dropped frames, resyncs) never use the event s
 | **F3** | Split playback, master switching, delay compensation, deleting a device/group (with confirmation) | P3 |
 | **F4** | Per-speaker EQ (faders, presets, preamp display, double-application guard) | P2.5 |
 | **F5** | Party (start/join/leave, drift hints, long-press exclusivity) | P3.5 |
-| **F6** | TV/Lynx adaptation, standby/wake (standby members greyed out, cannot join an exact group); drag-to-reorder awaits a backend endpoint | F2 |
+| **F6** | TV/Lynx adaptation, standby/wake (standby members greyed out, cannot join an exact group), member reordering (move up/down buttons — no drag on TV), `member_caps.syncing` → "syncing" hint | F2 |
 
 F4 and F5 are independent and can run in parallel; both touch only the picker and the settings page, not the player page structure.
 

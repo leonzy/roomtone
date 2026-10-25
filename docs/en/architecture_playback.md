@@ -1,8 +1,10 @@
-# Playback Control and Speaker Output Architecture (Design Draft)
+# Playback Control and Speaker Output Architecture (Architecture and Implementation)
 
-> **Status (after the 2026-10-25 audit).** This document describes how Songloft extends from a "client-authoritative media server" into one that owns playback state and pushes audio to speakers on the local network.
+> **Status (after the 2026-10-25 acceptance).** This document describes how Songloft extends from a "client-authoritative media server" into one that owns playback state and pushes audio to speakers on the local network.
 >
-> Implementation progress: **M0–M4 (queue/state machine, decode pipeline, `local`/`raop`/`dlna` sinks, device discovery) are implemented**, with real-device items `Not run`; **M5 sync correction, M6 per-speaker EQ, M7 party correction and M8 observability are partially implemented**. Per-item status and the closing order live in [development plan v2](./playback_development_plan.md#01-v2-revision-audit-findings-2026-10-25). Wherever this document says something the code only half does, the plan's assertions win.
+> Implementation progress: **M0–M8 are all implemented** (queue/state machine, decode pipeline, `local`/`raop`/`dlna` sinks, device discovery, sync groups and the correction loop, per-speaker EQ, party mode, observability). Per-item acceptance assertions live in the [development plan](./playback_development_plan.md); **real-device items (G1 matrix, G2 dual-device cross-correlation, G3 listening, G4 party) are all `Not run`**.
+>
+> For the item-by-item comparison against SlimServer (LMS) see the **[playback capability matrix](./playback_compat_matrix.md)** (42 items: 33 on par or better, 4 gaps, 4 unimplemented).
 >
 > **For the implementation path see the [development plan](./playback_development_plan.md)** (task breakdown, files touched, gates, and schedule).
 >
@@ -509,6 +511,7 @@ Paths are relative to `/api/v1` (`@BasePath` in `main.go`) and map one-to-one on
 | POST | `/groups/{id}/members` | `{player_id}` | Join during playback, attaching at the current position; 409 if already in another group |
 | PATCH | `/groups/{id}/members/{player_id}` | `{delay_ms?, volume_offset?}` | Per-member delay compensation and volume offset |
 | DELETE | `/groups/{id}/members/{player_id}` | `?mode=continue\|stop` | Remove a member |
+| PUT | `/groups/{id}/members/order` | `{player_ids[]}` | Reorder members; must be a full permutation of the group, otherwise 400. Only `position` changes, **never `master_id`** |
 | GET | `/groups/{id}/volume` | — | Group volume plus each member's effective value (with per-device failures) |
 | POST | `/groups/{id}/volume` | `{volume, muted}` | Pushed per device; a single failure does not roll back the others |
 | POST | `/groups/{id}/transfer` | `{from_group_id, only_player_id?}` | `{id}` in the path is the **destination** group; a non-empty `only_player_id` first splits that device into a new solo group and the destination is ignored |
@@ -570,7 +573,7 @@ Common envelope: `{seq, type, time_ms, …}`. `seq` is monotonic and shared by e
 |---|---|---|---|
 | `state` | `group_id, song_id, position_ms, status` | Playback state, track or position changes | The only source of playback state; decide relevance by `group_id` |
 | `target_changed` | `group_id, from_group_id, reason` | Playback was moved to another group (`reason=transfer`) | Follow `players.takeover_behavior`: `pause` stops immediately and informs the user, `follow` silently becomes a pure controller |
-| `member_changed` | `group_id?, player_id, action` | `action=join\|update\|leave\|offline\|online\|deleted\|standby\|wake`; `join`/`update`/`leave` carry `group_id`, `offline`/`online` fire once per containing group | Standby and wake only travel here; there are no separate `power` / `standby` / `wake` events |
+| `member_changed` | `group_id?, player_id, action` | `action=join\|update\|leave\|offline\|online\|deleted\|standby\|wake\|reorder`; `join`/`update`/`leave`/`reorder` carry `group_id` (`reorder` has no `player_id`), `offline`/`online` fire once per containing group | Standby and wake only travel here; there are no separate `power` / `standby` / `wake` events |
 | `group_changed` | `group_id, player_id?, action` | `action=deleted` (dissolved), `master_changed` (carries `player_id`) | **Creating a group emits nothing**: the caller refetches `/playback` or waits for the first `state` |
 | `speaker_seen` | `player_id, name, kind` | Discovery found a new device | Offer "new speaker found"; never auto-join any group |
 | `party_changed` | `party_id, group_id?, name?, action` | `action=created` (carries `name`), `joined` / `left` (carry `group_id`), `ended` | Refetch `/playback/party/{id}`; clear party state after `ended` |
