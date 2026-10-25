@@ -262,12 +262,12 @@ chmod +x songloft
 mkdir -p music data
 
 # 4️⃣ Start (recommended to pass credentials via environment variables to keep them out of shell history / process list)
-ADMIN_USERNAME=admin ADMIN_PASSWORD='your_strong_password' ./songloft
+ADMIN_USERNAME=admin ADMIN_PASSWORD='your_strong_password' ./roomtone
 ```
 
 > 🍎 **Note for macOS users**: Binaries downloaded from GitHub carry the Gatekeeper quarantine attribute and will be blocked on first run. Before running, execute:
 > ```bash
-> xattr -d com.apple.quarantine ./songloft
+> xattr -d com.apple.quarantine ./roomtone
 > ```
 
 #### 🪟 Windows
@@ -432,19 +432,19 @@ Songloft relies on only a few startup-time settings (credentials, port, database
 
 ```bash
 # View help
-./songloft -help
+./roomtone -help
 
 # Specify the port
-./songloft -port 8080
+./roomtone -port 8080
 
 # Specify the database file path
-./songloft -db data/songloft.db
+./roomtone -db data/songloft.db
 
 # Specify the admin account (not recommended — the password appears in shell history and the ps process list)
-./songloft -username admin -password your_password
+./roomtone -username admin -password your_password
 
 # Specify a subpath (used for reverse-proxy deployment)
-./songloft -base-path /songloft
+./roomtone -base-path /songloft
 ```
 
 > ⚙️ **Priority**: Command-line arguments **take precedence over** environment variables. If neither is provided, it falls back to the defaults (admin account `admin/admin`).
@@ -461,10 +461,10 @@ If you mount Songloft under a subpath via a reverse proxy such as Nginx (e.g. `h
 
 ```bash
 # Environment variable
-BASE_PATH=/songloft ./songloft
+BASE_PATH=/songloft ./roomtone
 
 # Or command-line argument
-./songloft -base-path /songloft
+./roomtone -base-path /songloft
 
 # Docker
 docker run -d \
@@ -547,10 +547,10 @@ sha256sum -c checksums.txt
 
 ```bash
 # View version info (including Git Commit / build time / build type)
-./songloft -version
+./roomtone -version
 
 # View full help
-./songloft -help
+./roomtone -help
 
 # Check the version via the API
 curl http://localhost:58091/api/v1/version

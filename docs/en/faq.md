@@ -118,10 +118,10 @@ A: Songloft supports configuring a sub path via the `-base-path` argument or the
 **Startup configuration**:
 ```bash
 # Command-line argument
-./songloft -base-path /songloft
+./roomtone -base-path /songloft
 
 # Or environment variable
-BASE_PATH=/songloft ./songloft
+BASE_PATH=/songloft ./roomtone
 
 # Docker
 docker run -d -e BASE_PATH=/songloft ...
@@ -187,8 +187,8 @@ mklink /D C:\music\nas-music \\NAS\music
 ### Q: How do I change the server port?
 
 A: There are two ways:
-1. Use a command-line argument: `./songloft -port 8080`
-2. Use an environment variable: `LISTEN_PORT=8080 ./songloft`
+1. Use a command-line argument: `./roomtone -port 8080`
+2. Use an environment variable: `LISTEN_PORT=8080 ./roomtone`
 
 The default port is **58091**. Command-line arguments take precedence over environment variables.
 
@@ -230,7 +230,7 @@ services:
 
 **Command-line startup**: Use the `-password` argument:
 ```bash
-./songloft -password your_secure_password
+./roomtone -password your_secure_password
 ```
 
 **Windows**: Create a `songloft.bat` file in the same directory as `songloft.exe`, with the content:
@@ -256,7 +256,7 @@ You can customize the list of supported formats via the `scan_config` database c
 ### Q: How do I check the current version?
 
 A:
-- Command line: `./songloft -help` (prints version information)
+- Command line: `./roomtone -help` (prints version information)
 - API: `curl http://localhost:58091/api/v1/version`
 
 ## Usage Questions

@@ -118,10 +118,10 @@ A: Songloft 支持通过 `-base-path` 参数或 `BASE_PATH` 环境变量配置�
 **启动配置**：
 ```bash
 # 命令行参数
-./songloft -base-path /songloft
+./roomtone -base-path /songloft
 
 # 或环境变量
-BASE_PATH=/songloft ./songloft
+BASE_PATH=/songloft ./roomtone
 
 # Docker
 docker run -d -e BASE_PATH=/songloft ...
@@ -187,8 +187,8 @@ mklink /D C:\music\nas-music \\NAS\music
 ### Q: 如何修改服务端口？
 
 A: 有两种方式：
-1. 使用命令行参数：`./songloft -port 8080`
-2. 使用环境变量：`LISTEN_PORT=8080 ./songloft`
+1. 使用命令行参数：`./roomtone -port 8080`
+2. 使用环境变量：`LISTEN_PORT=8080 ./roomtone`
 
 默认端口为 **58091**。命令行参数优先级高于环境变量。
 
@@ -230,7 +230,7 @@ services:
 
 **命令行启动**：使用 `-password` 参数：
 ```bash
-./songloft -password your_secure_password
+./roomtone -password your_secure_password
 ```
 
 **Windows 平台**：新建 `songloft.bat` 文件放到 `songloft.exe` 同目录，写入：
@@ -256,7 +256,7 @@ DSF 默认可扫描入库，支持读取内嵌标签和封面。已有部署升�
 ### Q: 如何查看当前版本？
 
 A: 
-- 命令行：`./songloft -help`（会打印版本信息）
+- 命令行：`./roomtone -help`（会打印版本信息）
 - API: `curl http://localhost:58091/api/v1/version`
 
 ## 使用问题

@@ -261,12 +261,12 @@ chmod +x songloft
 mkdir -p music data
 
 # 4️⃣ 启动（推荐通过环境变量传入凭证，避免出现在 shell history / 进程列表中）
-ADMIN_USERNAME=admin ADMIN_PASSWORD='your_strong_password' ./songloft
+ADMIN_USERNAME=admin ADMIN_PASSWORD='your_strong_password' ./roomtone
 ```
 
 > 🍎 **macOS 用户注意**：从 GitHub 下载的二进制带有 Gatekeeper 隔离属性，首次运行会被拦截。运行前请先执行：
 > ```bash
-> xattr -d com.apple.quarantine ./songloft
+> xattr -d com.apple.quarantine ./roomtone
 > ```
 
 #### 🪟 Windows
@@ -431,19 +431,19 @@ Songloft 仅依赖少量启动期配置（凭证、端口、数据库路径）�
 
 ```bash
 # 查看帮助
-./songloft -help
+./roomtone -help
 
 # 指定端口
-./songloft -port 8080
+./roomtone -port 8080
 
 # 指定数据库文件路径
-./songloft -db data/songloft.db
+./roomtone -db data/songloft.db
 
 # 指定管理员账号（不推荐，密码会出现在 shell history 和 ps 进程列表中）
-./songloft -username admin -password your_password
+./roomtone -username admin -password your_password
 
 # 指定子路径（反向代理部署时使用）
-./songloft -base-path /songloft
+./roomtone -base-path /songloft
 ```
 
 > ⚙️ **优先级**：命令行参数 **高于** 环境变量。若两者均未提供，则回退到默认值（管理员账号为 `admin/admin`）。
@@ -460,10 +460,10 @@ Songloft 仅依赖少量启动期配置（凭证、端口、数据库路径）�
 
 ```bash
 # 环境变量方式
-BASE_PATH=/songloft ./songloft
+BASE_PATH=/songloft ./roomtone
 
 # 或命令行参数方式
-./songloft -base-path /songloft
+./roomtone -base-path /songloft
 
 # Docker 方式
 docker run -d \
@@ -546,10 +546,10 @@ sha256sum -c checksums.txt
 
 ```bash
 # 查看版本信息（含 Git Commit / 构建时间 / 构建类型）
-./songloft -version
+./roomtone -version
 
 # 查看完整帮助
-./songloft -help
+./roomtone -help
 
 # 通过 API 检查版本
 curl http://localhost:58091/api/v1/version
