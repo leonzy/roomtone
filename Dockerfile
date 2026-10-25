@@ -75,9 +75,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # 是这些层的 digest 在版本间稳定。alpine:latest 会随上游跳小版本（3.24→3.25）导致
 # base 层与 apk 解析结果一起变，用户被迫重拉 ~8MiB 的 apk 层。pin 到 3.24 分支后，
 # 该层仅在分支内偶发安全补丁时才变，长期命中本地缓存。
-# 发布工作流先将上游镜像原样同步到 GHCR；digest 与上游一致。
-# 刷新方式：运行 release workflow，它会先同步 alpine:3.24 再构建。
-FROM ghcr.io/leonzy/roomtone-base-alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+# 发布工作流先将上游镜像原样同步到 GHCR；这里只写 tag、不写 digest：
+# 同步是按 tag 覆盖的，上游重建 alpine:3.24 后旧 manifest 在 GHCR 里就不存在了，
+# 写死 digest 会让 docker build 报 "not found"（fork 首次发布即踩到）。
+FROM ghcr.io/leonzy/roomtone-base-alpine:3.24
 
 # 分层顺序按「变更频率」由低到高排列：越少变动的层越靠前，配合上面的 base pin，
 # 保证用户 docker pull 更新时只需下载末尾变动的二进制层，前面的大层命中本地缓存。
