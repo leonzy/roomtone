@@ -10,7 +10,7 @@ const t = (k: string) => createT(lang.value)(k)
 
 const badges = [
   { alt: 'GitHub stars', src: 'https://img.shields.io/github/stars/leonzy/roomtone?style=flat&color=E8792B' },
-  { alt: 'Release', src: 'https://img.shields.io/github/v/release/songloft-org/songloft?color=E8792B' },
+  { alt: 'Release', src: 'https://img.shields.io/github/v/release/leonzy/roomtone?color=E8792B' },
   { alt: 'Docker pulls', src: 'https://img.shields.io/docker/pulls/songloft/songloft?color=E8792B' },
   { alt: 'License', src: 'https://img.shields.io/github/license/leonzy/roomtone?color=E8792B' },
 ]
