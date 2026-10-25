@@ -3,6 +3,8 @@
 > **状态：设计提案，尚未实现。** 后端契约见 [播放控制与音箱输出架构](./architecture_playback.md)；本文只描述客户端（`clients/player`，独立仓库）的交互、状态与代码落点。
 >
 > 适用客户端：Flutter 六端。TV 与 Lynx 的差异见 §8。
+>
+> **可交互设计稿**：[playback-ui-mockup.html](/roomtone/design/playback-ui-mockup.html)（可直接点选输出、拖动音量、切换分组成员）；五屏静态预览：[playback-ui-board.png](/roomtone/design/playback-ui-board.png)。
 
 ## 1. 设计原则
 

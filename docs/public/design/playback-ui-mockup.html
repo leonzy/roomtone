@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Songloft · 播放与音箱 前端设计稿</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0b0c0f;
+    --surface: #17191e;
+    --surface2: #1f2229;
+    --surface3: #2a2e37;
+    --line: #2e323b;
+    --text: #eceef2;
+    --dim: #9aa1ad;
+    --dim2: #6b7280;
+    --accent: #8b7cf6;
+    --green: #3ddc97;
+    --amber: #f0b429;
+    --red: #f0616d;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    padding: 44px 40px 56px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .board-head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 30px; }
+  .board-title { font-size: 26px; font-weight: 700; letter-spacing: -0.3px; }
+  .board-sub { font-size: 13px; color: var(--dim2); margin-top: 8px; line-height: 1.6; }
+  .board-tag { font-size: 11px; color: var(--amber); border: 1px solid rgba(240,180,41,.35); background: rgba(240,180,41,.08); padding: 6px 10px; border-radius: 6px; white-space: nowrap; }
+
+  .row { display: flex; gap: 34px; align-items: flex-start; }
+  .row + .row { margin-top: 40px; }
+
+  .frame-wrap { display: flex; flex-direction: column; gap: 14px; }
+  .frame {
+    width: 392px; height: 812px; border-radius: 40px; overflow: hidden; position: relative;
+    background: #0e1014; border: 1px solid #24272f;
+    box-shadow: 0 26px 60px rgba(0,0,0,.55), 0 0 0 6px #14161b;
+  }
+  .frame-label { display: flex; gap: 9px; align-items: baseline; }
+  .frame-num {
+    width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none;
+  }
+  .frame-name { font-size: 14px; font-weight: 600; }
+  .frame-note { font-size: 12px; color: var(--dim2); line-height: 1.55; max-width: 360px; }
+
+  /* ---------- now playing backdrop ---------- */
+  .np { position: absolute; inset: 0; padding: 20px 22px; display: flex; flex-direction: column; }
+  .np::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      radial-gradient(120% 60% at 20% 0%, rgba(139,124,246,.42), transparent 60%),
+      radial-gradient(90% 50% at 90% 20%, rgba(61,220,151,.18), transparent 60%),
+      linear-gradient(180deg, #1a1730 0%, #0e1014 55%, #0b0c0f 100%);
+  }
+  .np > * { position: relative; }
+  .status-bar { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); font-weight: 600; letter-spacing: .2px; }
+  .np-head { margin-top: 22px; display: flex; align-items: center; justify-content: space-between; }
+  .np-head .chev { font-size: 20px; color: var(--dim); }
+  .np-head .ttl { font-size: 12px; color: var(--dim); letter-spacing: 2px; }
+  .cover {
+    margin-top: 26px; width: 100%; aspect-ratio: 1; border-radius: 18px;
+    background: linear-gradient(145deg, #4b3f8f, #2b2547 55%, #1b1830);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 18px 44px rgba(0,0,0,.5);
+    position: relative; overflow: hidden;
+  }
+  .cover::after {
+    content: ""; position: absolute; width: 220px; height: 220px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.12);
+    box-shadow: 0 0 0 26px rgba(255,255,255,.04), 0 0 0 54px rgba(255,255,255,.025);
+  }
+  .cover .glyph { font-size: 54px; opacity: .5; }
+  .track { margin-top: 24px; }
+  .track h3 { font-size: 21px; font-weight: 650; letter-spacing: -.2px; }
+  .track p { font-size: 14px; color: var(--dim); margin-top: 5px; }
+  .prog { margin-top: 22px; }
+  .prog .bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.14); position: relative; }
+  .prog .bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 38%; border-radius: 2px; background: #fff; }
+  .prog .bar b { position: absolute; left: 38%; top: 50%; width: 10px; height: 10px; border-radius: 50%; background: #fff; transform: translate(-50%,-50%); }
+  .prog .tm { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim2); margin-top: 7px; font-variant-numeric: tabular-nums; }
+  .ctrl { margin-top: 18px; display: flex; align-items: center; justify-content: space-between; font-size: 21px; color: #dfe3ea; }
+  .ctrl .play { width: 58px; height: 58px; border-radius: 50%; background: #fff; color: #12141a; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .np-bottom { margin-top: auto; display: flex; align-items: center; justify-content: space-between; padding-bottom: 8px; }
+  .icon-btn { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); }
+  .icon-btn.active { color: #fff; }
+  .pill-out {
+    display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600;
+    background: rgba(139,124,246,.18); border: 1px solid rgba(139,124,246,.45); color: #cfc6ff;
+    padding: 7px 12px; border-radius: 999px;
+  }
+
+  /* ---------- sheet ---------- */
+  .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.5); backdrop-filter: blur(3px); }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; border-radius: 26px 26px 0 0;
+    background: var(--surface); border-top: 1px solid #2b2f38;
+    box-shadow: 0 -18px 50px rgba(0,0,0,.6);
+    display: flex; flex-direction: column;
+    max-height: 88%;
+  }
+  .sheet.tall { max-height: 92%; }
+  .sheet.medium { max-height: 72%; }
+  /* 选择器打开时的播放页压缩形态：露出封面与曲名 */
+  .frame:has(.sheet.medium) .cover { width: 100px; height: 100px; margin: 12px auto 0; border-radius: 12px; }
+  .frame:has(.sheet.medium) .cover .glyph { font-size: 34px; }
+  .frame:has(.sheet.medium) .track { margin-top: 10px; text-align: center; }
+  .frame:has(.sheet.medium) .track h3 { font-size: 17px; }
+  .frame:has(.sheet.medium) .track p { font-size: 12px; margin-top: 3px; }
+  .groupvol { display: flex; align-items: center; gap: 10px; margin: 0 12px 2px; padding: 10px 12px; border-radius: 11px; background: #20232b; font-size: 12px; color: #c3c9d3; }
+  .groupvol .db { width: 42px; text-align: right; font-size: 11px; color: var(--dim2); font-variant-numeric: tabular-nums; }
+  .slider::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: #474d59; }
+  .slider.abs::after { display: none; }
+  .slider i.neg { background: #6b7280; }
+  .member .db { width: 24px; text-align: right; font-size: 10.5px; color: var(--dim2); font-variant-numeric: tabular-nums; }
+  .grabber { width: 38px; height: 4px; border-radius: 2px; background: #3b404b; margin: 9px auto 0; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px 12px; }
+  .sheet-head .h { font-size: 17px; font-weight: 650; }
+  .sheet-head .done { font-size: 14px; color: var(--accent); font-weight: 600; }
+  .sheet-body { padding: 0 14px 14px; overflow: hidden; }
+
+  .sect { font-size: 11px; color: var(--dim2); letter-spacing: .8px; padding: 10px 8px 6px; font-weight: 600; }
+  .item { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 13px; }
+  .item .dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #4a4f5c; flex: none; }
+  .item .dot.on { border-color: var(--green); background: var(--green); box-shadow: 0 0 0 4px rgba(61,220,151,.14); }
+  .item .nm { font-size: 15px; font-weight: 550; }
+  .item .sub { font-size: 11.5px; color: var(--dim2); margin-top: 3px; }
+  .item.current { background: rgba(139,124,246,.13); box-shadow: inset 0 0 0 1px rgba(139,124,246,.32); }
+  .item.dim { opacity: .42; }
+  .badge { font-size: 10.5px; font-weight: 700; padding: 3px 7px; border-radius: 5px; letter-spacing: .3px; }
+  .badge.sync { color: var(--green); background: rgba(61,220,151,.13); }
+  .badge.aligned { color: var(--amber); background: rgba(240,180,41,.13); }
+  .badge.party { color: var(--accent); background: rgba(139,124,246,.16); }
+  .badge.off { color: var(--dim); background: rgba(255,255,255,.06); }
+
+  .members { padding: 0 0 4px 26px; }
+  .member { display: flex; align-items: center; gap: 11px; padding: 8px 12px 8px 0; }
+  .member .ic { font-size: 14px; opacity: .8; }
+  .member .nm { font-size: 13.5px; color: #d6dae2; width: 118px; flex: none; }
+  .member .drift { font-size: 11px; color: var(--dim2); margin-left: 6px; }
+  .slider { flex: 1; height: 3px; border-radius: 2px; background: #333845; position: relative; }
+  .slider i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: #c9cdd6; }
+  .slider b { position: absolute; top: 50%; width: 11px; height: 11px; border-radius: 50%; background: #fff; transform: translate(-50%,-50%); box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  .add-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--accent); padding: 11px 0 6px 40px; }
+
+  .divider { height: 1px; background: var(--line); margin: 8px 12px; }
+
+  .party-row {
+    display: flex; align-items: center; gap: 10px; margin: 8px 2px; padding: 11px 14px;
+    border-radius: 13px; background: rgba(139,124,246,.09); border: 1px solid rgba(139,124,246,.22);
+  }
+  .party-row .txt { font-size: 13.5px; font-weight: 550; color: #d8d2ff; }
+  .party-row .mg { margin-left: auto; font-size: 12px; color: var(--accent); }
+  .party-row.plain { background: rgba(255,255,255,.03); border-color: var(--line); }
+  .party-row.plain .txt { color: #cfd4dd; font-weight: 500; }
+
+  .sheet-foot { border-top: 1px solid var(--line); padding: 12px 22px 16px; display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--dim); }
+
+  /* transfer state */
+  .spin { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(139,124,246,.25); border-top-color: var(--accent); animation: sp .8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .frozen { position: relative; }
+  .frozen .bar i { background: #8f95a2; }
+  .frozen .bar b { background: #8f95a2; }
+  .frozen .tm { opacity: .55; }
+
+  /* toast */
+  .toast {
+    position: absolute; left: 18px; right: 18px; bottom: 26px;
+    background: #262a33; border: 1px solid #363b46; border-radius: 13px;
+    padding: 13px 15px; display: flex; align-items: center; gap: 10px;
+    font-size: 13px; box-shadow: 0 14px 34px rgba(0,0,0,.6);
+  }
+  .toast .undo { margin-left: auto; color: var(--accent); font-weight: 650; font-size: 13px; }
+
+  /* ---------- EQ page ---------- */
+  .page { position: absolute; inset: 0; background: var(--surface); display: flex; flex-direction: column; }
+  .nav { display: flex; align-items: center; gap: 12px; padding: 18px 18px 12px; border-bottom: 1px solid var(--line); }
+  .nav .back { font-size: 18px; color: var(--dim); }
+  .nav .ttl { font-size: 15.5px; font-weight: 620; }
+  .nav .right { margin-left: auto; display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--dim); }
+  .switch { width: 42px; height: 25px; border-radius: 999px; background: var(--accent); position: relative; }
+  .switch::after { content: ""; position: absolute; right: 3px; top: 3px; width: 19px; height: 19px; border-radius: 50%; background: #fff; }
+  .switch.off { background: #3a3f4a; }
+  .switch.off::after { right: auto; left: 3px; }
+
+  .chips { display: flex; gap: 8px; padding: 16px 18px; overflow: hidden; mask-image: linear-gradient(90deg, #000 84%, transparent); -webkit-mask-image: linear-gradient(90deg, #000 84%, transparent); }
+  .chip { font-size: 12.5px; padding: 7px 13px; border-radius: 999px; background: #23262e; color: #b9bfc9; border: 1px solid #31353f; white-space: nowrap; }
+  .chip.on { background: rgba(139,124,246,.18); border-color: rgba(139,124,246,.5); color: #d6cfff; font-weight: 600; }
+
+  .eq-wrap { padding: 4px 16px 0; display: flex; gap: 10px; }
+  .eq-scale { width: 34px; flex: none; position: relative; height: 300px; }
+  .eq-scale span { position: absolute; right: 0; font-size: 10.5px; color: var(--dim2); transform: translateY(-50%); font-variant-numeric: tabular-nums; }
+  .bands { flex: 1; display: flex; justify-content: space-between; height: 300px; position: relative; }
+  .bands::before, .bands::after { content: ""; position: absolute; left: 0; right: 0; height: 1px; background: #2c303a; }
+  .bands::before { top: 50%; }
+  .bands::after { bottom: 0; }
+  .band { width: 24px; display: flex; flex-direction: column; align-items: center; height: 100%; position: relative; }
+  .band .track { position: absolute; top: 0; bottom: 0; width: 4px; border-radius: 2px; background: #2a2e37; }
+  .band .fill { position: absolute; width: 4px; border-radius: 2px; background: linear-gradient(180deg, var(--accent), #5b4fd0); }
+  .band .knob {
+    position: absolute; width: 20px; height: 20px; border-radius: 50%; background: #f4f5f8;
+    box-shadow: 0 2px 8px rgba(0,0,0,.55); transform: translateY(-50%);
+  }
+  .eq-labels { display: flex; justify-content: space-between; padding: 10px 16px 0 60px; }
+  .eq-labels span { font-size: 9.5px; color: var(--dim2); width: 24px; text-align: center; font-variant-numeric: tabular-nums; }
+
+  .readout { margin: 18px 18px 0; padding: 13px 15px; border-radius: 12px; background: #20232b; display: flex; align-items: center; gap: 9px; }
+  .readout .k { font-size: 12.5px; color: #c3c9d3; }
+  .readout .v { margin-left: auto; font-size: 12.5px; color: var(--amber); font-weight: 650; font-variant-numeric: tabular-nums; }
+  .readout .lock { font-size: 11px; color: var(--dim2); }
+  .apply { margin: 12px 18px 0; padding: 13px; border-radius: 12px; border: 1px solid #3a3f4b; text-align: center; font-size: 13.5px; color: #d3d8e0; }
+  .note { margin: 14px 18px 0; font-size: 11.5px; color: var(--dim2); line-height: 1.65; }
+
+  /* ---------- settings ---------- */
+  .set-page { position: absolute; inset: 0; background: #101216; display: flex; flex-direction: column; overflow: hidden; }
+  .set-group { margin: 0 14px 10px; background: var(--surface); border-radius: 14px; overflow: hidden; }
+  .set-group .gh { font-size: 11px; color: var(--dim2); letter-spacing: .6px; padding: 10px 16px 6px; font-weight: 600; }
+  .srow { display: flex; align-items: center; gap: 11px; padding: 9.5px 16px; border-top: 1px solid rgba(255,255,255,.045); }
+  .set-group .gh + .srow { border-top: none; }
+  .srow .nm { font-size: 14px; }
+  .srow .meta { font-size: 11px; color: var(--dim2); margin-top: 3px; }
+  .srow .val { margin-left: auto; font-size: 12.5px; color: var(--dim2); font-variant-numeric: tabular-nums; }
+  .srow .proto { margin-left: auto; font-size: 10px; font-weight: 700; padding: 2.5px 6px; border-radius: 4px; background: #2b2f38; color: #a9b0bb; }
+  .srow .proto.dlna { background: rgba(240,180,41,.13); color: var(--amber); }
+  .srow .chev { margin-left: auto; color: #4d525d; font-size: 13px; }
+  .seg { margin-left: auto; display: flex; background: #23262e; border-radius: 8px; padding: 2px; }
+  .seg span { font-size: 11.5px; padding: 5px 12px; border-radius: 6px; color: #9aa1ad; }
+  .seg span.on { background: #3d4350; color: #fff; font-weight: 600; }
+  .hint { font-size: 10.5px; color: var(--dim2); padding: 0 20px 8px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div class="board-head">
+  <div>
+    <div class="board-title">Songloft · 播放与音箱</div>
+    <div class="board-sub">前端设计稿 — 布局与交互示意，非最终视觉；颜色/圆角/字重随 Flutter 主题变量</div>
+  </div>
+  <div class="board-tag">设计提案 · 尚未实现</div>
+</div>
+
+<div class="row">
+
+  <!-- 1. 播放页 + 输出选择器 -->
+  <div class="frame-wrap">
+    <div class="frame">
+      <div class="np">
+        <div class="status-bar"><span>9:41</span><span>◍ ⏻ ▮</span></div>
+        <div class="np-head">
+          <span class="chev">⌄</span>
+          <span class="ttl">正在播放</span>
+          <span class="chev">⋯</span>
+        </div>
+        <div class="cover"><span class="glyph">♫</span></div>
+        <div class="track">
+          <h3>Northern Skyline</h3>
+          <p>Kaito Mori · Night Drive</p>
+        </div>
+        <div class="prog">
+          <div class="bar"><i></i><b></b></div>
+          <div class="tm"><span>1:24</span><span>3:42</span></div>
+        </div>
+        <div class="ctrl">
+          <span>⏮</span><span class="play">▶</span><span>⏭</span>
+        </div>
+        <div class="np-bottom">
+          <span class="icon-btn">♡ 收藏</span>
+          <span class="pill-out">🔊 客厅 · 同步 2 台</span>
+        </div>
+      </div>
+
+      <div class="scrim"></div>
+      <div class="sheet medium">
+        <div class="grabber"></div>
+        <div class="sheet-head"><span class="h">播放到</span><span class="done">完成</span></div>
+        <div class="groupvol"><span>🔊</span><span>组音量</span><span class="slider abs"><i style="width:62%"></i><b style="left:62%"></b></span><span class="db">−6 dB</span></div>
+        <div class="sheet-body">
+          <div class="item current">
+            <span class="dot on"></span>
+            <div><div class="nm">客厅</div></div>
+            <span class="badge sync" style="margin-left:auto">同步</span>
+          </div>
+          <div class="members">
+            <div class="member"><span class="ic">🔊</span><span class="nm">客厅 Soundbar</span><span class="slider"><i style="left:50%;width:8%"></i><b style="left:58%"></b></span><span class="db">+2</span></div>
+            <div class="member"><span class="ic">🔊</span><span class="nm">餐厅 HomePod</span><span class="slider"><i class="neg" style="left:42%;width:8%"></i><b style="left:42%"></b></span><span class="db">−1</span></div>
+            <div class="add-row">＋ 添加音箱</div>
+          </div>
+
+          <div class="party-row plain"><span>🎉</span><span class="txt">发起派对</span><span class="mg">让多个房间放同一首</span></div>
+
+          <div class="divider"></div>
+          <div class="sect">其他目标</div>
+          <div class="item"><span class="dot"></span><span class="nm">卧室音箱</span></div>
+          <div class="item dim"><span class="dot"></span><span class="nm">书房音箱</span><span class="badge off" style="margin-left:auto">离线</span></div>
+          <div class="item"><span class="dot"></span><span class="nm">本机（iPhone）</span></div>
+        </div>
+        <div class="sheet-foot">⚙ 管理音箱与分组</div>
+      </div>
+    </div>
+    <div class="frame-label"><span class="frame-num">1</span><span class="frame-name">输出选择器（组态）</span></div>
+    <div class="frame-note">点其他目标 = 转移；点组内成员 = 展开音量/延迟/EQ/拆分。成员音量是相对值，顶部不设组总音量（派对才需要，且是显式按钮）。</div>
+  </div>
+
+  <!-- 2. 转移中 -->
+  <div class="frame-wrap">
+    <div class="frame">
+      <div class="np">
+        <div class="status-bar"><span>9:41</span><span>◍ ⏻ ▮</span></div>
+        <div class="np-head"><span class="chev">⌄</span><span class="ttl">正在播放</span><span class="chev">⋯</span></div>
+        <div class="cover"><span class="glyph">♫</span></div>
+        <div class="track"><h3>Northern Skyline</h3><p>Kaito Mori · Night Drive</p></div>
+        <div class="prog frozen">
+          <div class="bar"><i></i><b></b></div>
+          <div class="tm"><span>1:24</span><span>3:42</span></div>
+        </div>
+        <div class="ctrl"><span>⏮</span><span class="play">⏸</span><span>⏭</span></div>
+        <div class="np-bottom">
+          <span class="icon-btn">♡ 收藏</span>
+          <span class="pill-out" style="opacity:.5">🔊 客厅 · 同步 2 台</span>
+        </div>
+      </div>
+      <div class="scrim"></div>
+      <div class="sheet medium">
+        <div class="grabber"></div>
+        <div class="sheet-head"><span class="h">播放到</span><span class="done" style="opacity:.35">完成</span></div>
+        <div class="groupvol" style="opacity:.4"><span>🔊</span><span>组音量</span><span class="slider abs"><i style="width:62%"></i><b style="left:62%"></b></span><span class="db">−6 dB</span></div>
+        <div class="sheet-body">
+          <div class="item current" style="opacity:.4">
+            <span class="dot"></span><span class="nm">客厅</span>
+            <span class="badge sync" style="margin-left:auto;opacity:.6">原目标</span>
+          </div>
+          <div class="members" style="opacity:.35">
+            <div class="member"><span class="ic">🔊</span><span class="nm">客厅 Soundbar</span><span class="slider"><i style="left:50%;width:8%"></i><b style="left:58%"></b></span><span class="db">+2</span></div>
+            <div class="member"><span class="ic">🔊</span><span class="nm">餐厅 HomePod</span><span class="slider"><i class="neg" style="left:42%;width:8%"></i><b style="left:42%"></b></span><span class="db">−1</span></div>
+          </div>
+          <div class="divider"></div>
+          <div class="sect">其他目标</div>
+          <div class="item current" style="background:rgba(139,124,246,.10)">
+            <span class="spin"></span>
+            <div><div class="nm">卧室音箱</div><div class="sub">正在连接卧室音箱…</div></div>
+          </div>
+          <div class="item dim"><span class="dot"></span><span class="nm">书房音箱</span></div>
+          <div class="item dim"><span class="dot"></span><span class="nm">本机（iPhone）</span></div>
+        </div>
+        <div class="sheet-foot" style="color:#8b7cf6">位置将从 1:24 + 800ms 补偿处续播</div>
+      </div>
+    </div>
+    <div class="frame-label"><span class="frame-num">2</span><span class="frame-name">转移中</span></div>
+    <div class="frame-note">Sheet 不关、进度条冻结、其他行禁用，避免连点拉起多个组。补偿由服务端做，前端只显示，不参与计算。</div>
+  </div>
+
+  <!-- 3. 派对编辑 -->
+  <div class="frame-wrap">
+    <div class="frame">
+      <div class="np">
+        <div class="status-bar"><span>9:41</span><span>◍ ⏻ ▮</span></div>
+        <div class="np-head"><span class="chev">⌄</span><span class="ttl">正在播放</span><span class="chev">⋯</span></div>
+        <div class="cover"><span class="glyph">♫</span></div>
+        <div class="track"><h3>Northern Skyline</h3><p>Kaito Mori · Night Drive</p></div>
+        <div class="prog"><div class="bar"><i></i><b></b></div><div class="tm"><span>1:24</span><span>3:42</span></div></div>
+        <div class="ctrl"><span>⏮</span><span class="play">▶</span><span>⏭</span></div>
+        <div class="np-bottom">
+          <span class="icon-btn">♡ 收藏</span>
+          <span class="pill-out">🎉 派对 · 3 个房间</span>
+        </div>
+      </div>
+      <div class="scrim"></div>
+      <div class="sheet tall">
+        <div class="grabber"></div>
+        <div class="sheet-head"><span class="h">派对</span><span class="done">完成</span></div>
+        <div class="sheet-body" style="padding-bottom:76px">
+          <div class="item current">
+            <span style="width:19px;height:19px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:12px;flex:none">✓</span>
+            <div><div class="nm">客厅</div><div class="sub">当前目标 · 主控房间由服务端选</div></div>
+          </div>
+          <div class="item">
+            <span style="width:19px;height:19px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:12px;flex:none">✓</span>
+            <span class="nm">厨房音箱</span>
+            <span class="badge party" style="margin-left:auto">AirPlay</span>
+          </div>
+          <div class="item">
+            <span style="width:19px;height:19px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:12px;flex:none">✓</span>
+            <div><div class="nm">书房音箱</div><div class="sub">正在对齐…</div></div>
+            <span class="badge party" style="margin-left:auto">DLNA</span>
+          </div>
+          <div class="item dim">
+            <span style="width:19px;height:19px;border-radius:6px;border:1.5px solid #4a4f5c;flex:none"></span>
+            <span class="nm">卧室音箱</span>
+            <span class="badge off" style="margin-left:auto">离线</span>
+          </div>
+          <div class="item">
+            <span style="width:19px;height:19px;border-radius:6px;border:1.5px solid #4a4f5c;flex:none"></span>
+            <span class="nm">本机（iPhone）</span>
+          </div>
+          <div class="divider"></div>
+          <div style="display:flex;gap:9px;padding:6px 12px 2px;font-size:11.5px;color:var(--amber);line-height:1.6">
+            <span>⚠</span><span>派对不保证完全同步，仅对齐进度。两个目标在同一房间时建议用同步组。</span>
+          </div>
+          <div style="padding:16px 12px 4px;font-size:13.5px;color:var(--red);font-weight:600">结束派对</div>
+        </div>
+      </div>
+      <div class="toast"><span>🎉</span><span>已加入派对</span><span class="undo">撤销</span></div>
+    </div>
+    <div class="frame-label"><span class="frame-num">3</span><span class="frame-name">派对编辑态</span></div>
+    <div class="frame-note">派对是选择器里的一段，不是独立页面。勾选即生效；漂移只在该行显示灰字，不弹 toast、不打断播放。</div>
+  </div>
+</div>
+
+<div class="row">
+
+  <!-- 4. EQ -->
+  <div class="frame-wrap">
+    <div class="frame">
+      <div class="page">
+        <div class="nav">
+          <span class="back">‹</span>
+          <span class="ttl">客厅 Soundbar</span>
+          <span class="right">开<span class="switch"></span></span>
+        </div>
+        <div class="chips">
+          <span class="chip">flat</span>
+          <span class="chip on">bass_boost</span>
+          <span class="chip">rock</span>
+          <span class="chip">pop</span>
+          <span class="chip">jazz</span>
+          <span class="chip">classical</span>
+        </div>
+        <div class="eq-wrap">
+          <div class="eq-scale">
+            <span style="top:0">+12</span>
+            <span style="top:25%">+6</span>
+            <span style="top:50%">0</span>
+            <span style="top:75%">−6</span>
+            <span style="top:100%">−12</span>
+          </div>
+          <div class="bands" id="bands"></div>
+        </div>
+        <div class="eq-labels">
+          <span>31</span><span>62</span><span>125</span><span>250</span><span>500</span><span>1k</span><span>2k</span><span>4k</span><span>8k</span><span>16k</span>
+        </div>
+        <div class="readout">
+          <span class="k">自动衰减</span>
+          <span class="lock">🔒</span>
+          <span class="v">−3.0 dB</span>
+        </div>
+        <div class="apply">应用到组内全部音箱</div>
+        <div class="note">推子本地即时绘制，300ms 防抖后提交；切预设立即提交。preamp 由服务端计算并回填，不提供调节入口。</div>
+        <div style="margin:auto 18px 26px;font-size:11.5px;color:var(--dim2);display:flex;gap:8px;line-height:1.6">
+          <span>ℹ</span><span>本机作为输出目标时，本地均衡器开关自动置灰并显示「EQ 由服务端应用」，避免两次 EQ 叠加。</span>
+        </div>
+      </div>
+    </div>
+    <div class="frame-label"><span class="frame-num">4</span><span class="frame-name">每音箱均衡器</span></div>
+    <div class="frame-note">两处入口（成员菜单 / 设置）进同一页。改一台就是改一台，要一致点显式按钮。</div>
+  </div>
+
+  <!-- 5. 设置 -->
+  <div class="frame-wrap">
+    <div class="frame">
+      <div class="set-page">
+        <div class="nav"><span class="back">‹</span><span class="ttl">播放与音箱</span></div>
+        <div style="height:14px"></div>
+
+        <div class="set-group">
+          <div class="gh">我的音箱</div>
+          <div class="srow"><span>🔊</span><div><div class="nm">客厅 Soundbar</div><div class="meta">在线 · flat</div></div><span class="proto">AirPlay</span></div>
+          <div class="srow" style="opacity:.55"><span>🔊</span><div><div class="nm">书房音箱</div><div class="meta">离线 · <span style="color:var(--accent)">重连</span></div></div><span class="proto dlna">DLNA</span></div>
+          <div class="srow"><span style="color:var(--accent)">＋</span><span class="nm" style="color:var(--accent)">添加音箱</span></div>
+        </div>
+
+        <div class="set-group">
+          <div class="gh">扫描设置</div>
+          <div class="srow"><span class="nm">自动发现</span><span class="seg" style="margin-left:auto"><span class="on">开</span><span>关</span></span></div>
+          <div class="srow"><span class="nm">协议</span><span class="val">AirPlay · DLNA</span></div>
+        </div>
+
+        <div class="set-group">
+          <div class="gh">输出参数（高级）</div>
+          <div class="srow"><span class="nm">同时播放上限</span><span class="val">4 组</span></div>
+          <div class="srow"><span class="nm">缓冲延迟</span><span class="val">2000 ms</span></div>
+          <div class="srow"><span class="nm">DLNA 定期重对齐</span><span class="val">关</span></div>
+          <div class="srow"><span class="nm">派对</span><span class="val">开</span></div>
+          <div class="srow"><span class="nm">派对漂移容差</span><span class="val">1500 ms</span></div>
+        </div>
+
+        <div class="set-group">
+          <div class="gh">本机</div>
+          <div class="srow">
+            <div><div class="nm">被其他设备接管时</div><div class="meta">跟随设备，换手机不丢</div></div>
+            <span class="seg"><span class="on">暂停</span><span>跟随</span></span>
+          </div>
+          <div class="srow"><span class="nm">均衡器</span><span class="val">服务端应用</span><span class="chev">›</span></div>
+        </div>
+
+        <div class="set-group">
+          <div class="srow"><span class="nm">手动添加</span><span class="val">IP + 端口</span><span class="chev">›</span></div>
+        </div>
+        <div class="hint">Docker 部署需 <code style="color:#a9b0bb">--network host</code> 才能自动发现；否则请手动填 IP。</div>
+      </div>
+    </div>
+    <div class="frame-label"><span class="frame-num">5</span><span class="frame-name">设置 · 播放与音箱</span></div>
+    <div class="frame-note">新增一个普通分类，复用现有主从布局；接管偏好存服务端 players 行，不是本地设置。</div>
+  </div>
+
+  <div style="flex:1; padding-top: 6px; max-width: 400px">
+    <div style="font-size:13px;color:#9aa1ad;line-height:1.9">
+      <div style="font-weight:650;color:#eceef2;margin-bottom:10px">这几屏对应的设计决定</div>
+      <div>· <b style="color:#d6dae2">同步 vs 派对分两层表达</b>：<span style="color:var(--green)">同步</span>徽标在目标行（时钟），派对是单独一段（内容）。混在一起用户无法判断"为什么不同拍"。</div>
+      <div style="margin-top:10px">· <b style="color:#d6dae2">派对中点即加入</b>：内容已在多个房间响，点另一台几乎总是"也让它出声"；独占走长按。</div>
+      <div style="margin-top:10px">· <b style="color:#d6dae2">没有派对总音量</b>：房间声学不同，统一音量必然有人听不清。</div>
+      <div style="margin-top:10px">· <b style="color:#d6dae2">EQ 的 preamp 只读</b>：+12dB 必削波，让用户调只会变成 bug 报告。</div>
+      <div style="margin-top:10px">· <b style="color:#d6dae2">离线不给可点的高亮</b>：置灰 + 显式"重连"，避免点了没反应。</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 10 段推子：bass_boost 形态，62Hz +3dB、125Hz +2dB，其余 0
+  const gains = [0, 3, 2, 0, 0, 0, 0, 0, 0, 0];
+  const host = document.getElementById('bands');
+  gains.forEach(g => {
+    const top = 50 - (g / 12) * 50; // 0dB=50%，+12dB=0%
+    const b = document.createElement('div');
+    b.className = 'band';
+    const fillTop = Math.min(top, 50), fillH = Math.abs(50 - top);
+    b.innerHTML = `
+      <div class="track"></div>
+      <div class="fill" style="top:${fillTop}%;height:${fillH}%"></div>
+      <div class="knob" style="top:${top}%"></div>`;
+    host.appendChild(b);
+  });
+</script>
+</body>
+</html>

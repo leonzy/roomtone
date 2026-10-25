@@ -14,7 +14,7 @@ export default async () => {
   return withMermaid(defineConfig({
     base: BASE,
     title: "Roomtone",
-    description: "Songloft - 自托管个人音乐服务器，支持 JS 插件扩展、Flutter 与 Lynx 客户端",
+    description: "Roomtone - 自托管个人音乐服务器，支持 JS 插件扩展、Flutter 与 Lynx 客户端",
     lang: 'zh-Hans',
 
     // 中英双语：中文为根（/），英文在 /en/。目前仅落地页（index.md / en/index.md）
@@ -43,13 +43,13 @@ export default async () => {
             },
             { text: 'RepoWiki', link: '/en/repowiki/项目概述' },
             { text: 'FAQ', link: '/en/faq' },
-            { text: 'Changelog', link: 'https://github.com/songloft-org/songloft/releases' },
+                { text: 'Changelog', link: 'https://github.com/leonzy/roomtone/releases' },
             {
               text: 'More',
               items: [
                 { text: 'API Docs', link: '/swagger-api/' },
                 { text: 'Lynx Client', link: '/en/player-lynx/' },
-                { text: 'Docker Hub', link: 'https://hub.docker.com/r/songloft/songloft' },
+                { text: '容器镜像', link: 'https://github.com/leonzy/roomtone/pkgs/container/roomtone' },
                 { text: 'Privacy', link: '/en/PRIVACY' },
                 { text: 'NOTICE', link: '/en/NOTICE' },
               ],
@@ -62,7 +62,7 @@ export default async () => {
     head: [
       ['link', { rel: 'icon', type: 'image/svg+xml', href: `${BASE}favicon.svg` }],
       ['meta', { property: 'og:type', content: 'website' }],
-      ['meta', { property: 'og:title', content: 'Songloft - 自托管个人音乐服务器' }],
+      ['meta', { property: 'og:title', content: 'Roomtone - 自托管个人音乐服务器' }],
       ['meta', { property: 'og:description', content: '简单、自由、插件化的个人音乐服务器，支持 JS 插件扩展' }],
       ['meta', { property: 'og:image', content: 'https://leonzy.github.io/roomtone/logo.png' }],
     ],
@@ -93,7 +93,7 @@ export default async () => {
             { text: 'Flutter 客户端', link: '/player/architecture' },
             { text: 'Lynx 客户端', link: '/player-lynx/' },
             { text: 'HA 加载项', link: '/addon/' },
-            { text: 'Docker Hub', link: 'https://hub.docker.com/r/songloft/songloft' },
+                { text: 'Container Images', link: 'https://github.com/leonzy/roomtone/pkgs/container/roomtone' },
             { text: '隐私说明', link: '/PRIVACY' },
             { text: 'NOTICE', link: '/NOTICE' },
           ],
@@ -101,7 +101,7 @@ export default async () => {
       ],
 
       socialLinks: [
-        { icon: 'github', link: 'https://github.com/songloft-org/songloft' },
+        { icon: 'github', link: 'https://github.com/leonzy/roomtone' },
       ],
 
       footer: {
@@ -114,7 +114,7 @@ export default async () => {
       },
 
       editLink: {
-        pattern: 'https://github.com/songloft-org/songloft/issues',
+        pattern: 'https://github.com/leonzy/roomtone/issues',
         text: '在 GitHub 上提问',
       },
     },

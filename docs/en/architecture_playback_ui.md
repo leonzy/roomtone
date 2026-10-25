@@ -3,6 +3,8 @@
 > **Status: design proposal, not implemented.** For the backend contract see [Playback Control and Speaker Output Architecture](./architecture_playback.md); this document covers only the client (`clients/player`, a separate repository) — interaction, state, and where the code lands.
 >
 > Applies to the six Flutter platforms. TV and Lynx differences are covered in §8.
+>
+> **Interactive mockup**: [playback-ui-mockup.html](/roomtone/design/playback-ui-mockup.html) (click outputs, drag volume, edit group members); five-screen static preview: [playback-ui-board.png](/roomtone/design/playback-ui-board.png).
 
 ## 1. Design Principles
 
