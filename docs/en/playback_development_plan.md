@@ -225,7 +225,7 @@ These are not tied to a milestone but **must be completed within the relevant mi
 
 ## 5. Frontend task breakdown (separate repo)
 
-The frontend lives in `clients/player` (a separate repo; the submodule is not checked out here). Landing points are in [interaction design §7.1](./architecture_playback_ui.md). **Prerequisite: D1 must be decided** (which repo to fork), otherwise these tasks have nowhere to be committed.
+The frontend lives in `clients/player`; landing points are in [interaction design §7.1](./architecture_playback_ui.md). **Repo decided (D1)**: the submodule points at `github.com/leonzy/roomtone-player` (forked from `songloft-org/songloft-player`; same history, so the pinned submodule SHA resolves), and it is checked out locally.
 
 | ID | Task | Main files | Acceptance | Depends | d |
 |---|---|---|---|---|---|
@@ -307,12 +307,12 @@ This matches design §9 (P0~P3.5 ≈ 3.75 months). If blocked waiting for hardwa
 
 | ID | Question | Recommendation | Deadline |
 |---|---|---|---|
-| **D1** | Which repo receives the frontend code | Fork `songloft-player` as `leonzy/roomtone-player` and point the `clients/player` submodule at it | Before F0-01 |
+| **D1** | Which repo receives the frontend code | **Decided**: forked as `leonzy/roomtone-player`; both `.gitmodules` and the local checkout point at it | ✅ Done |
 | **D2** | mDNS library choice | `github.com/hashicorp/mdns v1.0.7` (maintained as of 2026-06); `grandcat/zeroconf` has been stale for six years. If no new dependency is acceptable, budget +2d for a hand-written query | Before B3-01 |
 | **D3** | After G1 fails: AAC-ADTS or drop RAOP | Depends on the matrix: if ≥3 classes work, keep L16 with AAC as per-device fallback; below that, reassess | On G1 day |
 | **D4** | Can a party member change the song individually | Not allowed today (shared content). If real usage demands it, implement "leave the party, then change" rather than decoupling content | After v1.0 feedback |
 | **D5** | REW / AutoEQ import for EQ | Defer until someone actually measures a room with a microphone | After v1.0 |
-| **D6** | Real-device test list | Needs the user's actual device models (some AirPlay, some DLNA); without them B3-08 and M4 manual acceptance cannot be scheduled | Before M3 |
+| **D6** | Real-device test list | **Partially decided**: both AirPlay and DLNA devices are available, enough for G1 and M4 manual acceptance; exact models get recorded in the compatibility matrix when B3-08 starts | Models recorded with B3-08 |
 
 ## 11. Progress
 
@@ -340,4 +340,4 @@ The risk table in design §10 still applies; only the ones that **change the sha
 | Hardware not available (D6) | B3-08 / M4 manual acceptance stalls | Prioritize the fake-sink portions of M6/M7 |
 | Single-source underrun clicks | M2 rework affecting every later milestone | Do B0-04 buffering and silence fill thoroughly in M0 |
 | Party drift heard as echo | M7 degraded, product positioning shifts | Fallback already defined in gate G4 |
-| Frontend repo decision delayed (D1) | All F tasks blocked; backend proceeds | D1 due before F0-01 |
+| ~~Frontend repo decision delayed (D1)~~ | Eliminated: `leonzy/roomtone-player` exists and the submodule points at it | — |

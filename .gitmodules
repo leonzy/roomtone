@@ -3,7 +3,7 @@
 	url = https://github.com/hanxi/tag.git
 [submodule "clients/player"]
 	path = clients/player
-	url = https://github.com/songloft-org/songloft-player.git
+	url = https://github.com/leonzy/roomtone-player.git
 [submodule "plugins/toolchain"]
 	path = plugins/toolchain
 	url = https://github.com/songloft-org/plugin-toolchain.git

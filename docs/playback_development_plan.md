@@ -225,7 +225,7 @@ B5-01 ─► B7-01 ─► B7-03 ─► [G4]
 
 ## 5. 前端任务分解（另一仓库）
 
-前端在 `clients/player`（独立仓库，本仓库子模块未检出），落点见[交互设计 §7.1](./architecture_playback_ui.md)。**前置：D1 必须先拍板**（fork 到哪个仓库），否则这些任务无处提交。
+前端在 `clients/player`，落点见[交互设计 §7.1](./architecture_playback_ui.md)。**仓库已定（D1）**：子模块指向 `github.com/leonzy/roomtone-player`（fork 自 `songloft-org/songloft-player`，历史与子模块指针 SHA 一致），本地已检出。
 
 | ID | 任务 | 主要文件 | 验收 | 依赖 | d |
 |---|---|---|---|---|---|
@@ -307,12 +307,12 @@ CI 里能跑的真机替代物只有 shairport-sync（Linux 容器），DLNA 只
 
 | 编号 | 问题 | 建议 | 截止 |
 |---|---|---|---|
-| **D1** | 前端代码提交到哪个仓库 | fork `songloft-player` 为 `leonzy/roomtone-player`，`clients/player` 子模块指向它 | F0-01 开工前 |
+| **D1** | 前端代码提交到哪个仓库 | **已定**：fork 为 `leonzy/roomtone-player`，`.gitmodules` 与本地检出均指向该仓库 | ✅ 已决 |
 | **D2** | mDNS 库选型 | `github.com/hashicorp/mdns v1.0.7`（2026-06 维护中）；`grandcat/zeroconf` 停更 6 年不选。若不愿加依赖，B3-01 预算 +2d 手写查询 | B3-01 开工前 |
 | **D3** | G1 失败后走 AAC-ADTS 还是砍 RAOP | 看真机矩阵：≥3 类可用就保留 L16 + 个别设备 AAC 兜底；<3 类再评估 | G1 当天 |
 | **D4** | 派对内能否单独换歌 | 当前不允许（共享内容）。若实测强烈需要，做"退出派对再换"而非"脱离内容" | v1.0 后收集反馈 |
 | **D5** | EQ 是否支持 REW / AutoEQ 导入 | 先不做，等有用户真拿麦克风测房间 | v1.0 后 |
-| **D6** | 真机测试清单 | 需要用户提供实际拥有的设备型号（AirPlay / DLNA 各若干），否则 B3-08 / M4 人工验收无法排期 | M3 开工前 |
+| **D6** | 真机测试清单 | **部分确定**：AirPlay 与 DLNA 两类设备都有，可支撑 G1 与 M4 人工验收；具体型号待 B3-08 开测时填入兼容矩阵 | 型号随 B3-08 补录 |
 
 ## 11. 进度表
 
@@ -340,4 +340,4 @@ CI 里能跑的真机替代物只有 shairport-sync（Linux 容器），DLNA 只
 | 真机迟迟不到位（D6） | M3-08 / M4 人工验收全部挂起 | 优先做 M6/M7 的假 sink 部分 |
 | 单解码源欠载爆音 | M2 返工，影响后面所有里程碑 | B0-04 缓冲与补静音提前到 M0 做扎实 |
 | 派对漂移被听成回声 | M7 降级，产品定位调整 | 门禁 G4 的 B 计划已定 |
-| 前端仓库决策拖延（D1） | F 组全线阻塞，后端照跑 | D1 截止 F0-01 开工前 |
+| ~~前端仓库决策拖延（D1）~~ | 已消除：`leonzy/roomtone-player` 已建并指向子模块 | — |

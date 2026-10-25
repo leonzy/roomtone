@@ -26,7 +26,7 @@ Songloft is a self-hosted local music server that supports both **server deploym
 |------|------|------|
 | `/` | Go 1.26 + Chi v5 + SQLite | Backend API service (default port 58091, account admin/admin) |
 | `/mobile` | Go + gomobile | Mobile binding entry point for the Go backend (gomobile bind; exports Start/Stop/IsRunning/GetPort) |
-| `/clients/player` ([separate repo](https://github.com/songloft-org/songloft-player)) | Flutter 3.41+ / Dart 3.7+ | Cross-platform frontend (6 platforms), supports Bundle local mode |
+| `/clients/player` ([separate repo](https://github.com/leonzy/roomtone-player), forked from `songloft-org/songloft-player`) | Flutter 3.41+ / Dart 3.7+ | Cross-platform frontend (6 platforms), supports Bundle local mode |
 | `/clients/player-lynx` ([separate repo](https://github.com/songloft-org/songloft-player-lynx)) | TS + ReactLynx | Android/iOS/HarmonyOS/Web preview client, separate main dev builds and v* releases (submodule; no desktop/Bundle) |
 | `/clients/tv` ([separate repo](https://github.com/songloft-org/songloft-tv)) | Kotlin | Android TV client (submodule) |
 | `/plugins/toolchain` ([separate repo](https://github.com/songloft-org/plugin-toolchain)) | TS + pnpm | JS plugin development toolchain (SDK / Builder / scaffolding) |

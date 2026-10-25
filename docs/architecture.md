@@ -20,7 +20,7 @@ Songloft 是一个自托管的本地音乐服务器，采用前后端分离架�
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  Flutter 跨平台前端                                          │
-│  /clients/player (独立仓库: github.com/songloft-org/songloft-player) │
+│  /clients/player (github.com/leonzy/roomtone-player)       │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
 │  │ Android  │ │   iOS    │ │  macOS   │ │ Windows  │       │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │

@@ -20,7 +20,7 @@ Server Mode supports Flutter, ReactLynx, official Electron Desktop, and Android 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  Flutter Cross-Platform Frontend                             │
-│  /clients/player (standalone repo: github.com/songloft-org/songloft-player) │
+│  /clients/player (github.com/leonzy/roomtone-player)       │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
 │  │ Android  │ │   iOS    │ │  macOS   │ │ Windows  │       │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
