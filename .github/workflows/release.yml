@@ -1309,6 +1309,12 @@ jobs:
             cat "$RUNNER_TEMP/changelog.md" >> "$NOTES_FILE"
             printf '\n' >> "$NOTES_FILE"
           fi
+          # GitHub Release 正文上限 125000 字符。全新 fork 一个 tag 都没有时，
+          # changelog-action 的 previous_tag 为空，会把整个上游提交历史都算进来，
+          # 首次 dev 发布直接 422。这里按字符（非字节）截断，避免切碎 UTF-8；
+          # dev tag 建出来后，下一次发布只剩增量提交，不会再触发。
+          python3 -c 'import sys, pathlib; p = pathlib.Path(sys.argv[1]); t = p.read_text(encoding="utf-8"); n = int(sys.argv[2]); (p.write_text(t[:n] + "\n\n...（更新记录过长，已截断；完整内容见仓库提交历史）\n", encoding="utf-8"), print(f"release notes truncated: {len(t)} -> {n} chars")) if len(t) > n else None' "$NOTES_FILE" 120000
+
           cd release-files
 
           # 收集所有文件
