@@ -3,6 +3,8 @@ package player
 import (
 	"context"
 	"fmt"
+
+	"songloft/internal/player/sink"
 )
 
 // 本文件是设备 / 组的"用户主动删除"路径（B8-04）。
@@ -132,4 +134,52 @@ func (m *Manager) SetMaster(ctx context.Context, groupID, playerID string) (Grou
 		m.deps.Bus.Publish(Event{Type: EventGroupChanged, GroupID: groupID, PlayerID: playerID, Action: "master_changed"})
 	}
 	return m.GetGroup(groupID)
+}
+
+// SetPower 待机 / 唤醒一台设备（B8-05）。
+//
+// 待机语义只到"不再往它推音频"这一层：DLNA 发 Stop 并清空 URI，RAOP 停发
+// RTP。RTSP / DLNA 都没有通用的"硬件上电"指令，所以这里**不假装**设备已经
+// 待机成功——设备真的关机了会由发现流程标离线，那是另一条路径。
+//
+// 待机成员立刻从分发目标里摘掉（不在同步环里被反复校正），
+// 唤醒后重新挂进组，从当前时间点接入。
+//
+// Standby 只存内存、不落库：服务重启后设备按物理状态重新探测，
+// 如果把"待机"持久化，用户换台机器打开会看到一台永远不出声的音箱。
+func (m *Manager) SetPower(ctx context.Context, playerID string, on bool) (Player, error) {
+	if _, err := m.GetPlayer(playerID); err != nil {
+		return Player{}, err
+	}
+	m.mu.Lock()
+	if cur, ok := m.players[playerID]; ok {
+		cur.Standby = !on
+	}
+	m.mu.Unlock()
+
+	if s, ok := m.SinkOf(playerID); ok {
+		if ps, ok := s.(sink.PowerSink); ok {
+			if on {
+				_ = ps.Wake(ctx)
+			} else {
+				if err := ps.Standby(ctx); err != nil {
+					m.deps.Logger.Warn("standby failed", "player_id", playerID, "err", err)
+				}
+			}
+		} else if !on {
+			_ = s.Stop()
+		}
+	}
+	// 组里立刻生效：待机成员不再收帧，唤醒成员从当前进度接入。
+	if gid := m.GroupIDOf(playerID); gid != "" {
+		m.rebuildSinks(ctx, gid)
+	}
+	if m.deps.Bus != nil {
+		action := "standby"
+		if on {
+			action = "wake"
+		}
+		m.deps.Bus.Publish(Event{Type: EventMemberChanged, PlayerID: playerID, Action: action})
+	}
+	return m.GetPlayer(playerID)
 }

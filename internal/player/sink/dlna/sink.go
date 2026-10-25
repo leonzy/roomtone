@@ -246,6 +246,33 @@ func (s *Sink) Stop() error {
 	return err
 }
 
+// Standby 待机：Stop + 清空 CurrentURI。
+//
+// 只发 Stop 不够——很多 renderer 会把最后一条 URI 留在界面上继续显示
+// "正在播放 xxx"，用户以为还在放。清空 URI 才是真的停干净。
+func (s *Sink) Standby(ctx context.Context) error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	s.playing = false
+	s.started = false
+	s.mu.Unlock()
+	if err := s.call(ctx, SvcAVTransport, "Stop", Arg{"InstanceID", "0"}); err != nil {
+		return err
+	}
+	if err := s.call(ctx, SvcAVTransport, "SetAVTransportURI",
+		Arg{"InstanceID", "0"}, Arg{"CurrentURI", ""}, Arg{"CurrentURIMetaData", ""}); err != nil {
+		return err
+	}
+	s.emit(sink.Event{Type: sink.EventStopped})
+	return nil
+}
+
+// Wake 唤醒：DLNA 没有"上电"指令，下一次 Open 时 SetAVTransportURI 即唤醒。
+func (s *Sink) Wake(context.Context) error { return nil }
+
 // Close 退订并停掉轮询。
 func (s *Sink) Close() error {
 	s.mu.Lock()

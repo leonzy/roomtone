@@ -245,6 +245,7 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/players/{id}", pb.UpdatePlayer)
 			r.Delete("/players/{id}", pb.DeletePlayer)
 			r.Post("/players/{id}/volume", pb.SetVolume)
+			r.Post("/players/{id}/power", pb.SetPower)
 			r.Get("/players/{id}/eq", pb.GetEQ)
 			r.Put("/players/{id}/eq", pb.SetEQ)
 			r.Get("/players/{id}/eq/presets", pb.ListEQPresets)

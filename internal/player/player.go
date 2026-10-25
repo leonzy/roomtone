@@ -81,6 +81,8 @@ type Player struct {
 	Online   bool
 	Takeover TakeoverBehavior
 	EQ       EQProfile
+	// Standby 已待机（不再收帧、不进同步环）。只存内存，重启后按物理状态重新探测。
+	Standby bool `json:"standby,omitempty"`
 }
 
 // SupportsCodec 是否支持某编码。

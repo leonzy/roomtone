@@ -54,6 +54,13 @@ var ErrNoSinks = errors.New("distributor: no sinks")
 // DefaultQueueFrames 每路队列深度（帧）。2s 缓冲 = 100 帧，留 20% 余量。
 const DefaultQueueFrames = 120
 
+// DefaultBufferDepth 默认允许领先播放时刻多少。
+//
+// 约束：起播判据（player.DefaultBufferWatermark）必须**严格小于**这个值，
+// 否则环形缓冲的水位永远顶不到判据，状态机停在 buffering 不出声。
+// scripts/tests/guards.sh 会守住这条关系。
+const DefaultBufferDepth = 2 * time.Second
+
 // Run 消费 r 直到 EOF 或 ctx 取消。返回写出的帧数。
 func (d *Distributor) Run(ctx context.Context, r io.Reader) (int, error) {
 	if d.Targets.Len() == 0 {
@@ -70,7 +77,7 @@ func (d *Distributor) Run(ctx context.Context, r io.Reader) (int, error) {
 	frameBytes := frameSamples * 2 * 2 // s16le 双声道
 	depth := d.BufferDepth
 	if depth <= 0 {
-		depth = 2 * time.Second
+		depth = DefaultBufferDepth
 	}
 	now := d.Clock
 	if now == nil {

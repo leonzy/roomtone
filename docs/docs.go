@@ -3891,6 +3891,70 @@ const docTemplate = `{
                 }
             }
         },
+        "/players/{id}/power": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "on=false 让设备待机：DLNA 发 Stop 并清空当前 URI，RAOP 停发 RTP；待机设备立刻从组内分发与同步校正中摘除，不会收到音频。on=true 唤醒并重新挂回组，从当前进度接入。注意 RTSP / DLNA 都没有通用的硬件上电指令，接口返回的 standby 只表示\"服务端不再向它推流\"，不代表设备真的断电待机。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "待机或唤醒播放设备",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "设备 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "on=true 唤醒，false 待机",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.powerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的设备",
+                        "schema": {
+                            "$ref": "#/definitions/player.Player"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "设备不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/players/{id}/reconnect": {
             "post": {
                 "security": [
@@ -12608,6 +12672,14 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.powerRequest": {
+            "type": "object",
+            "properties": {
+                "on": {
+                    "type": "boolean"
+                }
+            }
+        },
         "handlers.proxyAllowlistSettingRequest": {
             "type": "object",
             "properties": {
@@ -14311,6 +14383,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "online": {
+                    "type": "boolean"
+                },
+                "standby": {
+                    "description": "Standby 已待机（不再收帧、不进同步环）。只存内存，重启后按物理状态重新探测。",
                     "type": "boolean"
                 },
                 "takeover": {

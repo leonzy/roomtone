@@ -129,6 +129,13 @@ func (s *Sink) Close() error {
 	return nil
 }
 
+// IsStopped 是否被 Stop 过（测试断言用）。
+func (s *Sink) IsStopped() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stopped
+}
+
 // IsClosed 是否已被 Close（测试断言用）。
 func (s *Sink) IsClosed() bool {
 	s.mu.Lock()

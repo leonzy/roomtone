@@ -95,3 +95,34 @@ func (h *PlaybackHandler) SetMaster(w http.ResponseWriter, r *http.Request) {
 func (h *PlaybackHandler) Metrics(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, h.mgr.MetricsSnapshot())
 }
+
+type powerRequest struct {
+	On bool `json:"on"`
+}
+
+// SetPower 待机 / 唤醒设备
+// @Summary 待机或唤醒播放设备
+// @Description on=false 让设备待机：DLNA 发 Stop 并清空当前 URI，RAOP 停发 RTP；待机设备立刻从组内分发与同步校正中摘除，不会收到音频。on=true 唤醒并重新挂回组，从当前进度接入。注意 RTSP / DLNA 都没有通用的硬件上电指令，接口返回的 standby 只表示"服务端不再向它推流"，不代表设备真的断电待机。
+// @Tags 播放控制
+// @Accept json
+// @Produce json
+// @Param id path string true "设备 ID"
+// @Param request body powerRequest true "on=true 唤醒，false 待机"
+// @Success 200 {object} player.Player "更新后的设备"
+// @Failure 400 {object} map[string]string "请求格式错误"
+// @Failure 404 {object} map[string]string "设备不存在"
+// @Security BearerAuth
+// @Router /players/{id}/power [post]
+func (h *PlaybackHandler) SetPower(w http.ResponseWriter, r *http.Request) {
+	var req powerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	p, err := h.mgr.SetPower(r.Context(), chi.URLParam(r, "id"), req.On)
+	if err != nil {
+		playbackFail(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, p)
+}

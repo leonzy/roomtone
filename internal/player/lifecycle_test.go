@@ -148,3 +148,48 @@ func TestSetMasterB0804(t *testing.T) {
 		t.Fatalf("非成员应被拒绝，实际 %v", err)
 	}
 }
+
+// TestStandbyExcludesFromSyncB0805 待机成员立刻停止收帧，唤醒后重新接入。
+func TestStandbyExcludesFromSyncB0805(t *testing.T) {
+	m, builder, _ := newTestManager(t, "a", "b")
+	ctx := context.Background()
+	gid := m.GroupIDOf("a")
+	if _, err := m.AddMember(ctx, gid, "b"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	e, _ := m.Engine(gid)
+	if err := e.Load(ctx, []int64{1}, 0, 0); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if err := e.Play(ctx); err != nil {
+		t.Fatalf("play: %v", err)
+	}
+	b := builder.get("b")
+	waitFor(t, "b 起播", 2*time.Second, func() bool { return b.FrameCount() >= 3 })
+
+	p, err := m.SetPower(ctx, "b", false)
+	if err != nil {
+		t.Fatalf("待机失败：%v", err)
+	}
+	if !p.Standby {
+		t.Fatal("待机后 standby 字段应为 true")
+	}
+	// 记下此刻帧数，之后不应再增长。
+	before := b.FrameCount()
+	time.Sleep(120 * time.Millisecond)
+	if got := b.FrameCount(); got > before+1 {
+		t.Fatalf("待机成员仍在收帧：%d → %d", before, got)
+	}
+	if !b.IsStopped() {
+		t.Fatal("待机时 sink 应被 Stop")
+	}
+
+	p, err = m.SetPower(ctx, "b", true)
+	if err != nil {
+		t.Fatalf("唤醒失败：%v", err)
+	}
+	if p.Standby {
+		t.Fatal("唤醒后 standby 应为 false")
+	}
+	waitFor(t, "唤醒后重新收帧", 2*time.Second, func() bool { return b.FrameCount() > before+2 })
+}

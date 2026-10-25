@@ -966,6 +966,11 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) {
 	e.SetFormat(format)
 	targets := make([]sink.Target, 0, len(players))
 	for _, p := range players {
+		// 待机成员不参与分发，也不进同步校正环——否则每 950ms 都去"修"
+		// 一台被用户主动关掉的音箱，日志里全是无法收敛的偏差。
+		if p.Standby {
+			continue
+		}
 		s, ok := m.sinkFor(ctx, p)
 		if !ok {
 			continue

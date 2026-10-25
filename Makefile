@@ -369,8 +369,13 @@ docker-run: ## 运行 Docker 容器
 	docker run -p 58091:58091 -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD=admin $(BINARY_NAME):latest
 
 .PHONY: check
-check: fmt vet test ## 运行所有检查（格式化、vet、测试）
+check: fmt vet test check-playback ## 运行所有检查（格式化、vet、测试、播放守卫）
 	@echo "$(GREEN)✓ 所有检查通过$(NC)"
+
+.PHONY: check-playback
+check-playback: ## 播放子系统半成品守卫（EQ 不走 ffmpeg、水位判据、关键用例、swagger 端点）
+	@echo "$(BLUE)播放子系统守卫...$(NC)"
+	@./scripts/tests/guards.sh
 
 .PHONY: sqlc
 sqlc: ## 重新生成 sqlc 代码（修改 internal/database/queries/*.sql 后执行）

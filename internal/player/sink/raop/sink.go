@@ -394,6 +394,17 @@ func (s *Sink) Stop() error {
 	return err
 }
 
+// Standby 停发 RTP（TEARDOWN）。
+//
+// RTSP 协议没有待机指令，AirPlay 音箱不会因此进入硬件待机；这里只保证
+// "不再往它推音频"，由上层把它从同步组里摘掉并标 standby。
+func (s *Sink) Standby(context.Context) error {
+	return s.Stop()
+}
+
+// Wake 唤醒：AirPlay 无上电指令，下一次 Open 会重新 ANNOUNCE/SETUP。
+func (s *Sink) Wake(context.Context) error { return nil }
+
 // Close 释放所有连接。
 func (s *Sink) Close() error {
 	s.mu.Lock()

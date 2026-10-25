@@ -167,6 +167,16 @@ type PushSink interface {
 	WriteFrame(f Frame) error
 }
 
+// PowerSink 支持待机 / 唤醒的输出端。
+//
+// 只有真正能"安静下来又不丢会话"的设备才实现：DLNA 发 Stop 并清空 URI；
+// RAOP 的 RTSP 没有标准待机指令，实现只是停发 RTP（TEARDOWN），
+// 因此**不得**对外宣称设备已进入硬件待机——UI 上只标 standby。
+type PowerSink interface {
+	Standby(ctx context.Context) error
+	Wake(ctx context.Context) error
+}
+
 // PullSink 只提供流地址。
 type PullSink interface {
 	Sink
