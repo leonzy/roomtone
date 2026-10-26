@@ -760,7 +760,35 @@ The interaction model is aligned with Roon (Zone / focus / grouping / transfer /
 - **If the goal is "Roon's fidelity and sync"** → it needs a RAAT-like protocol (shared clock + device-side buffer feedback) and an exclusive client audio stack — a different project in scope, outside this design.
 - **Do not** file H1–H5 as "to be optimized": they are boundaries, not backlog items. Stating them plainly is more useful than pretending they can be closed.
 
-## 12. Appendix: Reference Index
+## 12. Zone Queue Ownership (Roon Model)
+
+Roon's model is **the zone owns the queue**: every Zone has its own play queue, and switching zones switches the whole player (queue + current track + position). This project follows the same semantics with the following authority split.
+
+### 12.1 Authority Split
+
+| Role | Owner | Notes |
+|---|---|---|
+| Queue contents | **Client** (editor) | Selecting, reordering and deleting happen client-side; the whole list is pushed |
+| Queue storage | **Server** (store) | `PUT /groups/{id}/queue` replaces the list; `SetQueue` stores without playing |
+| Sound output | Zone members | Local member → local `just_audio`; otherwise the server pushes to that zone's devices |
+| State display | Server + report mirror | Local output mirrors via `report`; remote zones mirror via `state` events |
+
+### 12.2 Client Sync (`zone_queue_sync.dart`)
+
+- Focused zone changes (or the zone list finishes loading) → `GET /groups/{id}/queue` + `GET /songs/batch?ids=` → `adoptZoneQueue` takes over the local queue.
+- Local queue changes → 250 ms debounce → `PUT /groups/{id}/queue` pushes the whole list back.
+- Loop prevention: `_pushedSongs/_pushedIndex` remember the last aligned value and `_adopting` marks the adoption window; no push happens while adopting, otherwise the previous zone's queue would be pushed to the new zone.
+- Only zones containing this device produce sound: `autoPlay = zone.isLocal && status.isPlaying`; switching to a silent zone calls `stopForServer()` to stop local audio.
+- When the focused zone does not contain this device, `remoteZoneIdProvider` holds its id and play/pause/next/prev/seek are delegated to the server via `POST /groups/{id}/transport`, with playback state mirrored from `state` events (`applyRemoteZoneStatus`).
+
+### 12.3 Server Constraints
+
+- `Engine.SetQueue` never starts decoding; if decoding is running and the current track changes (including clearing), decoding stops and the state falls back to `paused`, so the server never keeps playing a track that is no longer in the queue.
+- When not decoding, only `Transport.SelectSong` updates the current track; the state machine is untouched (pushing a queue is not "start playing").
+- An empty array clears the queue (`Queue.Replace` already supports `current = -1`).
+- The zone panel no longer offers a play button: picking a zone only switches focus and queue, playback belongs to the main player (Roon semantics).
+
+## 13. Appendix: Reference Index
 
 | Topic | Reference |
 |---|---|

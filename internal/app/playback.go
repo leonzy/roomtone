@@ -339,6 +339,7 @@ type playerWSMessage struct {
 	MaxRate int                 `json:"max_sample_rate"`
 	Caps    *playerRegisterCaps `json:"caps"`
 	// report
+	SongID     int64  `json:"song_id"`
 	PositionMs int64  `json:"position_ms"`
 	Buffering  bool   `json:"buffering"`
 	Volume     int    `json:"volume"`
@@ -416,11 +417,15 @@ func (a *App) handlePlayerMessage(c *ws.Client, payload []byte) {
 		}
 		// 同一设备重连：取消断线计时，避免 30s 后把刚上线的设备标离线。
 		a.cancelPlayerOffline(msg.ID)
+		// 先登记 WS 连接再注册设备：RegisterPlayer 会重建该组的 sink，
+		// 而 local sink 的构造依赖 hub.Sender(id)。顺序反了会拿不到 sender，
+		// sink 建不出来，组里就只剩「没有可推送目标」——客户端明明在线，
+		// 服务端却以为它不在。
+		a.wsHub.RegisterDevice(c, msg.ID)
 		if err := a.playerManager.RegisterPlayer(context.Background(), p); err != nil {
 			slog.Warn("注册播放设备失败", "id", msg.ID, "err", err)
 			return
 		}
-		a.wsHub.RegisterDevice(c, msg.ID)
 	case "unregister_player":
 		id := msg.ID
 		if id == "" {
@@ -439,6 +444,7 @@ func (a *App) handlePlayerMessage(c *ws.Client, payload []byte) {
 			if s, ok := a.playerManager.SinkOf(p); ok {
 				if ls, ok := s.(*local.Sink); ok {
 					ls.HandleReport(local.Report{
+						SongID:     msg.SongID,
 						PositionMs: msg.PositionMs,
 						Buffering:  msg.Buffering,
 						Volume:     msg.Volume,
@@ -447,6 +453,10 @@ func (a *App) handlePlayerMessage(c *ws.Client, payload []byte) {
 					})
 				}
 			}
+			// 客户端自己起播时服务端没有解码协程，组状态靠上报镜像，
+			// 否则区域会一直显示空闲。
+			a.playerManager.MirrorReport(p, msg.SongID, msg.State,
+				time.Duration(msg.PositionMs)*time.Millisecond)
 		}
 	}
 }

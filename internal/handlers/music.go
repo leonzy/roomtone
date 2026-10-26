@@ -423,6 +423,43 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// BatchGetSongs 批量取歌曲
+// @Summary 批量获取歌曲
+// @Description 按 ids 顺序返回歌曲完整对象，用于把区域队列的 song_id 还原成可渲染的列表。不存在的 id 直接跳过。
+// @Tags 歌曲管理
+// @Produce json
+// @Param ids query string true "逗号分隔的歌曲 ID，最多 500 个"
+// @Success 200 {object} map[string]any "songs 为歌曲数组，total 为实际返回数量"
+// @Failure 400 {object} map[string]string "ids 为空、超限或含非法值"
+// @Security BearerAuth
+// @Router /songs/batch [get]
+func (h *SongHandler) BatchGetSongs(w http.ResponseWriter, r *http.Request) {
+	raw := strings.TrimSpace(r.URL.Query().Get("ids"))
+	if raw == "" {
+		respondError(w, http.StatusBadRequest, "ids 不能为空", nil)
+		return
+	}
+	parts := strings.Split(raw, ",")
+	if len(parts) > 500 {
+		respondError(w, http.StatusBadRequest, "一次最多 500 个 id", nil)
+		return
+	}
+	out := make([]*models.Song, 0, len(parts))
+	for _, p := range parts {
+		id, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64)
+		if err != nil || id <= 0 {
+			respondError(w, http.StatusBadRequest, "ids 含非法值", err)
+			return
+		}
+		song, err := h.songService.GetByID(r.Context(), id)
+		if err != nil {
+			continue
+		}
+		out = append(out, song)
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"songs": out, "total": len(out)})
+}
+
 // ListRandomSongs 随机返回匹配过滤条件的 N 首歌曲（完整对象）。
 // @Summary 随机获取歌曲
 // @Description 与 /songs 共享过滤条件，随机返回 limit 首歌曲完整对象。用于「随机播放」场景。

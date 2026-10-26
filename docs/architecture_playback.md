@@ -760,7 +760,35 @@ SSDP（239.255.255.250:1900）与 mDNS（224.0.0.251:5353）在 Docker bridge �
 - **目标是“Roon 的音质与同步”** → 需要自研 RAAT-like 协议（共享时钟 + 设备侧缓冲反馈）与客户端独占音频栈，属于另一个项目量级，不在本设计范围内。
 - **不建议**把 H1~H5 写成“待优化”：它们是边界，不是待办。写清楚比假装能追上更有用。
 
-## 12. 附录：参考实现索引
+## 12. 区域队列所有权（Roon 模型）
+
+Roon 的模型是**区域拥有队列**：每个 Zone 有一条独立的 play queue，切区域就是切整个播放器（队列 + 当前曲 + 进度）。本项目按同一语义落地，权威划分如下。
+
+### 12.1 权威划分
+
+| 角色 | 谁负责 | 说明 |
+|---|---|---|
+| 队列内容 | **客户端**（编辑器） | 选歌、拖拽、删除都在客户端完成，整条推给服务端 |
+| 队列存储 | **服务端**（保存者） | `PUT /groups/{id}/queue` 全量覆盖，`SetQueue` 只存不播 |
+| 出声 | 区域成员 | 本机参与 → 本机 `just_audio`；本机不参与 → 服务端推给该区域设备 |
+| 状态展示 | 服务端 + 上报镜像 | 本机出声时靠 `report` 镜像；远端区域靠 `state` 事件镜像 |
+
+### 12.2 客户端同步（`zone_queue_sync.dart`）
+
+- 焦点区域变化（或区域列表刚加载出来）→ `GET /groups/{id}/queue` + `GET /songs/batch?ids=` → `adoptZoneQueue` 接管为本地队列。
+- 本地队列变化 → 250ms 防抖 → `PUT /groups/{id}/queue` 整条推回。
+- 防回环：`_pushedSongs/_pushedIndex` 记录最近对齐值，`_adopting` 标记接管窗口；接管期间不推送，否则会把上一个区域的队列推给新区域。
+- 只有本机参与的区域才出声：`autoPlay = zone.isLocal && status.isPlaying`；切到不出声的区域会 `stopForServer()` 停掉本机音频。
+- 焦点区域不含本机时，`remoteZoneIdProvider` 置为该区域 id，播放器的 play/pause/next/prev/seek 改为 `POST /groups/{id}/transport` 委派给服务端，并用 `state` 事件镜像播放状态（`applyRemoteZoneStatus`）。
+
+### 12.3 服务端约束
+
+- `Engine.SetQueue` 不启动解码；正在解码且当前曲目被换掉（含清空）时停掉解码并落到 `paused`，避免继续播一首已经不在队列里的歌。
+- 未在解码时只 `Transport.SelectSong` 换当前曲目，状态机不动（推队列 ≠ 开始播放）。
+- 空数组表示清空队列（`Queue.Replace` 已支持 `current = -1`）。
+- 区域面板不再提供播放按钮：选区域只切焦点与队列，播放交给主播放器（Roon 语义）。
+
+## 13. 附录：参考实现索引
 
 | 主题 | 参考位置 |
 |---|---|

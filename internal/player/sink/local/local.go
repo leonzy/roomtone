@@ -42,6 +42,8 @@ type Command struct {
 
 // Report 客户端每 500ms 上报的状态。
 type Report struct {
+	// SongID 客户端当前播放的曲目。服务端未驱动时靠它把组状态镜像回来。
+	SongID     int64  `json:"song_id"`
 	PositionMs int64  `json:"position_ms"`
 	Buffering  bool   `json:"buffering"`
 	Volume     int    `json:"volume"`

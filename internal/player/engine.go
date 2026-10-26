@@ -135,6 +135,11 @@ type Engine struct {
 	curPlan  sink.StreamPlan
 	planBase int64
 	cursor   int64
+	// controls 控制型 sink（本机客户端自拉流）：服务端不下发 PCM，只发指令。
+	//
+	// 与 targets 分开存：sink.Set 的元素类型是 PushSink，控制型 sink 进不去。
+	// 纯控制型组（组内只有本机）走委派播放，见 runDelegated。
+	controls []sink.Sink
 }
 
 // NewEngine 创建引擎。
@@ -226,6 +231,53 @@ func (e *Engine) SetTargets(ctx context.Context, ts []sink.Target) error {
 		}
 	}
 	return nil
+}
+
+// SetControls 全量替换控制型 sink。
+//
+// 控制型 sink 不接收 PCM：服务端只下发 load/play/pause/seek 指令，客户端
+// 自己拉流解码。它们与 targets 分开管理，因为 sink.Set 只装 PushSink。
+func (e *Engine) SetControls(cs []sink.Sink) {
+	e.mu.Lock()
+	e.controls = append([]sink.Sink(nil), cs...)
+	e.mu.Unlock()
+}
+
+// Controls 当前控制型 sink 快照（只读用途）。
+func (e *Engine) Controls() []sink.Sink {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]sink.Sink(nil), e.controls...)
+}
+
+// controlSinks 取控制型 sink 快照；调用方不得持锁。
+func (e *Engine) controlSinks() []sink.Sink { return e.Controls() }
+
+// commandControls 把一条指令广播给所有控制型 sink。
+//
+// 单个成员失败不影响其它成员：客户端断线是常态，重连后管理器会重建 sink，
+// 这里只记日志，不把整组拖进错误态。
+func (e *Engine) commandControls(op string, fn func(sink.Sink) error) {
+	for _, s := range e.controlSinks() {
+		if err := fn(s); err != nil {
+			e.deps.Logger.Warn("control sink command failed",
+				"player_id", s.ID(), "cmd", op, "err", err)
+		}
+	}
+}
+
+// delegatedLocked 判断当前组是否只能走委派播放。
+//
+// 条件：没有任何推送目标，但至少有一个控制型 sink。此时服务端拿不到任何
+// PCM 出口，跑解码环只会得到 distributor: no sinks——而指令其实已经生效，
+// 客户端正在正常出声。
+func (e *Engine) delegatedLocked() bool {
+	if e.targets.Len() > 0 {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.controls) > 0
 }
 
 // AttachTarget 播放中加入一台设备（也可在空闲时调用，等下次开播生效）。
@@ -332,6 +384,38 @@ func (e *Engine) Load(ctx context.Context, songIDs []int64, index int, position 
 	return nil
 }
 
+// SetQueue 只替换队列与当前下标，不启动解码。
+//
+// 客户端是队列的编辑者（选歌、拖拽、删除都在客户端完成），服务端只负责
+// 保存"这个区域现在排了什么"。播放仍由客户端驱动，状态靠上报镜像。
+func (e *Engine) SetQueue(songIDs []int64, index int) error {
+	e.mu.Lock()
+	prevID, prevErr := e.queue.CurrentSong()
+	e.queue.Replace(songIDs, index)
+	nextID, nextErr := e.queue.CurrentSong()
+	// 正在解码时当前曲目被换掉（含清空队列）：停掉解码落到 paused，
+	// 否则服务端会继续播一首已经不在队列里的歌。
+	if e.running && (nextErr != nil || prevErr != nil || prevID != nextID) {
+		e.stopLocked()
+		if nextErr == nil {
+			e.transport.RestorePaused(nextID, 0)
+		} else {
+			e.transport.Stop()
+		}
+	} else if !e.running {
+		// 没在解码：只把当前曲目换成队列里的那一首，状态机不动。
+		if nextErr == nil {
+			e.transport.SelectSong(nextID)
+		} else {
+			e.transport.Stop()
+		}
+	}
+	e.mu.Unlock()
+	e.persistQueue()
+	e.emitState()
+	return nil
+}
+
 // Play 从暂停恢复。
 func (e *Engine) Play(ctx context.Context) error {
 	e.mu.Lock()
@@ -352,7 +436,11 @@ func (e *Engine) Play(ctx context.Context) error {
 		e.emitState()
 		return nil
 	}
-	if e.transport.State() == StateIdle || e.transport.State() == StateError {
+	// loading 但没有解码协程 = 死状态（恢复失败、协程异常退出）。
+	// 正常 loading 下 Play 是空操作（等缓冲水位），这里必须区分开，
+	// 否则一次异常就会让区域永久无法起播。
+	st := e.transport.State()
+	if st == StateIdle || st == StateError || (st == StateLoading && !e.running) {
 		songIDs := e.queue.Items()
 		idx := e.queue.Current()
 		e.mu.Unlock()
@@ -375,6 +463,13 @@ func (e *Engine) Pause() error {
 	}
 	e.stopLocked()
 	e.mu.Unlock()
+	// 控制型成员自己拉流，服务端停解码不会让它们停下来，必须显式下指令。
+	e.commandControls("pause", func(s sink.Sink) error {
+		if p, ok := s.(interface{ Pause() error }); ok {
+			return p.Pause()
+		}
+		return nil
+	})
 	e.persistState()
 	e.emitState()
 	return nil
@@ -387,6 +482,7 @@ func (e *Engine) Stop() {
 	e.transport.Stop()
 	e.sourceFormat = ""
 	e.mu.Unlock()
+	e.commandControls("stop", func(s sink.Sink) error { return s.Stop() })
 	e.persistState()
 	e.emitState()
 }
@@ -407,6 +503,12 @@ func (e *Engine) Seek(ctx context.Context, position time.Duration) error {
 		e.startLocked(ctx, position)
 	}
 	e.mu.Unlock()
+	if wasPlaying {
+		rate := float64(e.Format().SampleRate)
+		e.commandControls("seek", func(s sink.Sink) error {
+			return s.Seek(uint64(position.Seconds() * rate))
+		})
+	}
 	e.persistState()
 	e.emitState()
 	return nil
@@ -565,11 +667,16 @@ func (e *Engine) stopLocked() {
 }
 
 // startLocked 启动播放协程。
+//
+// 播放会话的生命周期由引擎自己持有：调用方多半是 HTTP handler，返回后
+// net/http 立刻取消 r.Context()，直接继承会让起播协程第一次循环就退出
+// （线上表现为 state=error、error="start ffmpeg: context canceled"）。
+// WithoutCancel 只保留 context 里的值（trace 等），取消权交给 stopLocked。
 func (e *Engine) startLocked(parent context.Context, position time.Duration) {
 	if e.running {
 		return
 	}
-	ctx, cancel := context.WithCancel(parent)
+	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
 	e.cancel = cancel
 	e.running = true
 	e.sourceFormat = ""
@@ -588,6 +695,13 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		e.running = false
 		e.mu.Unlock()
 	}()
+
+	// 纯控制型组（组内只有本机客户端）：服务端没有 PCM 可推，解码环必然
+	// 以 ErrNoSinks 失败。这类组走「下发指令 + 跟随上报」的委派模式。
+	if e.delegatedLocked() {
+		e.runDelegated(ctx, startAt)
+		return
+	}
 
 	position := startAt
 	sampleBase := int64(0)
@@ -677,6 +791,12 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			e.mu.Lock()
 			e.sinksOpen = true
 			e.mu.Unlock()
+		}
+		// 控制型成员（本机客户端自拉流）与推送成员同组时也要收到 load/play，
+		// 否则浏览器那一端不会出声。它们不接收 PCM，只按指令自己拉流。
+		for _, s := range e.controlSinks() {
+			_ = s.Open(ctx, plan)
+			_ = s.Start(timeline.At(uint64(sampleBase)))
 		}
 
 		runner := e.deps.Runners(timeline, e.targets, sampleBase, func(idx int64, at time.Time) {
@@ -768,6 +888,186 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			return
 		}
 		e.persistState()
+		e.emitState()
+	}
+}
+
+// delegatedPollInterval 委派播放的进度轮询间隔。
+//
+// 客户端 500ms 上报一次，这里取一半，位置最多落后半拍；再密就是空转。
+const delegatedPollInterval = 250 * time.Millisecond
+
+// runDelegated 控制型 sink 的播放循环。
+//
+// 与 run 的区别：不打开解码器、不跑分发器。服务端只负责三件事：
+//
+//  1. 下发 load / play 指令（客户端自己拉流解码）；
+//  2. 用客户端上报的进度推进 transport 位置；
+//  3. 播完自动切下一首，继续下发指令。
+//
+// 位置权威在客户端：服务端时间轴只做跟随，不反过来驱动客户端。
+func (e *Engine) runDelegated(ctx context.Context, startAt time.Duration) {
+	position := startAt
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		songID, err := e.queue.CurrentSong()
+		if err != nil {
+			return
+		}
+		track, err := e.resolve(ctx, songID)
+		if err != nil {
+			e.fail(err)
+			return
+		}
+
+		e.mu.Lock()
+		e.sourceFormat = sourceFormatDetail(track)
+		plan := sink.StreamPlan{
+			Format: sink.Format{
+				Codec:      e.format.Codec,
+				SampleRate: e.format.SampleRate,
+				Channels:   e.format.Channels,
+				Bits:       e.format.Bits,
+			},
+			SongID:   track.SongID,
+			Title:    track.Title,
+			Position: position,
+			Duration: track.Duration,
+			Latency:  e.deps.Latency,
+		}
+		e.curPlan = plan
+		e.planBase = 0
+		e.cursor = 0
+		e.mu.Unlock()
+
+		// 指令下发：load 带起始位置，play 带绝对起播时刻，客户端据此对齐。
+		at := e.deps.Clock()
+		controls := e.controlSinks()
+		if len(controls) == 0 {
+			e.fail(errors.New("区域没有可用设备"))
+			return
+		}
+		for _, s := range controls {
+			if err := s.Open(ctx, plan); err != nil {
+				e.fail(fmt.Errorf("open sink %s: %w", s.ID(), err))
+				return
+			}
+			if err := s.Start(at); err != nil {
+				e.fail(fmt.Errorf("start sink %s: %w", s.ID(), err))
+				return
+			}
+		}
+
+		e.mu.Lock()
+		e.sinksOpen = true
+		_ = e.transport.Load(track.SongID, position)
+		_ = e.transport.MarkBuffering()
+		_ = e.transport.Play()
+		e.mu.Unlock()
+		e.emitState()
+
+		if !e.waitDelegated(ctx, track.Duration) {
+			return
+		}
+
+		position = 0
+		e.mu.Lock()
+		advanced := e.queue.Next(true)
+		e.mu.Unlock()
+		if !advanced {
+			e.mu.Lock()
+			e.transport.Stop()
+			e.mu.Unlock()
+			e.persistState()
+			e.emitState()
+			return
+		}
+		e.persistState()
+		e.emitState()
+	}
+}
+
+// waitDelegated 跟随客户端上报推进位置，直到曲目播完或 ctx 取消。
+//
+// 返回 true 表示自然播完，false 表示被取消（暂停 / 停止 / seek 重建）。
+// 客户端不上报时退化为服务端时钟推进，不会永久卡在 0。
+func (e *Engine) waitDelegated(ctx context.Context, duration time.Duration) bool {
+	ticker := time.NewTicker(delegatedPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-ticker.C:
+		}
+		if pos, ok := e.reportedPosition(); ok {
+			e.mu.Lock()
+			e.transport.Seek(pos)
+			e.cursor = int64(pos.Seconds() * float64(e.format.SampleRate))
+			e.mu.Unlock()
+		}
+		e.mu.Lock()
+		pos := e.transport.Position()
+		e.mu.Unlock()
+		if duration > 0 && pos >= duration {
+			return true
+		}
+	}
+}
+
+// reportedPosition 取控制型 sink 上报的播放位置。
+//
+// 多成员时取最靠前的那个：组内以先到的为准，落后的由客户端自己追。
+func (e *Engine) reportedPosition() (time.Duration, bool) {
+	var best time.Duration
+	found := false
+	for _, s := range e.controlSinks() {
+		r, ok := s.(sink.PositionReporter)
+		if !ok {
+			continue
+		}
+		pos, ok := r.PlaybackPosition()
+		if !ok {
+			continue
+		}
+		if !found || pos > best {
+			best = pos
+			found = true
+		}
+	}
+	return best, found
+}
+
+// MirrorReport 把客户端本地播放的状态镜像到服务端。
+//
+// 用户直接点客户端播放条时，服务端既没下发指令也没有解码协程，组状态会一直
+// 停在 idle——UI 上就是「明明在响却显示空闲」。这里在引擎未运行时跟随上报，
+// 让区域状态与真实出声一致。
+//
+// 引擎自己在驱动（running）时一律忽略：那时服务端才是权威，上报只用于位置校正。
+func (e *Engine) MirrorReport(songID int64, state string, position time.Duration) {
+	e.mu.Lock()
+	if e.running {
+		e.mu.Unlock()
+		return
+	}
+	prev := e.transport.State()
+	switch state {
+	case "playing":
+		e.transport.Mirror(songID, position, true)
+	case "paused":
+		e.transport.Mirror(songID, position, false)
+	case "idle":
+		e.transport.Stop()
+	default:
+		e.mu.Unlock()
+		return
+	}
+	changed := e.transport.State() != prev
+	e.mu.Unlock()
+	if changed {
 		e.emitState()
 	}
 }
@@ -949,8 +1249,15 @@ func (e *Engine) Restore(ctx context.Context) error {
 	e.queue.SetRepeat(RepeatMode(st.RepeatMode))
 	e.queue.SetShuffle(st.Shuffle)
 	// 恢复后停在暂停态：不自动出声，用户点播放再继续。
-	e.transport.Load(st.SongID, time.Duration(st.Position*float64(time.Second)))
-	_ = e.transport.Pause()
+	//
+	// 只有确实存过"正在播/暂停"的状态才恢复。Stop 之后落库的是
+	// song_id=0 / state=idle，照搬会把 transport 推进 loading 却没有解码协程，
+	// 而 Play 在 loading 下是空操作——区域永久卡死，表现为"点了播放没反应、
+	// 区域一直空闲"。
+	if st.SongID == 0 || st.State == "" || st.State == string(StateIdle) {
+		return nil
+	}
+	e.transport.RestorePaused(songIDs[idx], time.Duration(st.Position*float64(time.Second)))
 	return nil
 }
 

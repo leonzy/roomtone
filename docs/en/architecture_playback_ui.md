@@ -23,7 +23,7 @@
 | P7 | **Every speaker has its own ears** | EQ belongs to the device, not the content. The living room's placement problems are not the kitchen's, so there is no implicit coupling. |
 | P8 | **Zones run in parallel, not one moving point** | Each zone has its own queue and playback state and can sound at the same time. The picker switches **control focus**, it does not move playback; transfer is an explicit action (Roon's Zone model). |
 | P9 | **This Device is always in the list** | This Device is a built-in zone; it depends on neither discovery nor the network. With no speakers at all, it is the only target. |
-| P10 | **The picker is a remote control** | From the picker you can adjust any zone's volume and pause/resume it without switching to it first. Switching focus means "look at it", not a precondition for "control it". |
+| P10 | **The picker only picks a zone** | A zone row is just icon + name, with the selected row highlighted; volume, playback state and progress live on the player panel and are not duplicated here. Switching zones switches the whole player (queue + current track + position, see §12). |
 | P11 | **The signal path is visible** | Users have the right to know the audio was processed: passthrough / through DSP / lossy transcode are distinguished by colour, and tapping opens the full chain. |
 
 ## 2. Concepts and State Model
@@ -99,7 +99,7 @@ class SignalPath {
 ```
 
 - **Zones run in parallel**: `GET /playback` returns every zone and its `status`; the backend runs one engine per zone (`engines["group:"+id]` in `manager.go`), so several can sound at once. The UI must not assume "only one zone is playing".
-- **Focus ≠ ownership**: switching focus only changes `PlaybackFocus` and sends no playback command; only the inline ▶/⏸, volume, and explicit transfer send commands.
+- **Focus = ownership**: switching focus switches the whole player (queue + current track + position) but does not change any zone's playback state; only an explicit transfer sends commands.
 - `isLocal` decides whether this client takes over the local player (§7.3).
 - When `syncTier == aligned`, the picker shows an amber "approximate sync" badge and **forbids** joining an existing exact group (the backend rejects it too; the frontend blocks it first).
 - Zones sort by "online first → same network → name". Offline zones are dimmed but not hidden (users need to see that the study speaker is still in the list).
@@ -138,7 +138,7 @@ Switching zones, adjusting volume and pausing another room are all things you do
 
 ### 4.1 Wireframe
 
-Roon's picker is a **zone console**, not "pick a target and jump". Every zone row carries its own transport and volume; the current focus is marked by a filled dot on the left.
+Roon's picker is a **zone list**, not "pick a target and jump". Each row is only a device icon and a name, with the focused row highlighted; transport and volume stay on the player panel so the same state never appears twice and drifts.
 
 ```
 ┌──────────────────────────────────────┐
@@ -169,7 +169,6 @@ Roon's picker is a **zone console**, not "pick a target and jump". Every zone ro
 |---|---|---|
 | Zone row body | **Switch control focus**; changes no zone's playback | none (writes local `PlaybackFocus` only) |
 | Inline ▶ / ⏸ | Control **that zone's** transport | `POST /groups/{id}/transport` |
-| Inline volume slider | Adjust **that zone's** volume | `POST /groups/{id}/volume` (300ms debounce) |
 | Row-end ⋯ → Transfer here | Explicit transfer (§4.7) | `POST /groups/{to}/transfer` |
 | Row-end ⋯ → Group with current zone | Merge (§4.4) | `POST /groups/{id}/members` |
 | Row-end ⋯ → Rename/icon | Zone identity (§4.5) | `PUT /groups/{id}` |
@@ -690,7 +689,7 @@ Frontend UI verification follows [AI Development Flow · Frontend UI Verificatio
 - [ ] The player bar always shows the zone name + icon; with no speakers it shows "This Device"
 - [ ] Zones run in parallel: with the living room playing, switching focus to the bedroom leaves the living room's `status` as `playing` (compare `GET /playback` before and after)
 - [ ] Inline ▶ changes only that zone's state and leaves other zones untouched
-- [ ] Inline volume changes only that zone and is sent after a 300ms debounce
+- [ ] Zone rows show only icon and name, the selected row is highlighted, no volume or playback state
 - [ ] Explicit transfer: ⋯ → Transfer here, audio within 3s, position continuous (error < 2s)
 - [ ] Grouping: drag/multi-select merge yields one zone, members keep individual volume; after splitting, playback joins at the current position
 - [ ] A renamed zone survives a server restart; empty/over-long names are rejected

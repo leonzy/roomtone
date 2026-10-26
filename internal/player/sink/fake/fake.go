@@ -130,6 +130,14 @@ func (s *Sink) Close() error {
 	return nil
 }
 
+// Closed 报告是否已 Close。管理器把设备从组里摘走时会 Close 旧 sink，
+// 测试夹具据此判断缓存实例是否还能复用。
+func (s *Sink) Closed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
+}
+
 // Continue 实现 sink.GaplessSink：测试里代表"支持接续的推送设备"。
 func (s *Sink) Continue(plan sink.StreamPlan) error {
 	s.mu.Lock()

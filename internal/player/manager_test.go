@@ -232,7 +232,9 @@ type fakeBuilder struct {
 func (b *fakeBuilder) Build(_ context.Context, p *player.Player) (sink.Sink, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if s, ok := b.sinks[p.ID]; ok {
+	// 已 Close 的 sink 不能复用：RemoveMember 会 Close 旧 sink，
+	// 再 Open 就是往已关闭的 events channel 里发事件（panic）。
+	if s, ok := b.sinks[p.ID]; ok && !s.Closed() {
 		return s, nil
 	}
 	s := fake.New(p.ID)
@@ -262,7 +264,12 @@ func newTestManager(t *testing.T, playerIDs ...string) (*player.Manager, *fakeBu
 // 否则测试要真等 3 秒。
 func newTestManagerWithClock(t *testing.T, clock func() time.Time, playerIDs ...string) (*player.Manager, *fakeBuilder, *toneDecoderFactory) {
 	t.Helper()
-	store := newMemStore()
+	return newTestManagerWithStore(t, newMemStore(), clock, playerIDs...)
+}
+
+// newTestManagerWithStore 用调用方给的 store 建管理器，便于模拟重启（同一个 store 再 Restore 一次）。
+func newTestManagerWithStore(t *testing.T, store player.Store, clock func() time.Time, playerIDs ...string) (*player.Manager, *fakeBuilder, *toneDecoderFactory) {
+	t.Helper()
 	builder := &fakeBuilder{sinks: map[string]*fake.Sink{}, caps: map[string]sink.Caps{}}
 	dec := &toneDecoderFactory{seconds: 600}
 	m := player.NewManager(player.ManagerDeps{

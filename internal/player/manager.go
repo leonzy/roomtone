@@ -239,6 +239,12 @@ func (m *Manager) RegisterPlayer(ctx context.Context, p Player) error {
 	m.mu.Lock()
 	prev, existed := m.players[p.ID]
 	if existed {
+		// 重连：旧 sink 绑的是已经关闭的 WS 连接，继续复用只会得到
+		// "client closed"。丢掉重建，下面的 rebuildSinks 会用新连接重造。
+		if stale, ok := m.sinks[p.ID]; ok {
+			delete(m.sinks, p.ID)
+			_ = stale.Close()
+		}
 		// 保留用户设置（音量 / 音量模式 / 上限 / EQ / 接管行为 / 名称）
 		p.Volume = prev.Volume
 		p.Muted = prev.Muted
@@ -289,6 +295,12 @@ func (m *Manager) RegisterPlayer(ctx context.Context, p Player) error {
 	}
 	if m.deps.Bus != nil && !existed {
 		m.deps.Bus.Publish(Event{Type: EventSpeakerSeen, PlayerID: p.ID, Name: p.Name, Kind: string(p.Kind)})
+	}
+	// 设备（重新）上线后必须重建所属组的 sink：服务重启时客户端还没连上，
+	// 那时建不出 local sink；不在这里补一次，组里就永远没有控制型成员，
+	// 起播会误报 distributor: no sinks。
+	if gid := m.GroupIDOf(p.ID); gid != "" {
+		m.rebuildSinks(ctx, gid)
 	}
 	return nil
 }
@@ -696,15 +708,32 @@ func (m *Manager) CreateGroup(ctx context.Context, name string, memberIDs []stri
 		}
 	}
 	// 成员必须先从原组摘出来（一台设备同时只能属于一个组）。
+	//
+	// 走 RemoveMember 而不是直接 delete(m.groups)：后者只删内存不删库，
+	// 重启后 Restore 会把旧组捞回来，同一台设备就同时挂在多个组里。
+	// 顺带也保住了「多成员组只摘人、不整组拆掉」的语义。
+	oldGroups := make(map[string]string, len(memberIDs))
 	for _, id := range memberIDs {
 		for _, g := range m.groups {
 			if g.HasMember(id) {
-				delete(m.groups, g.ID)
-				m.cancelSleepTimerLocked(g.ID)
+				oldGroups[id] = g.ID
 				break
 			}
 		}
 	}
+	m.mu.Unlock()
+
+	for _, id := range memberIDs {
+		gid, ok := oldGroups[id]
+		if !ok {
+			continue
+		}
+		if err := m.RemoveMember(ctx, gid, id, "stop"); err != nil && !errors.Is(err, ErrGroupNotFound) {
+			return GroupView{}, err
+		}
+	}
+
+	m.mu.Lock()
 	gid := fmt.Sprintf("grp-%d", time.Now().UnixNano())
 	master := masterID
 	if master == "" || !contains(memberIDs, master) {
@@ -1081,6 +1110,9 @@ func (m *Manager) RemoveMember(ctx context.Context, groupID, playerID, mode stri
 	empty := len(g.Members) == 0
 	if empty {
 		delete(m.groups, groupID)
+		// 组没了，挂在它上面的睡眠定时器也必须一起取消，
+		// 否则到点会去 Stop 一个已经不存在的引擎。
+		m.cancelSleepTimerLocked(groupID)
 	}
 	m.mu.Unlock()
 
@@ -1256,6 +1288,7 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) {
 	}
 	e.SetFormat(format)
 	targets := make([]sink.Target, 0, len(players))
+	controls := make([]sink.Sink, 0, len(players))
 	for _, p := range players {
 		// 待机成员不参与分发，也不进同步校正环——否则每 950ms 都去"修"
 		// 一台被用户主动关掉的音箱，日志里全是无法收敛的偏差。
@@ -1271,6 +1304,9 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) {
 		m.syncControlEQ(s, p)
 		ps, ok := s.(sink.PushSink)
 		if !ok {
+			// 但必须交给引擎：服务端要给它下发 load/play 指令，否则
+			// 客户端永远收不到播放命令，组里只有它时还会误报 no sinks。
+			controls = append(controls, s)
 			continue
 		}
 		targets = append(targets, sink.Target{
@@ -1280,6 +1316,7 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) {
 			Delay:    memberDelay(*g, p.ID),
 		})
 	}
+	e.SetControls(controls)
 	// 播放中增删成员走差异路径：新增的立刻接进时间轴，移除的立刻停。
 	if err := e.SetTargets(ctx, targets); err != nil {
 		m.deps.Logger.Warn("attach playback target failed", "group", groupID, "err", err)
@@ -1458,6 +1495,19 @@ func (m *Manager) GroupIDOf(playerID string) string {
 		}
 	}
 	return ""
+}
+
+// MirrorReport 把某台设备的上报镜像到它所在组的引擎。
+//
+// 设备不在任何组里时直接忽略：单机播放不需要服务端记账。
+func (m *Manager) MirrorReport(playerID string, songID int64, state string, position time.Duration) {
+	gid := m.GroupIDOf(playerID)
+	if gid == "" {
+		return
+	}
+	if e := m.engine("group", gid); e != nil {
+		e.MirrorReport(songID, state, position)
+	}
 }
 
 // DescribePlayer 供日志/诊断的一行摘要。

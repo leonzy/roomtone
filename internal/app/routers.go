@@ -146,6 +146,7 @@ func (a *App) setupAPIV1Router() {
 			// 歌曲管理模块
 			r.Get("/songs", songHandler.ListSongs)
 			r.Get("/songs/ids", songHandler.ListSongIDs)
+			r.Get("/songs/batch", songHandler.BatchGetSongs)
 			r.Get("/songs/random", songHandler.ListRandomSongs)
 			r.Post("/songs/remote", songHandler.AddRemoteSongs)
 			r.Post("/songs/radio", songHandler.AddRadios)
@@ -267,6 +268,7 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/groups/{id}/transfer", pb.Transfer)
 			r.Get("/groups/{id}/queue", pb.GetQueue)
 			r.Post("/groups/{id}/queue", pb.AddToQueue)
+			r.Put("/groups/{id}/queue", pb.ReplaceQueue)
 			r.Put("/groups/{id}/queue/reorder", pb.ReorderQueue)
 			r.Post("/groups/{id}/transport", pb.Transport)
 			r.Post("/groups/{id}/sleep", pb.SetSleepTimer)

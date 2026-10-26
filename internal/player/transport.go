@@ -188,6 +188,65 @@ func (t *Transport) Pause() error {
 	return fmt.Errorf("%w: pause from %s", ErrInvalidTransition, t.state)
 }
 
+// RestorePaused 直接进入暂停态（服务重启后恢复用）。
+//
+// 不能走 Load→Pause：Pause 不接受 loading，会返回 ErrInvalidTransition 并把
+// 状态机永久留在 loading；而 Play 在 loading 下是空操作，区域就此卡死。
+func (t *Transport) RestorePaused(songID int64, position time.Duration) {
+	t.mu.Lock()
+	t.state = StatePaused
+	t.errMsg = ""
+	t.songID = songID
+	t.base = position
+	t.since = time.Time{}
+	t.watermark = 0
+	t.mu.Unlock()
+}
+
+// SelectSong 只改当前曲目，不动状态机。
+//
+// 客户端推队列时用：区域应该显示队列里的当前曲目，但推队列本身不代表
+// 开始播放，所以不能把状态改成 paused/playing。
+// SelectSong 只换当前曲目，不动播放状态。
+//
+// 同一首歌重复选中必须是 no-op：队列编辑（PUT /groups/{id}/queue）每次
+// 都会走到这里，如果无条件把 base 归零，正在播的歌位置会被清零，切区域
+// 回来就“丢进度”（服务端驱动时 MirrorReport 被忽略，位置永远回不来）。
+func (t *Transport) SelectSong(songID int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.songID == songID {
+		return
+	}
+	t.songID = songID
+	t.base = 0
+	t.since = time.Time{}
+	t.watermark = 0
+}
+
+// Mirror 按客户端上报直接设定状态（服务端未驱动时使用）。
+//
+// local sink 是客户端权威的：用户直接点客户端播放条时服务端既没下发指令也
+// 没有解码协程，组状态会一直停在 idle。这里把上报的状态搬进状态机，让区域
+// 显示与真实出声一致。
+func (t *Transport) Mirror(songID int64, position time.Duration, playing bool) {
+	t.mu.Lock()
+	t.errMsg = ""
+	if songID > 0 {
+		t.songID = songID
+	}
+	t.base = position
+	t.watermark = 0
+	if playing {
+		t.state = StatePlaying
+		t.since = t.now()
+	} else {
+		t.state = StatePaused
+		t.since = time.Time{}
+	}
+	t.mu.Unlock()
+}
+
 // Stop 回到 idle 并清空位置。
 func (t *Transport) Stop() {
 	t.mu.Lock()

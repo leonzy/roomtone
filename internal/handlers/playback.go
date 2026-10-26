@@ -586,6 +586,42 @@ type queueAddRequest struct {
 	Position string  `json:"position"`
 }
 
+// ReplaceQueue 整体替换队列
+// @Summary 整体替换组队列
+// @Description 用给定歌曲序列覆盖队列并定位到 index（不自动播放）。客户端是队列编辑者，服务端只保存区域排了什么；空数组表示清空队列。正在解码且当前曲目被换掉时会停掉解码并落到 paused。
+// @Tags 播放控制
+// @Accept json
+// @Produce json
+// @Param id path string true "组 ID"
+// @Param request body queueReplaceRequest true "歌曲序列与当前下标"
+// @Success 200 {object} player.Status "更新后的状态"
+// @Failure 400 {object} map[string]string "请求格式错误"
+// @Failure 404 {object} map[string]string "组不存在"
+// @Security BearerAuth
+// @Router /groups/{id}/queue [put]
+func (h *PlaybackHandler) ReplaceQueue(w http.ResponseWriter, r *http.Request) {
+	var req queueReplaceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	e, err := h.mgr.Engine(chi.URLParam(r, "id"))
+	if err != nil {
+		playbackFail(w, err)
+		return
+	}
+	if err := e.SetQueue(req.SongIDs, req.Index); err != nil {
+		playbackFail(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, e.Status())
+}
+
+type queueReplaceRequest struct {
+	SongIDs []int64 `json:"song_ids"`
+	Index   int     `json:"index"`
+}
+
 // ReorderQueue 重排队列
 // @Summary 重排队列
 // @Description move 语义：把 from 位置的歌曲移到 to 位置。remove_index 非空时先删除该位置（删除与重排互斥，二选一）。
