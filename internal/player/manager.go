@@ -31,7 +31,27 @@ var (
 	// ErrSyncTierMismatch 精确同步组不接受只能对齐起播的设备。
 	ErrSyncTierMismatch = errors.New("设备不支持精确同步")
 	ErrNotifyForbidden  = errors.New("事件来源不受信任")
+	// ErrNothingPlaying 源组没有在播内容（转移 / 派对操作的先决条件不满足）。
+	ErrNothingPlaying = errors.New("源组没有正在播放的内容")
+	// ErrInvalidArgument 请求参数不合法，文案由调用点给出（见 invalidArg）。
+	//
+	// 单独建哨兵是因为这些错误以前用裸 fmt.Errorf，playbackStatus 认不出来就一律 500，
+	// 客户端把“成员列表为空”当成服务端故障。
+	ErrInvalidArgument = errors.New("参数错误")
 )
+
+// ArgumentError 带用户文案的参数错误，errors.Is 命中 ErrInvalidArgument。
+type ArgumentError struct{ Msg string }
+
+func (e *ArgumentError) Error() string { return e.Msg }
+
+// Is 让 errors.Is(err, ErrInvalidArgument) 成立，同时保留给用户看的原文案。
+func (e *ArgumentError) Is(target error) bool { return target == ErrInvalidArgument }
+
+// invalidArg 造一个参数错误（HTTP 400）。
+func invalidArg(format string, args ...any) error {
+	return &ArgumentError{Msg: fmt.Sprintf(format, args...)}
+}
 
 // Store 播放器域的持久化入口（由 database.PlaybackRepository 适配）。
 type Store interface {
@@ -334,7 +354,7 @@ func (m *Manager) UpdatePlayer(ctx context.Context, id, name string, takeover Ta
 	if takeover != "" {
 		if takeover != TakeoverPause && takeover != TakeoverFollow {
 			m.mu.Unlock()
-			return Player{}, fmt.Errorf("invalid takeover_behavior %q", takeover)
+			return Player{}, invalidArg("takeover_behavior 只支持 pause / follow")
 		}
 		if p.Kind == KindLocal {
 			p.Takeover = takeover
@@ -547,7 +567,7 @@ func (m *Manager) ensureSoloGroup(ctx context.Context, playerID string) error {
 // CreateGroup 新建同步组。
 func (m *Manager) CreateGroup(ctx context.Context, name string, memberIDs []string, masterID string) (GroupView, error) {
 	if len(memberIDs) == 0 {
-		return GroupView{}, fmt.Errorf("member_ids 不能为空")
+		return GroupView{}, invalidArg("member_ids 不能为空")
 	}
 	m.mu.Lock()
 	for _, id := range memberIDs {
@@ -971,7 +991,7 @@ func (m *Manager) Transfer(ctx context.Context, fromGroupID, toGroupID, onlyPlay
 	}
 	st := from.Status()
 	if st.SongID == 0 {
-		return fmt.Errorf("源组没有正在播放的内容")
+		return ErrNothingPlaying
 	}
 	from.Stop()
 	songIDs := st.Queue.Items

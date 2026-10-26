@@ -11,6 +11,8 @@ package sink
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -49,6 +51,39 @@ func (t SyncTier) String() string {
 		return "exact"
 	}
 	return "aligned"
+}
+
+// MarshalJSON 输出字符串枚举，与 GroupView / MemberCaps 的 sync_tier 一致。
+//
+// 同一个语义在 /players 里是数字、在 /groups 里是字符串，客户端只能写两套解析；
+// 客户端（clients/player output_models.dart）按字符串取值，数字会让它直接抛类型错误。
+func (t SyncTier) MarshalJSON() ([]byte, error) {
+	return json.Marshal(t.String())
+}
+
+// UnmarshalJSON 接受字符串枚举，也接受旧版数字。
+//
+// 兼容旧值是因为 Caps 会整段 JSON 落库（players.capabilities），
+// 历史行里 sync_tier 是 0/1；只认字符串会让老库里的设备被 ParseCaps 退回默认能力。
+func (t *SyncTier) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		switch s {
+		case "exact", "":
+			*t = SyncExact
+		case "aligned":
+			*t = SyncAligned
+		default:
+			return fmt.Errorf("invalid sync_tier %q", s)
+		}
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(data, &n); err != nil {
+		return fmt.Errorf("invalid sync_tier %s", string(data))
+	}
+	*t = SyncTier(n)
+	return nil
 }
 
 // Caps 设备能力。JSON 存进 players.capabilities。

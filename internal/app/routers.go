@@ -128,8 +128,11 @@ func (a *App) setupAPIV1Router() {
 		// 健康检查
 		r.Get("/health", healthHandler.CheckHealth)
 
-		// DLNA 设备事件回调：设备带不了 JWT，只能公开，靠来源 IP 校验。
+		// 下面两个端点不能挂 JWT 中间件：DLNA 设备与浏览器 WS 握手都发不出 Authorization 头。
+		// DLNA 回调靠来源 IP 校验，WS 靠一次性 ticket（hub.ServeHTTP 内部校验）。
+		// 契约见 docs/architecture_playback.md（端点表 / 事件推送）。
 		r.Post("/playback/dlna/notify/{id}", a.playbackHandler.DLNANotify)
+		r.Get("/playback/events", a.playbackHandler.Events)
 
 		// 需要授权的路由组
 		r.Group(func(r chi.Router) {
@@ -268,8 +271,6 @@ func (a *App) setupAPIV1Router() {
 			r.Get("/playback", pb.Playback)
 			r.Get("/playback/metrics", pb.Metrics)
 			r.Post("/playback/events/ticket", pb.EventsTicket)
-			// WS 升级不走 JWT（浏览器无法带 Authorization 头），鉴权靠一次性 ticket
-			r.Get("/playback/events", pb.Events)
 			r.Get("/playback/party/{id}", pb.PartyStatus)
 			r.Post("/playback/party", pb.CreateParty)
 			r.Post("/playback/party/{id}/groups", pb.PartyGroups)

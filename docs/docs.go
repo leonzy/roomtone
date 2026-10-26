@@ -1732,7 +1732,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "组在派对中",
+                        "description": "组在派对中 / 源组没有正在播放的内容",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3547,7 +3547,7 @@ const docTemplate = `{
         },
         "/playback/events": {
             "get": {
-                "description": "升级为 WebSocket 连接推送播放事件（state / member_changed / party_changed / group_drift / error 等）。鉴权用 POST /playback/events/ticket 换到的一次性 ticket，放在 query 参数 ticket 上；ticket 30 秒有效且用后即焚。客户端需按 seq 去重，断线重连后调 /playback 全量对齐。",
+                "description": "升级为 WebSocket 连接推送播放事件（state / member_changed / party_changed / group_drift / error 等）。鉴权只用 POST /playback/events/ticket 换到的一次性 ticket（query 参数 ticket，30 秒有效、用后即焚），**不校验 Authorization 头**——浏览器无法给 WS 握手设置该头，所以本端点注册在 JWT 中间件之外。客户端需按 seq 去重，断线重连后调 /playback 全量对齐。",
                 "produces": [
                     "application/json"
                 ],
@@ -3664,6 +3664,15 @@ const docTemplate = `{
                         "description": "派对",
                         "schema": {
                             "$ref": "#/definitions/player.Party"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误（group_ids 为空）",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "403": {
@@ -3827,6 +3836,15 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "操作结果",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "action 不支持",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

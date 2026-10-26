@@ -25,7 +25,7 @@ func (m *Manager) CreateParty(ctx context.Context, name string, groupIDs []strin
 		return Party{}, ErrPartyDisabled
 	}
 	if len(groupIDs) == 0 {
-		return Party{}, fmt.Errorf("group_ids 不能为空")
+		return Party{}, invalidArg("group_ids 不能为空")
 	}
 	m.mu.Lock()
 	for _, gid := range groupIDs {
@@ -257,7 +257,7 @@ func (m *Manager) PartyTransport(ctx context.Context, partyID, action string) er
 		case "stop":
 			e.Stop()
 		default:
-			err = fmt.Errorf("unsupported party action %q", action)
+			err = invalidArg("action 只支持 play / pause / stop")
 		}
 		if err != nil && firstErr == nil {
 			firstErr = err

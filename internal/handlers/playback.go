@@ -56,6 +56,13 @@ func playbackStatus(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, player.ErrSyncTierMismatch), errors.Is(err, player.ErrQueueEmpty), errors.Is(err, player.ErrQueueIndexOutOfRange), errors.Is(err, player.ErrBadMemberOrder):
 		return http.StatusBadRequest
+	// 参数校验失败：以前这类错误是裸 fmt.Errorf，落到下面的 500，
+	// 客户端会把“成员列表为空”当成服务端故障。
+	case errors.Is(err, player.ErrInvalidArgument):
+		return http.StatusBadRequest
+	// 先决条件不满足（源组没在播），不是输入格式错。
+	case errors.Is(err, player.ErrNothingPlaying):
+		return http.StatusConflict
 	}
 	return http.StatusInternalServerError
 }
@@ -450,7 +457,7 @@ func (h *PlaybackHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 // @Param id path string true "目标组 ID"
 // @Param request body transferRequest true "转移参数"
 // @Success 200 {object} map[string]string "操作结果"
-// @Failure 409 {object} map[string]string "组在派对中"
+// @Failure 409 {object} map[string]string "组在派对中 / 源组没有正在播放的内容"
 // @Security BearerAuth
 // @Router /groups/{id}/transfer [post]
 func (h *PlaybackHandler) Transfer(w http.ResponseWriter, r *http.Request) {
@@ -680,7 +687,7 @@ type ticketResponse struct {
 
 // Events WS 升级
 // @Summary 播放事件 WebSocket
-// @Description 升级为 WebSocket 连接推送播放事件（state / member_changed / party_changed / group_drift / error 等）。鉴权用 POST /playback/events/ticket 换到的一次性 ticket，放在 query 参数 ticket 上；ticket 30 秒有效且用后即焚。客户端需按 seq 去重，断线重连后调 /playback 全量对齐。
+// @Description 升级为 WebSocket 连接推送播放事件（state / member_changed / party_changed / group_drift / error 等）。鉴权只用 POST /playback/events/ticket 换到的一次性 ticket（query 参数 ticket，30 秒有效、用后即焚），**不校验 Authorization 头**——浏览器无法给 WS 握手设置该头，所以本端点注册在 JWT 中间件之外。客户端需按 seq 去重，断线重连后调 /playback 全量对齐。
 // @Tags 播放控制
 // @Produce json
 // @Param ticket query string true "一次性 ticket"
@@ -718,6 +725,7 @@ func (h *PlaybackHandler) PartyStatus(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Param request body createPartyRequest true "派对信息"
 // @Success 201 {object} player.Party "派对"
+// @Failure 400 {object} map[string]string "参数错误（group_ids 为空）"
 // @Failure 403 {object} map[string]string "派对模式已关闭"
 // @Failure 409 {object} map[string]string "组已在别的派对中"
 // @Security BearerAuth
@@ -794,6 +802,7 @@ type partyGroupRequest struct {
 // @Param id path string true "派对 ID"
 // @Param request body partyTransportRequest true "动作"
 // @Success 200 {object} map[string]string "操作结果"
+// @Failure 400 {object} map[string]string "action 不支持"
 // @Security BearerAuth
 // @Router /playback/party/{id}/transport [post]
 func (h *PlaybackHandler) PartyTransport(w http.ResponseWriter, r *http.Request) {
