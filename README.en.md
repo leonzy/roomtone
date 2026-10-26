@@ -4,6 +4,7 @@
 > All `songloft` identifiers in the code (Go module, env vars, database filename, JS bridge
 > namespaces, client integration names) are intentionally left unchanged for compatibility with
 > upstream clients and published plugins. Only the final executable (process name) is `roomtone`.
+> Beyond the rename, this fork also adds **server-side playback control and multi-room output**, which upstream does not have (AirPlay/DLNA push, sync groups, per-speaker EQ, alarms). See the [playback architecture](docs/en/architecture_playback.md) and the [SlimServer comparison matrix](docs/en/playback_compat_matrix.md).
 > See [NOTICE.en](NOTICE.en) for copyright and licensing.
 
 <p align="center">
@@ -48,6 +49,7 @@
 
 - 🎵 **Local music management** — Scans local directories and automatically extracts covers and metadata from MP3/FLAC/WAV/APE/OGG/Opus/M4A/M4B/WMA/AIF/AIFF/MKA/DSF (DSD) and other formats
 - 🎬 **Video support** — Scans video containers such as MP4/MOV/M4V/MKV/WebM/AVI/TS/MPG/MPEG/FLV/WMV/RM/RMVB/3GP, detects real video tracks, and renders the picture in-app
+- 🔊 **Server-side playback & multi-room sync (fork addition)** — The server owns the queue and progress and pushes audio straight to AirPlay (RAOP) and DLNA/UPnP speakers; precise sync groups run a drift-correction loop (target ±20ms, automatically degraded with a UI hint when a DLNA member joins), party mode plays one song across groups, each speaker gets its own 10-band EQ, plus ReplayGain, crossfade, and scheduled alarms
 - 🧩 **JS plugin system** — Runs on a QuickJS sandbox with a permission model, health checks, and hot reload; freely extend audio sources / metadata / device control and more
 - 📱 **Cross-platform clients** — The Flutter client supports six platforms: Android, iOS, macOS, Windows, Linux, and Web
 - 📦 **Bundle local mode** — The client embeds the Go backend, so no server deployment is needed — play your local music directly on your phone or computer

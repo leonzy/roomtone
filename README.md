@@ -3,6 +3,7 @@
 > **本仓库是 [Songloft](https://github.com/songloft-org/songloft) 的 fork，项目名 Roomtone。**
 > 代码中的 `songloft` 标识（Go module、环境变量、数据库文件名、JS 桥接命名空间、
 > 客户端集成名）保持不变，以兼容上游客户端与已发布插件；仅最终可执行文件（进程名）改为 `roomtone`。
+> 除改名外，本 fork 还新增了上游没有的**服务端播放控制与多房间音频输出**（AirPlay/DLNA 推送、同步组、每音箱 EQ、闹钟），设计与验收见 [播放架构](docs/architecture_playback.md) 与 [SlimServer 对照矩阵](docs/playback_compat_matrix.md)。
 > 版权与许可见 [NOTICE](NOTICE)。
 
 <p align="center">
@@ -47,6 +48,7 @@
 
 - 🎵 **本地音乐管理** — 扫描本地目录，自动提取 MP3/FLAC/WAV/APE/OGG/Opus/M4A/M4B/WMA/AIF/AIFF/MKA/DSF（DSD）等格式的封面和元数据
 - 🎬 **视频支持** — 扫描 MP4/MOV/M4V/MKV/WebM/AVI/TS/MPG/MPEG/FLV/WMV/RM/RMVB/3GP 等视频容器并探测真实视频轨，客户端内渲染画面
+- 🔊 **服务端播放与多房间同步（本 fork 新增）** — 服务端持有播放队列与进度，直接推送到 AirPlay（RAOP）与 DLNA/UPnP 音箱；精确同步组带漂移校正环（目标 ±20ms，含 DLNA 成员时自动降级并提示），派对模式多组同播，每台音箱独立 10 段 EQ，另有 ReplayGain 响度均衡、交叉淡化与定时闹钟
 - 🧩 **JS 插件体系** — 基于 QuickJS 沙箱运行，支持权限模型、健康检查、热更新，可自由扩展音源 / 元数据 / 设备控制等能力
 - 📱 **跨平台客户端** — Flutter 客户端支持 Android、iOS、macOS、Windows、Linux、Web 六端
 - 📦 **Bundle 本地模式** — 客户端内嵌 Go 后端，无需部署服务器，手机/电脑直接播放本地音乐

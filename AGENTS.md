@@ -1,6 +1,45 @@
 # AGENTS.md
 
-本文件是 Songloft 的 AI 开发入口：通用铁律、常用命令与任务导航，业务细节按需读取。目录、依赖、API 和表结构以代码为事实来源；修改前先读适用的 `LESSONS.md`、子模块本地规范及文末[业务约束索引](#business-constraints)。英文版见 [AGENTS.en.md](AGENTS.en.md)。
+本文件是 **Roomtone**（fork 自 Songloft）的 AI 开发入口：通用铁律、常用命令与任务导航，业务细节按需读取。目录、依赖、API 和表结构以代码为事实来源；修改前先读适用的 `LESSONS.md`、子模块本地规范及文末[业务约束索引](#business-constraints)。英文版见 [AGENTS.en.md](AGENTS.en.md)。
+
+## Fork 说明（Roomtone）
+
+本仓库是 [songloft-org/songloft](https://github.com/songloft-org/songloft) 的 fork，对外名称 **Roomtone**；上游在 v2.0 之前名为 **MiMusic**。相对上游，fork 只做两件事：**品牌替换（只改外壳）** 和 **服务端播放能力扩展**。`git remote` 已配置 `upstream`，`main` 上超出上游同步点的提交都是 fork 侧变更。
+
+### 改名范围：只改外壳
+
+| 类别 | 内容 |
+|---|---|
+| 已改 | `Makefile` 的 `BINARY_NAME=roomtone`；`Dockerfile` 与 `scripts/docker-entrypoint.sh` 的 `/app/roomtone`（含 `.backup`）；release 产物前缀 `roomtone-<os>-<arch>`、镜像 `roomtone/roomtone`、下载前缀；升级检查地址（`internal/services/upgrade_service.go` 拉 fork 仓库的 `version.json`）；README / NOTICE / 文档站标题与站点 base；swagger contact 与示例 URL；`.gitignore` 构建产物 |
+| 保持不动 | Go module（`songloft`）、环境变量、数据库文件名、JS 桥接命名空间、`window.SongloftPlugin` 与 `@songloft/*` SDK、客户端集成名、`/api/v1` 路径、内置歌单 id。这些是上游客户端与已发布插件的兼容面 |
+
+- **新增代码沿用 `songloft` 标识**，不要顺手改成 roomtone；需要体现品牌时只改对外可见的二进制名、镜像名、版本横幅与文档。
+- **版本横幅是升级链路的解析契约**：`internal/version/version.go` 的 `VersionBannerPrefix = "Roomtone Version:"` 被 `scripts/docker-entrypoint.sh` 与 `UpgradeService` 按行解析，改名必须同时改脚本、解析代码与测试；`LegacyVersionBannerPrefix` 只用于识别旧版二进制。
+- 同步上游时**不得把升级检查地址回退到上游**：那会把上游二进制装进 Roomtone 镜像，升级后底包路径也对不上（`1012c0e`）。
+
+### Fork 独有能力：服务端播放控制与多房间输出
+
+上游是「客户端权威」的媒体服务器；fork 增加了服务端持有播放状态、直接推送到局域网音箱的能力，这部分上游没有。迁移：`0040_players`、`0041_group_member_position`、`0042_alarms`。
+
+| 能力 | 代码 / 端点 | 说明 |
+|---|---|---|
+| 播放队列与状态机 | `internal/player/{queue,transport,engine,timeline,lifecycle}.go`；`/playback`、`/groups/{id}/queue`、`/groups/{id}/transport`、`/groups/{id}/volume` | 队列、进度、repeat/shuffle 由服务端持有，多端一致 |
+| 输出 sink | `internal/player/sink/{local,raop,dlna}`；`/players`、`/players/discover` | `local` 为自研客户端注册成播放器；`raop` 走 AirPlay 1；`dlna` 走 UPnP renderer |
+| 多房间同步 | `internal/player/sync_loop.go`、`party.go`；`/groups/*`、`/playback/party/*` | 精确同步组带漂移校正环；派对模式做跨组粗同步 |
+| 每音箱 EQ / 响度 / 交叉淡化 | `/players/{id}/eq`、`/settings/replaygain`、`/settings/crossfade` | EQ 在服务端 PCM 管线逐样本处理 |
+| 闹钟 | `internal/app/alarms.go`；`/alarms`、`/alarms/{id}/test` | 定时起播 + 音量渐强 |
+| 事件推送 | `internal/app/ws/hub.go`；`/playback/events`（`/playback/events/ticket` 换票） | 播放状态与设备变更实时下发 |
+| 出口白名单 | `internal/services/whitelist.go`；`/settings/player-output-allowlist` | 限制可推送的目标地址 |
+
+- 这套功能的验收是**断言不是描述**：逐任务可执行断言与门禁见[开发计划](docs/playback_development_plan.md)，与 Lyrion/SlimServer 的逐项对照见[对照矩阵](docs/playback_compat_matrix.md)；改相关代码先读这两份，别按「字段存在」当完成。
+- 真机项（G1 兼容矩阵、G2 双设备互相关、G3 听感、G4 派对）当前一律 `Not run`，写验证记录时不得当作已通过。
+- 这部分是 fork 专属实现，向上游提 PR 时不要混入。
+
+### 上游同步
+
+- `git fetch upstream && git merge upstream/main`。冲突高发：`internal/app/routers.go`、`internal/app/app.go`、`docs/swagger.*`、`README*`、`Makefile`、`.github/workflows/release.yml`、`scripts/*`。
+- 合并后必跑 `make check` 与 `make swagger`，并确认版本横幅、镜像名、升级地址仍指向 fork。
+- 前端子模块 `clients/player` 指向 `leonzy/roomtone-player`（见 `.gitmodules`），上游 bump 指针时按 fork 仓库对齐，不要直接指回上游；播放 UI（成员排序、闹钟页、调音面板）也在这个子模块里。
 
 ## 文档导航
 
@@ -13,6 +52,7 @@
 | API 响应格式 / Swagger UI | [docs/api_response.md](docs/api_response.md) / 开发模式 `/swagger/index.html` |
 | 前端踩坑 / UI 验证 | [docs/frontend_gotchas.md](docs/frontend_gotchas.md) |
 | 播放控制 / 音箱输出（架构 + 交互 + 计划 + 对照） | [架构](docs/architecture_playback.md)、[交互](docs/architecture_playback_ui.md)、[开发计划](docs/playback_development_plan.md)、[SlimServer 对照矩阵](docs/playback_compat_matrix.md) |
+| Fork 身份 / 改名范围 / 上游同步 | 上方[Fork 说明](#fork-说明roomtone) |
 | 文档站维护 | [docs/development.md](docs/development.md) |
 | JS 插件 / 插件源 | [插件开发指南](docs/js-plugin-development-guide.md)、[插件源制作](docs/plugin_registry.md)、`plugins/toolchain/README.md` |
 

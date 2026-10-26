@@ -1,6 +1,45 @@
 # AGENTS.md
 
-This is Songloft's AI development entry point: shared hard rules, common commands, and task navigation, with business details loaded on demand. Code is the source of truth for directories, dependencies, APIs, and schemas. Before editing, read applicable `LESSONS.md` entries, local submodule instructions, and relevant sections from the [business-constraint index](#business-constraints) below. See the [Chinese version](AGENTS.md).
+This is the AI development entry point for **Roomtone** (a fork of Songloft): shared hard rules, common commands, and task navigation, with business details loaded on demand. Code is the source of truth for directories, dependencies, APIs, and schemas. Before editing, read applicable `LESSONS.md` entries, local submodule instructions, and relevant sections from the [business-constraint index](#business-constraints) below. See the [Chinese version](AGENTS.md).
+
+## Fork Notes (Roomtone)
+
+This repository is a fork of [songloft-org/songloft](https://github.com/songloft-org/songloft) published as **Roomtone**; upstream was named **MiMusic** before v2.0. Relative to upstream the fork does exactly two things: **rebranding (shell only)** and **server-side playback capabilities**. The `upstream` remote is configured, and every commit on `main` beyond the upstream sync point is fork-side work.
+
+### Rename scope: shell only
+
+| Category | Content |
+|---|---|
+| Renamed | `BINARY_NAME=roomtone` in `Makefile`; `/app/roomtone` (and `.backup`) in `Dockerfile` and `scripts/docker-entrypoint.sh`; release artifact prefix `roomtone-<os>-<arch>`, image `roomtone/roomtone`, download prefix; upgrade check URL (`internal/services/upgrade_service.go` reads the fork repo's `version.json`); README / NOTICE / docs-site title and site base; swagger contact and example URLs; build artifacts in `.gitignore` |
+| Unchanged | Go module (`songloft`), environment variables, database filename, JS bridge namespaces, `window.SongloftPlugin` and `@songloft/*` SDKs, client integration names, `/api/v1` paths, built-in playlist ids. These are the compatibility surface for upstream clients and published plugins |
+
+- **New code keeps the `songloft` identifier**; do not rename it to roomtone on sight. Only user-visible binary name, image name, version banner, and docs carry the fork brand.
+- **The version banner is a parsing contract for upgrades**: `VersionBannerPrefix = "Roomtone Version:"` in `internal/version/version.go` is parsed line-wise by `scripts/docker-entrypoint.sh` and `UpgradeService`; renaming it requires updating the script, the parser, and the tests together. `LegacyVersionBannerPrefix` only recognizes older binaries.
+- **Never revert the upgrade check URL to upstream** when syncing: it would install upstream binaries into the Roomtone image, and the resulting base-image path no longer matches (`1012c0e`).
+
+### Fork-only capability: server-side playback and multi-room output
+
+Upstream is a client-authoritative media server; the fork adds server-held playback state that pushes audio to LAN speakers. Upstream has none of this code. Migrations: `0040_players`, `0041_group_member_position`, `0042_alarms`.
+
+| Capability | Code / endpoints | Notes |
+|---|---|---|
+| Queue and transport state machine | `internal/player/{queue,transport,engine,timeline,lifecycle}.go`; `/playback`, `/groups/{id}/queue`, `/groups/{id}/transport`, `/groups/{id}/volume` | Queue, progress, repeat/shuffle are server-held and consistent across clients |
+| Output sinks | `internal/player/sink/{local,raop,dlna}`; `/players`, `/players/discover` | `local` registers our own client as a player; `raop` is AirPlay 1; `dlna` drives UPnP renderers |
+| Multi-room sync | `internal/player/sync_loop.go`, `party.go`; `/groups/*`, `/playback/party/*` | Precise groups run a drift-correction loop; party mode does coarse cross-group sync |
+| Per-speaker EQ / loudness / crossfade | `/players/{id}/eq`, `/settings/replaygain`, `/settings/crossfade` | EQ is applied per sample inside the server PCM pipeline |
+| Alarms | `internal/app/alarms.go`; `/alarms`, `/alarms/{id}/test` | Scheduled start with volume ramp |
+| Event push | `internal/app/ws/hub.go`; `/playback/events` (`/playback/events/ticket` for the ticket) | Playback and device changes pushed in real time |
+| Egress allowlist | `internal/services/whitelist.go`; `/settings/player-output-allowlist` | Restricts which targets can be pushed to |
+
+- Acceptance for this area is **executable assertions, not prose**: per-task assertions and gates live in the [development plan](docs/en/playback_development_plan.md), the item-by-item comparison with Lyrion/SlimServer in the [comparison matrix](docs/en/playback_compat_matrix.md). Read both before touching this code; "the field exists" is not done.
+- Real-hardware items (G1 compatibility matrix, G2 two-device cross-correlation, G3 listening test, G4 party) are currently all `Not run`; never report them as passing.
+- This is fork-specific work; do not mix it into upstream PRs.
+
+### Syncing with upstream
+
+- `git fetch upstream && git merge upstream/main`. Conflict hotspots: `internal/app/routers.go`, `internal/app/app.go`, `docs/swagger.*`, `README*`, `Makefile`, `.github/workflows/release.yml`, `scripts/*`.
+- After merging, run `make check` and `make swagger`, and confirm the version banner, image name, and upgrade URL still point at the fork.
+- The `clients/player` submodule points at `leonzy/roomtone-player` (see `.gitmodules`); when upstream bumps the pointer, align it with the fork repo instead of pointing back upstream. The playback UI (member ordering, alarm page, tuning panel) also lives in that submodule.
 
 ## Documentation Map
 
@@ -13,6 +52,7 @@ This is Songloft's AI development entry point: shared hard rules, common command
 | API response format / Swagger UI | [docs/en/api_response.md](docs/en/api_response.md) / `/swagger/index.html` in dev mode |
 | Frontend gotchas / UI verification | [docs/en/frontend_gotchas.md](docs/en/frontend_gotchas.md) |
 | Playback control / speaker output (architecture + interaction + plan + comparison) | [Architecture](docs/en/architecture_playback.md), [Interaction](docs/en/architecture_playback_ui.md), [Development plan](docs/en/playback_development_plan.md), [SlimServer comparison](docs/en/playback_compat_matrix.md) |
+| Fork identity / rename scope / upstream sync | [Fork Notes](#fork-notes-roomtone) above |
 | Docs site maintenance | [docs/en/development.md](docs/en/development.md) |
 | JS plugins / plugin registry | [Plugin development guide](docs/en/js-plugin-development-guide.md), [Plugin registry authoring](docs/en/plugin_registry.md), `plugins/toolchain/README.md` |
 
