@@ -9,6 +9,21 @@ import (
 	"time"
 )
 
+type Alarm struct {
+	ID          string
+	Name        string
+	TargetID    string
+	TimeOfDay   string
+	DaysMask    int64
+	PlaylistID  int64
+	Volume      int64
+	FadeSeconds int64
+	Enabled     int64
+	LastFiredAt string
+	CreatedAt   string
+	UpdatedAt   string
+}
+
 type Artist struct {
 	ID            int64
 	Name          string
@@ -110,6 +125,8 @@ type Player struct {
 	TakeoverBehavior string
 	LastSeenAt       sql.NullTime
 	CreatedAt        time.Time
+	VolumeMode       string
+	MaxVolume        int64
 }
 
 type PlayerGroup struct {
@@ -118,6 +135,7 @@ type PlayerGroup struct {
 	MasterPlayerID string
 	PartyID        sql.NullString
 	CreatedAt      time.Time
+	Icon           string
 }
 
 type PlayerGroupMember struct {

@@ -34,6 +34,19 @@ const (
 	CodecMP3  = sink.CodecMP3
 )
 
+// 音量模式。存 players.volume_mode。
+const (
+	// VolumeModeDevice 音量直接下发到设备（默认）。
+	VolumeModeDevice = "device"
+	// VolumeModeFixed 固定音量：忽略 SetVolume，保持当前值。
+	VolumeModeFixed = "fixed"
+	// VolumeModeDSP 音量在服务端 DSP 管线里应用。
+	VolumeModeDSP = "dsp"
+
+	// DefaultMaxVolume 新设备的默认音量上限。
+	DefaultMaxVolume = 100
+)
+
 // TakeoverBehavior 本机被别的目标切走时的行为。
 type TakeoverBehavior string
 
@@ -70,17 +83,19 @@ func (p EQProfile) Flat() bool {
 
 // Player 一台播放设备（内存态）。
 type Player struct {
-	ID       string
-	Kind     Kind
-	Name     string
-	Address  string
-	Model    string
-	Caps     Caps
-	Volume   int
-	Muted    bool
-	Online   bool
-	Takeover TakeoverBehavior
-	EQ       EQProfile
+	ID         string
+	Kind       Kind
+	Name       string
+	Address    string
+	Model      string
+	Caps       Caps
+	Volume     int
+	Muted      bool
+	VolumeMode string `json:"volume_mode"`
+	MaxVolume  int    `json:"max_volume"`
+	Online     bool
+	Takeover   TakeoverBehavior
+	EQ         EQProfile
 	// Standby 已待机（不再收帧、不进同步环）。只存内存，重启后按物理状态重新探测。
 	Standby bool `json:"standby,omitempty"`
 }
@@ -106,8 +121,10 @@ type Member struct {
 
 // Group 同步组。单机也有一个只含自己的组——队列与传输逻辑只写一份。
 type Group struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Icon 区域图标 key（白名单见 manager.go），空串表示客户端默认图标。
+	Icon     string   `json:"icon"`
 	MasterID string   `json:"master_id"`
 	PartyID  string   `json:"party_id,omitempty"`
 	Members  []Member `json:"members"`

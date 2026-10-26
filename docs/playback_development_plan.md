@@ -40,6 +40,25 @@ v2 只做两件事：
 
 **M5 / M6 / M7 的所有任务按 v2 验收重跑一遍**，已通过的保留结论，只补跑新增断言；不因为「之前过了」而跳过。
 
+## 0.2 v3 修订：设计 vs 实现缺口（2026-10-26 审计）
+
+v2 修的是「验收写成描述」，v3 要修的是**「文档说已完成，用户看不到」**。触发点是实测：`/settings/output` 里连本机都没有，播放条上也没有任何输出入口。逐条核对后，缺口全部落在**客户端**——后端 M0~M8 的代码与测试是实的（每组建引擎、校正环、预取、metrics、power、组音量都在），客户端只做了「设置页里的设备管理面板」，设计稿描述的播放页形态与 WS 链路一行都没写。
+
+| # | 设计条目 | 设计出处 | 代码现状 | 证据 | 处理 |
+|---|---|---|---|---|---|
+| 1 | 客户端 WS 客户端（ticket → 升级 → 重连 → seq 去重 → 断线降级轮询） | UI §7.4 | **不存在**。`clients/player` 无任何 WebSocket 依赖或代码 | `grep -rln "WebSocket\|web_socket_channel" clients/player/lib` 无输出 | F7-01 |
+| 2 | 本机注册为 `local` sink（G5） | 架构 §5.2、UI §7.3 | **不存在**。服务端 `register_player` 分支永远等不到消息 | `grep -rn "register_player" clients/player/lib` 无输出；`internal/app/playback.go:356` 是唯一入口 | F7-02 |
+| 3 | 播放条上的输出入口 | UI §3.2 | **不存在**。播放器组件不引用 output feature，`/settings/output` 是唯一入口 | `grep -rn "OutputPage\|TransferSheet" clients/player/lib` 仅命中 `app_router.dart:300` | F7-03 |
+| 4 | 播放页输出选择器 Sheet | UI §4 | **不存在**。只有设置页形态的 `OutputPage`（AppBar「播放输出」+ 设备列表） | `output_page.dart:146` | F7-04 |
+| 5 | 区域命名与图标 | UI §6.2（隐含） | **后端已实现**：`PUT /groups/{id}` + `player_groups.icon`（0044）；客户端命名/图标 UI 未开工 | `routers.go`、`manager.go` 的 `RenameGroup` | F7-05 |
+| 6 | 组音量 UI | 架构 §7.1 `GET/POST /groups/{id}/volume` | **API 与 Provider 有，页面从不调用**（死代码） | `grep -rn "setGroupVolume" clients/player/lib` 仅 `output_provider.dart:304` | F7-06 |
+| 7 | `takeover_behavior` 设置项 | UI §7.3 | **仅 API 参数**，无设置页入口 | `output_api.dart:82`；DB `0040_players.sql:17` | F7-07 |
+| 8 | 信号路径指示 | 本文新增（Roon 模型） | **后端已实现**：`GroupView.signal_path`（三色 kind + 五段链路）；客户端 `signal_path.dart` 未开工 | `internal/player/signal_path.go` | F7-08 |
+| 9 | **多区域并行**（每区域独立队列/传输，选择器切换控制焦点） | 本文新增（Roon 模型） | 后端**已支持**（`m.engines["group:"+g.ID]`，`GET /playback` 返回全部区域）；UI 设计仍是「单焦点 + 点击即搬运」 | `manager.go:1050`、`manager.go:439` | 设计修订 UI §4 |
+| 10 | 断线降级：3 次失败后退回 3s 轮询 | UI §7.4 | 无 WS，`OutputPage` 固定 4s 轮询，等于永久降级态 | `output_page.dart:20` 注释 | F7-01 附带 |
+
+**结论**：M0~M8 的「代码完成」成立，但 v0.1 的验收句「能控制客户端播放（`local` sink）」从未成立——没有客户端参与，`local` sink 只有单测里的假客户端。§11 的 `[x] M2` 应读作「服务端侧完成」，客户端联调不是 `Not run`，是**未开工**。
+
 ## 1. 交付边界
 
 | 版本 | 里程碑 | 用户能感知到什么 | 累计人日 |
@@ -295,6 +314,23 @@ B5-01 ─► B7-01 ─► B7-03 ─► [G4]
 
 前端合计 ~28 人日。F4 与 F5 互不依赖，可并行。
 
+### 5.1 F7：客户端接入与 Roon 式区域选择器（v3 新增）
+
+F0-02 / F0-03 / F1-01 / F1-02 在 §11 被勾成“已完成”，实际未开工（见 §0.2）。F7 不是新功能，是**把已设计的客户端部分真正做出来**，并按 Roon 的区域模型重做交互。
+
+| ID | 任务 | 主要文件 | 验收（可执行断言） | 依赖 | d |
+|---|---|---|---|---|---|
+| F7-01 | WS 客户端：ticket → 升级 → 退避重连 → `seq` 去重 → 降级轮询 | `lib/features/playback/data/playback_socket.dart` | ① `POST /playback/events/ticket` 后 1s 内收到首条事件；② 断开后重连间隔序列为 1/2/4/8s；③ 注入 `seq=5` 后再注入 `seq=3`，UI 状态不变；④ 连续 3 次失败后 `GET /playback` 轮询间隔 = 3s 且顶部出现“实时状态不可用”；⑤ `rg 'Timer.periodic' lib/features/playback` 仅命中降级路径 | F0-01 | 2 |
+| F7-02 | 本机注册为 `local` sink + 心跳 + 指令执行 | `playback/data/local_output.dart`、`playback/domain/command.dart` | ① 启动 5s 内 `GET /players` 出现 `kind=local` 且 `online=true`；② 杀掉 WS 后 30s 内该设备 `online=false`；③ 服务端 `load{play_at}` 到实际出声偏差 < 150ms；④ `pause/seek/volume/skip` 四条指令均改变 `just_audio` 状态；⑤ 服务端接管时本地 EQ 置灰 | F7-01、B2-04 | 3 |
+| F7-03 | 播放条区域入口（区域名 + 图标 + 状态点） | `player/presentation/widgets/zone_button.dart` | ① mini / desktop / mobile 三种播放条均可见；② 无任何音箱时显示“本机”而非空白；③ 点击打开选择器且播放不中断（`GET /playback` 的 `position` 继续递增） | F7-04 | 1.5 |
+| F7-04 | Roon 式区域选择器：全区域列表 + 行内音量/传输 + 焦点切换 | `output/presentation/widgets/zone_picker.dart` | ① 列表包含全部区域（含空闲/离线），按“在线→同网→名称”排序；② 点击区域行**只切焦点**：前后 `GET /playback` 所有区域 `status` 不变；③ 行内 ▶ 只改变该区域 `status`；④ 行内音量滑杆 300ms 防抖后 `POST /players/{id}/volume`；⑤ 焦点持久化，重启后回到上次区域 | F7-01、F7-02 | 3 |
+| F7-05 | 区域命名与图标 | 后端 `PUT /groups/{id}` + `output/presentation/widgets/zone_rename.dart` | ① `PUT` 后 `GET /groups/{id}` 返回新名；② 重启服务后保留；③ 名称 1~40 字符，空串返回 400；④ 图标 key 不在白名单返回 400 | B8-04 | 1.5 |
+| F7-06 | 组音量 UI 接线 | `output/presentation/widgets/group_volume.dart` | ① 拖动组滑杆后各成员实际音量 = `clamp(base + offset)`；② 成员单独 ±10 微调即时回显；③ 部分失败时列出失败成员且不回滚已成功项 | B5-10 | 1 |
+| F7-07 | `takeover_behavior` 设置项 | `settings/presentation/pages/speaker_settings_page.dart` | ① 切换后 `GET /players/{id}` 返回新值；② 被其他设备切走时 `pause` 立即暂停、`follow` 静默降级；③ 离线时用本地缓存值 | F1-02 | 0.5 |
+| F7-08 | 信号路径指示 | 后端 `GroupView.signal_path` + `player/presentation/widgets/signal_path.dart` | ① 直通 = 绿、经 DSP = 紫、有损转码 = 橙；② 开 EQ 后同一曲目 `signal_path` 从 `lossless` 变 `enhanced`；③ 点开显示“源→解码→DSP→输出→设备”五段且与实际参数一致 | B6-01 | 2 |
+
+F7 合计 ~14.5 人日。**F7-02 是 v0.1 验收句的前置条件**：没有它，“能控制客户端播放”不成立，`local` sink 只有单测里的假客户端。
+
 ## 6. 门禁
 
 门禁不通过时**不修改验收标准**，改范围或改技术方案。每条都写明失败后的 B 计划，避免到时临时拍脑袋。
@@ -368,14 +404,17 @@ v2 比 v1 多 4 周（~19 周 ≈ 4.4 月），多出来的全是“把半成品
 
 - [x] M0 地基（B0-01 ~ B0-09）——已完成
 - [x] M1 队列与传输（B1-01 ~ B1-06）——已完成
-- [x] M2 解码与 local sink（B2-01 ~ B2-06）→ v0.1——已完成；客户端联调 Not run
+- [x] M2 解码与 local sink（B2-01 ~ B2-06）→ v0.1——**服务端侧**已完成；客户端联调**未开工**（无 WS / 无 `register_player`，见 §0.2）
 - [x] M3 RAOP（B3-01 ~ B3-08）→ G1 → v0.2——代码完成；**G1 真机矩阵 Not run**
 - [x] M4 DLNA（B4-01 ~ B4-08）→ v0.3——代码完成；真机 Not run
 - [x] M5 同步组（B5-01 ~ B5-11）→ G2 → v0.4——代码与脚本全部完成；**G2 真机双设备互相关 Not run**（脚本自检通过，见 X-06）
 - [x] M6 每音箱 EQ（B6-01 ~ B6-07）→ G3 → v0.5——已完成；G3 真机听感 Not run
 - [x] M7 派对（B7-01 ~ B7-07）→ G4——已完成（`party_test.go` 在 CI）；G4 真机 Not run
 - [x] M8 韧性与可观测（B8-01 ~ B8-05）→ v1.0——已完成（B8-04 生命周期端点、B8-03 metrics、B8-05 power）
-- [x] 前端 F0 ~ F6——已完成（`clients/player`：F0 面板/待机、F1 建组与成员参数、F2 转移、F3 EQ、F4 派对、F5 指标、F6 待机置灰）；真机与 TV/Lynx 走查 Not run；成员排序用上移/下移（TV 无拖拽）接 `PUT /groups/{id}/members/order`，"对齐中"接 `member_caps[].syncing`
+- [~] 前端 F0 ~ F6——**仅设置页形态完成**（`/settings/output` 的设备/组管理面板：建组、成员参数、转移、EQ、派对、指标、待机）；**F0-02 WS 客户端、F0-03 播放条入口与选择器 Sheet、F1-01 本地双模接管、F1-02 接管偏好均未开工**（见 §0.2）；真机与 TV/Lynx 走查 Not run
+- [x] F7 客户端接入 + Roon 式区域选择器（F7-01 ~ F7-08）——已实现；`flutter test test/features/playback test/features/output` 41 项通过
+- [x] S1 音量模式 / S2 音量上限 / S3 睡眠定时 / S4 下一首播放 / S5 焦点跟随——已实现
+- [x] S6 转移空档——UI 切换态 + 5s 超时提示已实现（`zone_transfer_provider.dart`，3 项 widget 测试）；协议空档本身不可消除
 - [~] X 收尾：X-02 白名单 / X-04 Bundle 限制 / X-05 性能基线 / X-06 文档回填（含对照矩阵）/ X-07 守卫已完成；**X-01/X-03 部分完成**（Swagger 已全量核对至本轮新增端点，Docker 发现兜底文档待补真机结论）
 
 ### 11.1 下一批提交顺序（按依赖排，一次一个提交）

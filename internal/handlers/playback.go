@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"time"
@@ -58,7 +59,7 @@ func playbackStatus(err error) int {
 		return http.StatusBadRequest
 	// 参数校验失败：以前这类错误是裸 fmt.Errorf，落到下面的 500，
 	// 客户端会把“成员列表为空”当成服务端故障。
-	case errors.Is(err, player.ErrInvalidArgument):
+	case errors.Is(err, player.ErrInvalidArgument), errors.Is(err, player.ErrInvalidName), errors.Is(err, player.ErrInvalidIcon):
 		return http.StatusBadRequest
 	// 先决条件不满足（源组没在播），不是输入格式错。
 	case errors.Is(err, player.ErrNothingPlaying):
@@ -85,7 +86,7 @@ func (h *PlaybackHandler) ListPlayers(w http.ResponseWriter, r *http.Request) {
 
 // UpdatePlayer 更新设备
 // @Summary 更新播放设备配置
-// @Description 修改设备名称或接管行为。takeover_behavior 只对 local 设备生效：pause（默认，被切走后立即暂停并提示）或 follow（静默转为纯控制器）。
+// @Description 修改设备名称、接管行为、音量模式或音量上限。takeover_behavior 只对 local 设备生效：pause（默认，被切走后立即暂停并提示）或 follow（静默转为纯控制器）。volume_mode 支持 device（默认，直接下发设备）/ fixed（固定音量，忽略音量设置）/ dsp（服务端 DSP 音量）；max_volume 为 0-100 的硬上限，调低时当前音量一并钳位。未传的字段保持不变。
 // @Tags 播放控制
 // @Accept json
 // @Produce json
@@ -102,7 +103,18 @@ func (h *PlaybackHandler) UpdatePlayer(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
 		return
 	}
-	p, err := h.mgr.UpdatePlayer(r.Context(), chi.URLParam(r, "id"), req.Name, player.TakeoverBehavior(req.TakeoverBehavior))
+	upd := player.PlayerUpdate{MaxVolume: req.MaxVolume}
+	if req.Name != "" {
+		upd.Name = &req.Name
+	}
+	if req.TakeoverBehavior != "" {
+		takeover := player.TakeoverBehavior(req.TakeoverBehavior)
+		upd.Takeover = &takeover
+	}
+	if req.VolumeMode != "" {
+		upd.VolumeMode = &req.VolumeMode
+	}
+	p, err := h.mgr.UpdatePlayer(r.Context(), chi.URLParam(r, "id"), upd)
 	if err != nil {
 		playbackFail(w, err)
 		return
@@ -113,6 +125,8 @@ func (h *PlaybackHandler) UpdatePlayer(w http.ResponseWriter, r *http.Request) {
 type updatePlayerRequest struct {
 	Name             string `json:"name"`
 	TakeoverBehavior string `json:"takeover_behavior"`
+	VolumeMode       string `json:"volume_mode"`
+	MaxVolume        *int   `json:"max_volume"`
 }
 
 // SetVolume 设置音量
@@ -241,6 +255,38 @@ func (h *PlaybackHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, g)
+}
+
+// UpdateGroup 更新区域名称与图标
+// @Summary 更新区域名称与图标
+// @Description 重命名同步组并设置图标。name 去除首尾空白后必须为 1~40 个字符；icon 必须为 speaker / bookshelf / soundbar / headphone / tv / phone / laptop / multiroom 之一，空串表示使用客户端默认图标。名称与图标持久化在服务端，换设备或重启后保留。
+// @Tags 播放控制
+// @Accept json
+// @Produce json
+// @Param id path string true "组 ID"
+// @Param request body updateGroupRequest true "名称与图标"
+// @Success 200 {object} player.GroupView "更新后的组"
+// @Failure 400 {object} map[string]string "名称或图标不合法"
+// @Failure 404 {object} map[string]string "组不存在"
+// @Security BearerAuth
+// @Router /groups/{id} [put]
+func (h *PlaybackHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+	var req updateGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	g, err := h.mgr.RenameGroup(r.Context(), chi.URLParam(r, "id"), req.Name, req.Icon)
+	if err != nil {
+		playbackFail(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, g)
+}
+
+type updateGroupRequest struct {
+	Name string `json:"name"`
+	Icon string `json:"icon"`
 }
 
 // CreateGroup 新建组
@@ -499,13 +545,14 @@ func (h *PlaybackHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 
 // AddToQueue 追加歌曲
 // @Summary 向组队列追加歌曲
-// @Description 追加一批歌曲到队列尾部。队列为空时自动从第一首开始（不自动播放）。
+// @Description position 为空或 end 时追加到队列尾部；position=next 时按传入顺序插到当前曲之后（下一首播放）。队列为空时自动从第一首开始（不自动播放）。
 // @Tags 播放控制
 // @Accept json
 // @Produce json
 // @Param id path string true "组 ID"
-// @Param request body queueAddRequest true "歌曲"
+// @Param request body queueAddRequest true "歌曲与插入位置"
 // @Success 200 {object} player.Status "更新后的状态"
+// @Failure 400 {object} map[string]string "请求格式错误或 position 不支持"
 // @Failure 404 {object} map[string]string "组不存在"
 // @Security BearerAuth
 // @Router /groups/{id}/queue [post]
@@ -515,17 +562,28 @@ func (h *PlaybackHandler) AddToQueue(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
 		return
 	}
+	switch req.Position {
+	case "", "end", "next":
+	default:
+		respondError(w, http.StatusBadRequest, "position 只支持 end / next", nil)
+		return
+	}
 	e, err := h.mgr.Engine(chi.URLParam(r, "id"))
 	if err != nil {
 		playbackFail(w, err)
 		return
 	}
-	e.Enqueue(req.SongIDs...)
+	if req.Position == "next" {
+		e.InsertNextMany(r.Context(), req.SongIDs...)
+	} else {
+		e.Enqueue(req.SongIDs...)
+	}
 	respondJSON(w, http.StatusOK, e.Status())
 }
 
 type queueAddRequest struct {
-	SongIDs []int64 `json:"song_ids"`
+	SongIDs  []int64 `json:"song_ids"`
+	Position string  `json:"position"`
 }
 
 // ReorderQueue 重排队列
@@ -645,6 +703,81 @@ type transportRequest struct {
 	Position *float64 `json:"position"`
 	Repeat   string   `json:"repeat"`
 	Shuffle  *bool    `json:"shuffle"`
+}
+
+// SetSleepTimer 设置区域睡眠定时器
+// @Summary 设置区域睡眠定时器
+// @Description 为指定区域设置一次性睡眠定时器，到点后暂停该区域的播放并广播 state 事件。minutes=0 取消已有定时器；有效范围 1~720 分钟，超出返回 400。定时器只存在内存中，服务重启后失效。
+// @Tags 播放控制
+// @Accept json
+// @Produce json
+// @Param id path string true "组 ID"
+// @Param request body sleepTimerRequest true "分钟数（0 取消）"
+// @Success 200 {object} sleepTimerStatus "定时器状态"
+// @Failure 400 {object} map[string]string "minutes 不合法或请求格式错误"
+// @Failure 404 {object} map[string]string "组不存在"
+// @Security BearerAuth
+// @Router /groups/{id}/sleep [post]
+func (h *PlaybackHandler) SetSleepTimer(w http.ResponseWriter, r *http.Request) {
+	var req sleepTimerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	if req.Minutes < 0 || req.Minutes > 720 {
+		respondError(w, http.StatusBadRequest, "minutes 需为 0（取消）或 1~720", nil)
+		return
+	}
+	gid := chi.URLParam(r, "id")
+	if err := h.mgr.SetSleepTimer(gid, time.Duration(req.Minutes)*time.Minute); err != nil {
+		playbackFail(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, h.sleepTimerStatus(gid))
+}
+
+// GetSleepTimer 读取区域睡眠定时器
+// @Summary 获取区域睡眠定时器
+// @Description 返回剩余秒数与是否有活动定时器。remaining_seconds 向上取整；定时器到点或取消后 active=false、remaining_seconds=0。
+// @Tags 播放控制
+// @Produce json
+// @Param id path string true "组 ID"
+// @Success 200 {object} sleepTimerStatus "定时器状态"
+// @Failure 404 {object} map[string]string "组不存在"
+// @Security BearerAuth
+// @Router /groups/{id}/sleep [get]
+func (h *PlaybackHandler) GetSleepTimer(w http.ResponseWriter, r *http.Request) {
+	gid := chi.URLParam(r, "id")
+	if _, err := h.mgr.GetGroup(gid); err != nil {
+		playbackFail(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, h.sleepTimerStatus(gid))
+}
+
+// sleepTimerStatus 把截止时刻换算成客户端直接可用的剩余秒数。
+func (h *PlaybackHandler) sleepTimerStatus(groupID string) sleepTimerStatus {
+	deadline, ok := h.mgr.SleepTimer(groupID)
+	if !ok {
+		return sleepTimerStatus{}
+	}
+	remaining := time.Until(deadline)
+	if remaining < 0 {
+		remaining = 0
+	}
+	return sleepTimerStatus{
+		RemainingSeconds: int(math.Ceil(remaining.Seconds())),
+		Active:           true,
+	}
+}
+
+type sleepTimerRequest struct {
+	Minutes int `json:"minutes"`
+}
+
+type sleepTimerStatus struct {
+	RemainingSeconds int  `json:"remaining_seconds"`
+	Active           bool `json:"active"`
 }
 
 // Playback 全量对齐

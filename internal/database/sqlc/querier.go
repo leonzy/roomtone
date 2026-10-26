@@ -130,6 +130,7 @@ type Querier interface {
 	UpdateAutoCreatedPlaylistMeta(ctx context.Context, arg UpdateAutoCreatedPlaylistMetaParams) (int64, error)
 	UpdateCachePath(ctx context.Context, arg UpdateCachePathParams) error
 	UpdateGroup(ctx context.Context, arg UpdateGroupParams) error
+	UpdateGroupIdentity(ctx context.Context, arg UpdateGroupIdentityParams) (int64, error)
 	UpdateGroupMemberPosition(ctx context.Context, arg UpdateGroupMemberPositionParams) error
 	UpdateJSPlugin(ctx context.Context, arg UpdateJSPluginParams) error
 	UpdateJSPluginHashes(ctx context.Context, arg UpdateJSPluginHashesParams) error

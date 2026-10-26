@@ -20,7 +20,7 @@
 | G2 | **推送到 AirPlay 音箱（AirPlay 1 / RAOP）** | 服务端主动把 PCM 推给音箱，不依赖客户端 |
 | G3 | **推送到 DLNA/UPnP 音箱** | 服务端通过 SOAP 控制 renderer，由设备拉流 |
 | G4 | **多房间同步** | AirPlay 组精确同步；DLNA 仅对齐起播 |
-| G5 | **自研客户端作为播放器入组** | Flutter 客户端注册为 `local` sink，可与其他音箱同组 |
+| G5 | **自研客户端作为播放器入组** | Flutter 客户端注册为 `local` sink，可与其他音箱同组。⏳ **客户端侧未实现**（服务端已就绪，见 §5.2） |
 | G6 | **断点续播** | 服务重启 / 设备重连后恢复曲目与位置 |
 | G7 | **派对模式** | 多个组同时播放同一首歌，各组独立音量、独立进出，互不影响（§4.7） |
 | G8 | **每音箱均衡器** | 每台音箱独立的 10 段 EQ，在服务端 PCM 管线内生效（§4.8） |
@@ -98,6 +98,25 @@ internal/player/
 ```
 
 ## 4. 核心机制
+
+### 4.0 区域（Zone）语义
+
+用户可见的播放单位是**区域**，后端叫 `group`。两者一一对应，不引入新实体：
+
+| 概念 | 后端实体 | 说明 |
+|---|---|---|
+| 区域 | `groups` 行 | 一个或多个输出设备；单成员组 = 单机区域 |
+| 输出 | `players` 行 | `local` / `raop` / `dlna` |
+| 控制焦点 | 客户端本地状态 | “我在看哪个区域”，**不进服务端**，不影响任何播放 |
+
+三条硬约束：
+
+1. **多区域并行**。每个区域一个引擎（`manager.go` 的 `engines["group:"+id]`），各自持有队列、传输状态与时间轴，可同时出声。`GET /playback` 返回全部区域，不是“当前区域”。
+2. **切焦点不发命令**。客户端切区域只改本地 `PlaybackFocus`；只有行内传输、音量、显式转移才发请求。
+3. **转移是显式动作**。`POST /groups/{to}/transfer` 不会被“点击另一个区域”隐式触发（v2 前端设计曾如此，v3 已改，见[交互设计 §4.2](./architecture_playback_ui.md)）。
+4. **并行有上限**。每个正在播放的区域占 1 个解码槽位（默认 4，`budget.go`），派对里每个组各占 1，EQ 非 flat 的组强制占 1。第 5 个区域起播返回 503 `ErrBudgetExhausted`，UI 必须提示“同时播放数已达上限”而不是“转码繁忙”。这是与 Roon 的硬差距之一（§11.1 H5），不靠 UI 能消除。
+
+**本机是内置区域**：客户端启动后必须通过 WS `register_player` 把自己注册为 `local` 设备，服务端自动建单机组。未注册时本机不会出现在任何列表里——这是“播放输出页没有本机”的根因（见 §5.2）。
 
 ### 4.1 单解码源多路分发（同步的地基）
 
@@ -312,17 +331,33 @@ type PullSink interface {
 
 ### 5.2 `local` sink（自研客户端）
 
+> **状态：服务端已实现，客户端未实现（F7-02）。** `internal/app/playback.go:356` 的 `register_player` 分支与 `sink/local` 都在，但 `clients/player` 从未发过这条消息，所以 `local` sink 目前只有单测里的假客户端。
+
 ```
 客户端 WS 连 /api/v1/playback/events
-  → register_player {kind:"local", caps:{codecs:[...], sample_rates:[44100,48000]}}
+  → register_player {id, kind:"local", name, caps:{codecs:[...], sample_rates:[44100,48000]}}
 服务端下发 load {song_id, position, play_at:<unix_ms>}
 客户端按 (play_at - 本地时钟偏移) 起播
-客户端每 500ms 上报 {position, buffering, volume, state}
+客户端每 500ms 上报 {position, buffering, volume, state, rtt_ms}
 ```
 
 - 时间偏移用服务端返回的 `server_time` 与客户端本地时间做一次 RTT 折半估算，局域网内可稳定在 ±50ms。
 - 客户端拉流复用现有 `/songs/{id}/stream`，`format` 由协商结果决定。
 - **这是性价比最高的一档**：不引入任何外部协议风险，却能让"手机 + 客厅音箱"立刻可同组。
+
+**注册生命周期（客户端必须遵守）**：
+
+| 时机 | 动作 | 服务端行为 |
+|---|---|---|
+| 启动 / WS 连上 | `register_player`（`id` 持久化，重启不变） | `UpsertPlayer` + 自动建单机组 + 广播 `speaker_seen` |
+| 每 500ms | `report` | 刷新 `last_seen_at`，判在线 |
+| 断线 > 30s | — | 标 `online=false`，广播 `member_changed{action:offline}` |
+| 重连 | 同 `id` 重新 `register_player` | 复用原区域，不新建 |
+| 正常退出 | `unregister_player` | 摘出所有组、清理孤儿组、释放 sink |
+
+- **`id` 必须持久化**：用随机 UUID 存本地，不要用设备型号或 IP——否则重装/换网就变成一个新区域，旧区域变僵尸。
+- **服务端接管期间客户端不得自行应用 EQ**：EQ 在服务端 PCM 管线里已经做过（§4.8），客户端再开一次就是双重均衡。
+- **未注册时的降级**：客户端仍可本地播放（纯本地模式），但区域列表里显示“本机输出不可用 + 重试”，不能静默隐藏。
 
 ### 5.3 `raop` sink（AirPlay 1）
 
@@ -420,6 +455,10 @@ CREATE TABLE players (
     eq_profile    TEXT NOT NULL DEFAULT '{}',  -- JSON：{enabled,preset,bands[10],preamp}
     takeover_behavior TEXT NOT NULL DEFAULT 'pause'  -- 本机被切走时：pause | follow（仅 local 有意义）
                   CHECK(takeover_behavior IN ('pause','follow')),
+    volume_mode   TEXT NOT NULL DEFAULT 'device'     -- 0043：device | fixed | dsp
+                  CHECK(volume_mode IN ('device','fixed','dsp')),
+    max_volume    INTEGER NOT NULL DEFAULT 100       -- 0043：音量硬上限 0-100
+                  CHECK(max_volume BETWEEN 0 AND 100),
     last_seen_at  DATETIME,
     created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -427,6 +466,7 @@ CREATE TABLE players (
 CREATE TABLE player_groups (
     id               TEXT PRIMARY KEY,
     name             TEXT NOT NULL DEFAULT '',
+    icon             TEXT NOT NULL DEFAULT '', -- 0044：区域图标 key，空串=默认
     master_player_id TEXT NOT NULL DEFAULT '',
     party_id         TEXT,                   -- 非空 = 该组正在某个派对中
     created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -491,9 +531,9 @@ CREATE TABLE playback_states (
 | GET | `/players` | — | 设备列表：在线、待机、能力、音量、EQ |
 | POST | `/players` | `{address, kind, name?, device_id?, public_key?}` | 手动添加；`kind` 为 `raop` / `dlna`，成功 201；网络音箱被关闭时 403 |
 | POST | `/players/discover` | — | 触发 SSDP + mDNS 扫描，返回 `{speakers, added, updated, skipped, errors}`；发现被关闭 503 |
-| PUT | `/players/{id}` | `{name?, takeover_behavior?}` | 重命名 / 多端冲突策略（`pause` / `follow`） |
+| PUT | `/players/{id}` | `{name?, takeover_behavior?, volume_mode?, max_volume?}` | 重命名 / 多端冲突策略（`pause` / `follow`）/ 音量模式（`device` / `fixed` / `dsp`）与上限（0-100，调低时当前音量一并钳位） |
 | DELETE | `/players/{id}` | — | 永久删除：先停引擎再摘成员；单机组在派对里会先退出派对 |
-| POST | `/players/{id}/volume` | `{volume, muted}` | 单机音量 |
+| POST | `/players/{id}/volume` | `{volume, muted}` | 单机音量；先钳到 `max_volume`，`volume_mode=fixed` 时忽略并返回当前值 |
 | POST | `/players/{id}/power` | `{on}` | 待机 / 唤醒；`standby` 只表示服务端不推流，不代表断电 |
 | POST | `/players/{id}/reconnect` | — | 丢弃缓存的 sink 重新握手；设备仍离线 409 |
 | GET | `/players/{id}/eq` | — | 含服务端算出的 `preamp` |
@@ -504,9 +544,10 @@ CREATE TABLE playback_states (
 
 | 方法 | 路径 | 请求体 / 参数 | 说明 |
 |---|---|---|---|
-| GET | `/groups` | — | 组列表（含 `sync_tier`、`member_caps`、`status`）；`member_caps[].syncing` 为真表示该成员入组/唤醒后仍在收敛 |
+| GET | `/groups` | — | 组列表（含 `sync_tier`、`member_caps`、`status`、`signal_path`）；`member_caps[].syncing` 为真表示该成员入组/唤醒后仍在收敛。`signal_path` 为每区域只读诊断（`lossless\|enhanced\|lossy` + 五段链路，F7-08 后端已实现） |
 | POST | `/groups` | `{name, member_ids, master_id?}` | 201；成员已在别的组 409，同步等级不匹配 400 |
 | GET | `/groups/{id}` | — | 单组详情 |
+| PUT | `/groups/{id}` | `{name, icon?}` | 区域重命名与图标；`name` 去首尾空白后 1~40 字符，`icon` 限白名单（空串=默认）；持久化，重启后保留 |
 | DELETE | `/groups/{id}` | — | 解散组，成员各自回到单机组；组在派对中 409（先退出派对） |
 | POST | `/groups/{id}/master` | `{player_id}` | 换主控；非成员 400 |
 | POST | `/groups/{id}/members` | `{player_id}` | 播放中加入成员，从当前时间点接入；已在别的组 409 |
@@ -520,6 +561,8 @@ CREATE TABLE playback_states (
 | POST | `/groups/{id}/queue` | `{song_ids[]}` | 追加歌曲 |
 | PUT | `/groups/{id}/queue/reorder` | `{from, to}` 或 `{remove_index}` | move 语义；删除与重排互斥 |
 | POST | `/groups/{id}/transport` | `{action, position?, repeat?, shuffle?}` | `play\|pause\|stop\|next\|prev\|seek`（seek 用秒）；`repeat=off\|all\|one` 与 `shuffle=bool` 也走这里；解码槽位满 503 |
+| POST | `/groups/{id}/sleep` | `{minutes}` | 设置一次性睡眠定时器；`0` 取消，`1~720` 分钟，到点暂停该组并广播 `state`；只存在内存中，重启失效 |
+| GET | `/groups/{id}/sleep` | — | `{remaining_seconds, active}`；`remaining_seconds` 向上取整，取消或到点后 `active=false` |
 
 **全局与指标**
 
@@ -558,7 +601,7 @@ CREATE TABLE playback_states (
 
 **不再有 `/playback/targets`**：v2 用 `GET /playback` 一次拿全（组、状态、能力、`party_id`），输出选择器无需单独端点。派对也没有"当前派对"的 GET：派对 id 记在各组的 `party_id` 上，客户端先读 `/playback` 再取 `/playback/party/{id}`。
 
-**转移的补偿语义**：`transfer` 在目标组以 `position + transfer_compensation_ms` 起播（默认 800ms），补偿源组停止到目标出声的空档。补偿只在服务端做一次，客户端不得重复补偿（见前端文档 §4.3）。
+**转移的补偿语义**：`transfer` 在目标组以 `position + transfer_compensation_ms` 起播（默认 800ms），补偿源组停止到目标出声的空档。补偿只在服务端做一次，客户端不得重复补偿（见前端文档 §4.7）。
 
 **待机语义**：`POST /players/{id}/power` 的 `standby=true` 只表示服务端不再向该设备推流（DLNA 发 Stop 并清 URI，RAOP 停发 RTP），不代表硬件断电；RTSP 与 DLNA 都没有通用的上电指令。待机成员不在同步环里，唤醒后从当前进度重新接入。
 
@@ -587,7 +630,7 @@ CREATE TABLE playback_states (
 | `state` | `group_id, song_id, position_ms, status` | 播放状态、曲目、位置变化 | 唯一播放状态来源，据 `group_id` 判断是否与自己相关 |
 | `target_changed` | `group_id, from_group_id, reason` | 播放被转移到别的组（`reason=transfer`） | 按 `players.takeover_behavior` 处理：`pause` 立即暂停并提示，`follow` 静默转为纯控制器 |
 | `member_changed` | `group_id?, player_id, action` | `action=join\|update\|leave\|offline\|online\|deleted\|standby\|wake\|reorder`；`join`/`update`/`leave`/`reorder` 带 `group_id`（`reorder` 不带 `player_id`），`offline`/`online` 每个所属组各发一条 | 待机/唤醒只走这里，没有独立的 `power` / `standby` / `wake` 事件 |
-| `group_changed` | `group_id, player_id?, action` | `action=deleted`（解散）、`master_changed`（换主控，带 `player_id`） | **建组不发事件**：新建后由调用方自行拉 `/playback` 或等首条 `state` |
+| `group_changed` | `group_id, player_id?, action` | `action=deleted`（解散）、`master_changed`（换主控，带 `player_id`）、`renamed`（改名/换图标，带 `name`） | **建组不发事件**：新建后由调用方自行拉 `/playback` 或等首条 `state` |
 | `speaker_seen` | `player_id, name, kind` | 发现流程扫到新设备 | 提示"发现新音箱"，不自动加入任何组 |
 | `party_changed` | `party_id, group_id?, name?, action` | `action=created`（带 `name`）、`joined` / `left`（带 `group_id`）、`ended` | 重拉 `/playback/party/{id}`；`ended` 后清空派对态 |
 | `group_drift` | `party_id, group_id, offset_ms, corrected, unaligned` | 派对内校正环每次测量；`corrected=false` 表示本次校正失败，`unaligned=true` 表示已放弃重试 | 累计 3 次 `corrected=false` 或收到 `unaligned=true` 时把该组标成"未对齐"，不要反复弹 toast |
@@ -658,6 +701,8 @@ SSDP（239.255.255.250:1900）与 mDNS（224.0.0.251:5353）在 Docker bridge �
 
 **MVP（P0+P1+P2，单播不同步）≈ 2.5 个月；含同步（含校正环）+ EQ ≈ 3.6 个月；含派对与工程收尾 ≈ 4.4 个月（19 周，~103 人日）。**
 
+> **P0 现状（2026-10-26）**：服务端侧（队列/状态机/`local` sink/WS 事件）已完成并有测试；**「双端联调」未做**——客户端没有 WS 客户端也没有 `register_player`，`local` sink 只有单测里的假客户端。缺口清单与补做任务见[开发计划 §0.2 / §5.1](./playback_development_plan.md#02-v3-修订设计-vs-实现缺口2026-10-26-审计)。
+
 ### 9.1 自动化验证方法
 
 - **单元**：时间轴换算（注入假时钟）、SDP 生成、AES/RSA 已知向量、RTP 包 golden bytes、队列状态机。
@@ -684,7 +729,38 @@ SSDP（239.255.255.250:1900）与 mDNS（224.0.0.251:5353）在 Docker bridge �
 | EQ 强制解码把槽位吃满 | 中 | 功能不可用 | 错误信息区分原因；UI 在打开 EQ 前就提示当前槽位 |
 | 校正环引入可听跳帧 | 中 | 听感变差 | 只在 >10ms 时动、单周期单成员一次、>200ms 改用静音补齐；`player_drift_ms` 留痕 |
 
-## 11. 附录：参考实现索引
+## 11. 与 Roon 的能力边界
+
+交互模型已按 Roon 对齐（Zone / 焦点 / 分组 / 转移 / 信号路径，见[交互设计](./architecture_playback_ui.md)），但**“完全实现 Roon 的效果”在音频层不成立**。下表把差距分成两类：改设计能补的，和换协议才能补的。
+
+### 11.1 硬差距（改设计也补不了）
+
+| # | 能力 | Roon | 本项目 | 差距性质 |
+|---|---|---|---|---|
+| H1 | **同步精度** | RAAT 端到端 ~1ms（共享时钟 + 设备侧缓冲反馈） | RAOP 目标 ±20ms；DLNA 只能起播对齐（200~500ms 且持续漂移） | **协议天花板**：RAOP 无共享时钟，只能靠校正环事后拉回；同房间双音箱会有梳状滤波 |
+| H2 | **本地输出音质** | macOS hog mode / WASAPI exclusive，bit-perfect，DSD native | 客户端 `just_audio` → OS 混音器，被系统重采样，DSD 必须转 PCM | **客户端音频栈**：要 bit-perfect 得接 CoreAudio/AAudio 独占接口，不是改服务端能解决的 |
+| H3 | **DSP 深度** | 参数 EQ、卷积（房间校正）、升频、crossfeed、headroom | 10 段图示 EQ + 响度归一 | **实现量**：卷积与升频是另一个量级的工程 |
+| H4 | **设备覆盖** | Roon Ready / RAAT 设备（数百款） | AirPlay 1 + DLNA + 本机 | **生态**：RAAT 是私有协议，接不进来 |
+| H5 | **并发区域数** | 按 CPU 扩展，几十个 zone 同时放不同内容 | 默认 4 个并发解码组，第 5 个 503（`budget.go`） | **资源模型**：可调高，但受 CPU 与单机解码能力约束 |
+
+### 11.2 可补但未补（设计层）
+
+| # | 能力 | Roon 做法 | 现状 | 建议 |
+|---|---|---|---|---|
+| S1 | **音量模式** | 每设备三选一：Device volume / Fixed volume / DSP volume | 只有 `volume` + `volume_offset` | 加 `volume_mode` 列；Fixed 用于接前级的用户（避免双音量） |
+| S2 | **音量上限** | 每区域可设最大音量，防误触炸音箱 | 无 | 加 `max_volume`，服务端钳位并回填 |
+| S3 | **睡眠定时器** | 有（“30 分钟后停止”） | 已实现 `/groups/{id}/sleep`（内存态，到点暂停该组） | 可再持久化到 alarms 表，跨重启保留 |
+| S4 | **队列的“下一首播放”** | Play Now / Play Next / Add to Queue 三动作 | `Queue.InsertNext` 已实现，**UI 未暴露** | 纯前端接线 |
+| S5 | **焦点跟随播放** | 可选：开始播放时自动切焦点 | 已列为待定 | 做成设置项，默认关 |
+| S6 | **转移空档** | RAAT 预连接，近乎瞬时 | 0.5~3s（RAOP 握手 + 缓冲） | 协议决定，只能靠 UI 诚实过渡态缓解。**已实现**：目标行「正在切换…」、源行「正在移交」、收到目标区域 `state` 事件即恢复、5s 未收到提示「切换超时，请检查设备」（`zone_transfer_provider.dart`） |
+
+### 11.3 结论
+
+- **目标是“Roon 式的多房间控制体验”** → 设计已足够，按 F7 做完即可，不需要新协议。
+- **目标是“Roon 的音质与同步”** → 需要自研 RAAT-like 协议（共享时钟 + 设备侧缓冲反馈）与客户端独占音频栈，属于另一个项目量级，不在本设计范围内。
+- **不建议**把 H1~H5 写成“待优化”：它们是边界，不是待办。写清楚比假装能追上更有用。
+
+## 12. 附录：参考实现索引
 
 | 主题 | 参考位置 |
 |---|---|

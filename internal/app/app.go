@@ -67,6 +67,7 @@ type App struct {
 	playbackBus        *player.EventBus
 	wsHub              *ws.Hub
 	playerManager      *player.Manager
+	playerOffline      *playerOfflineTracker
 	playbackHandler    *handlers.PlaybackHandler
 	playerDiscovery    *discovery.Discovery
 	alarmRunner        *alarmRunner
@@ -101,6 +102,9 @@ func (a *App) Close() error {
 	}
 	if a.playerDiscovery != nil {
 		a.playerDiscovery.Stop()
+	}
+	if a.playerOffline != nil {
+		a.playerOffline.stopAll()
 	}
 	if a.cacheService != nil {
 		a.cacheService.Shutdown()

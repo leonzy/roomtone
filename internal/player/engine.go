@@ -20,6 +20,11 @@ type Track struct {
 	Duration time.Duration
 	// RemoteURL 远程歌曲直接交给 ffmpeg，不落盘。
 	RemoteURL string
+	// Format / SampleRate / BitRate 源文件格式，仅用于 signal_path 诊断。
+	// 解码仍由 ffmpeg 按实际文件处理，不参与组内格式协商。
+	Format     string
+	SampleRate int
+	BitRate    int
 }
 
 // Decoder 一条连续吐 s16le PCM 的解码流。
@@ -114,12 +119,14 @@ type Engine struct {
 	timeline  *Timeline
 	targets   *sink.Set
 	format    Format
-	cancel    context.CancelFunc
-	running   bool
-	release   func()
-	underruns int64
-	preload   Decoder
-	preloadID int64
+	// sourceFormat 当前曲目的源格式摘要（signal_path 用）；空串表示未知。
+	sourceFormat string
+	cancel       context.CancelFunc
+	running      bool
+	release      func()
+	underruns    int64
+	preload      Decoder
+	preloadID    int64
 	// sinksOpen 当前 sink 会话已经打开（下一曲可以走 gapless 接续）。
 	sinksOpen bool
 	lastErr   error
@@ -163,6 +170,23 @@ func (e *Engine) SetFormat(f Format) {
 	e.mu.Lock()
 	e.format = f
 	e.mu.Unlock()
+}
+
+// Format 当前协商后的输出格式（signal_path 诊断用）。
+func (e *Engine) Format() Format {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.format
+}
+
+// SourceFormat 当前曲目的源格式摘要；未知返回 "unknown"。
+func (e *Engine) SourceFormat() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.sourceFormat == "" {
+		return "unknown"
+	}
+	return e.sourceFormat
 }
 
 // Targets 当前推送目标集合（只读用途）。
@@ -361,6 +385,7 @@ func (e *Engine) Stop() {
 	e.mu.Lock()
 	e.stopLocked()
 	e.transport.Stop()
+	e.sourceFormat = ""
 	e.mu.Unlock()
 	e.persistState()
 	e.emitState()
@@ -450,7 +475,12 @@ func (e *Engine) SetShuffle(on bool) {
 
 // InsertNext 插播一首。
 func (e *Engine) InsertNext(ctx context.Context, songID int64) {
-	e.queue.InsertNext(songID)
+	e.InsertNextMany(ctx, songID)
+}
+
+// InsertNextMany 批量插播：按传入顺序插到当前曲之后。
+func (e *Engine) InsertNextMany(ctx context.Context, songIDs ...int64) {
+	e.queue.InsertNextMany(songIDs...)
 	e.persistQueue()
 	e.emitState()
 }
@@ -542,6 +572,7 @@ func (e *Engine) startLocked(parent context.Context, position time.Duration) {
 	ctx, cancel := context.WithCancel(parent)
 	e.cancel = cancel
 	e.running = true
+	e.sourceFormat = ""
 	songID, _ := e.queue.CurrentSong()
 	e.transport.Load(songID, position)
 	e.timeline = NewTimeline(e.deps.Clock(), e.format.SampleRate, e.deps.Latency)
@@ -571,12 +602,16 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		if err != nil {
 			return
 		}
+		e.mu.Lock()
+		e.sourceFormat = ""
+		e.mu.Unlock()
 		track, err := e.resolve(ctx, songID)
 		if err != nil {
 			e.fail(err)
 			return
 		}
 		e.mu.Lock()
+		e.sourceFormat = sourceFormatDetail(track)
 		format := e.format
 		timeline := e.timeline
 		e.mu.Unlock()

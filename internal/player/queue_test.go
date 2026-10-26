@@ -62,6 +62,49 @@ func TestQueueInsertNextAndRemove(t *testing.T) {
 	}
 }
 
+func TestQueueInsertNextManyPreservesOrder(t *testing.T) {
+	q := NewQueue()
+	q.Replace([]int64{1, 2, 3}, 0)
+	at := q.InsertNextMany(9, 10)
+	if at != 1 {
+		t.Fatalf("插入下标 = %d，期望 1", at)
+	}
+	want := []int64{1, 9, 10, 2, 3}
+	got := q.Items()
+	if len(got) != len(want) {
+		t.Fatalf("items = %v，期望 %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("items = %v，期望 %v", got, want)
+		}
+	}
+	if cur, _ := q.CurrentSong(); cur != 1 {
+		t.Fatalf("当前曲目 = %d，期望 1", cur)
+	}
+}
+
+// TestQueueInsertNextManyShuffleKeepsNext 开 shuffle 后“下一首播放”仍然
+// 必须紧跟当前曲，不能被随机顺序打散。
+func TestQueueInsertNextManyShuffleKeepsNext(t *testing.T) {
+	q := NewQueue()
+	q.Replace([]int64{1, 2, 3, 4, 5}, 0)
+	q.SetShuffle(true)
+	q.InsertNextMany(9, 10)
+	if !q.Next(false) {
+		t.Fatal("Next 应成功")
+	}
+	if got, _ := q.CurrentSong(); got != 9 {
+		t.Fatalf("shuffle 下下一首 = %d，期望 9", got)
+	}
+	if !q.Next(false) {
+		t.Fatal("Next 应成功")
+	}
+	if got, _ := q.CurrentSong(); got != 10 {
+		t.Fatalf("shuffle 下第二首 = %d，期望 10", got)
+	}
+}
+
 func TestQueueShuffleKeepsCurrent(t *testing.T) {
 	q := NewQueue()
 	ids := make([]int64, 50)

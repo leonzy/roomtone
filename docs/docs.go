@@ -1159,6 +1159,68 @@ const docTemplate = `{
                     }
                 }
             },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "重命名同步组并设置图标。name 去除首尾空白后必须为 1~40 个字符；icon 必须为 speaker / bookshelf / soundbar / headphone / tv / phone / laptop / multiroom 之一，空串表示使用客户端默认图标。名称与图标持久化在服务端，换设备或重启后保留。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "更新区域名称与图标",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "名称与图标",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.updateGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的组",
+                        "schema": {
+                            "$ref": "#/definitions/player.GroupView"
+                        }
+                    },
+                    "400": {
+                        "description": "名称或图标不合法",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "组不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
             "delete": {
                 "security": [
                     {
@@ -1582,7 +1644,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "追加一批歌曲到队列尾部。队列为空时自动从第一首开始（不自动播放）。",
+                "description": "position 为空或 end 时追加到队列尾部；position=next 时按传入顺序插到当前曲之后（下一首播放）。队列为空时自动从第一首开始（不自动播放）。",
                 "consumes": [
                     "application/json"
                 ],
@@ -1602,7 +1664,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "歌曲",
+                        "description": "歌曲与插入位置",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1616,6 +1678,15 @@ const docTemplate = `{
                         "description": "更新后的状态",
                         "schema": {
                             "$ref": "#/definitions/player.Status"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误或 position 不支持",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "404": {
@@ -1675,6 +1746,111 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "下标越界",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/sleep": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回剩余秒数与是否有活动定时器。remaining_seconds 向上取整；定时器到点或取消后 active=false、remaining_seconds=0。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "获取区域睡眠定时器",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "定时器状态",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.sleepTimerStatus"
+                        }
+                    },
+                    "404": {
+                        "description": "组不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "为指定区域设置一次性睡眠定时器，到点后暂停该区域的播放并广播 state 事件。minutes=0 取消已有定时器；有效范围 1~720 分钟，超出返回 400。定时器只存在内存中，服务重启后失效。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "设置区域睡眠定时器",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "分钟数（0 取消）",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.sleepTimerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "定时器状态",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.sleepTimerStatus"
+                        }
+                    },
+                    "400": {
+                        "description": "minutes 不合法或请求格式错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "组不存在",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3970,7 +4146,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "修改设备名称或接管行为。takeover_behavior 只对 local 设备生效：pause（默认，被切走后立即暂停并提示）或 follow（静默转为纯控制器）。",
+                "description": "修改设备名称、接管行为、音量模式或音量上限。takeover_behavior 只对 local 设备生效：pause（默认，被切走后立即暂停并提示）或 follow（静默转为纯控制器）。volume_mode 支持 device（默认，直接下发设备）/ fixed（固定音量，忽略音量设置）/ dsp（服务端 DSP 音量）；max_volume 为 0-100 的硬上限，调低时当前音量一并钳位。未传的字段保持不变。",
                 "consumes": [
                     "application/json"
                 ],
@@ -13394,6 +13570,9 @@ const docTemplate = `{
         "handlers.queueAddRequest": {
             "type": "object",
             "properties": {
+                "position": {
+                    "type": "string"
+                },
                 "song_ids": {
                     "type": "array",
                     "items": {
@@ -13617,6 +13796,25 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.sleepTimerRequest": {
+            "type": "object",
+            "properties": {
+                "minutes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handlers.sleepTimerStatus": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "remaining_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
         "handlers.songArtistsRequest": {
             "type": "object",
             "properties": {
@@ -13724,13 +13922,30 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.updateGroupRequest": {
+            "type": "object",
+            "properties": {
+                "icon": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.updatePlayerRequest": {
             "type": "object",
             "properties": {
+                "max_volume": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
                 "takeover_behavior": {
+                    "type": "string"
+                },
+                "volume_mode": {
                     "type": "string"
                 }
             }
@@ -14798,6 +15013,10 @@ const docTemplate = `{
         "player.GroupView": {
             "type": "object",
             "properties": {
+                "icon": {
+                    "description": "Icon 区域图标 key（白名单见 manager.go），空串表示客户端默认图标。",
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -14821,6 +15040,14 @@ const docTemplate = `{
                 },
                 "party_id": {
                     "type": "string"
+                },
+                "signal_path": {
+                    "description": "SignalPath 只读诊断：源 → 解码 → DSP → 输出 → 设备。",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/player.SignalPath"
+                        }
+                    ]
                 },
                 "status": {
                     "$ref": "#/definitions/player.Status"
@@ -14870,6 +15097,9 @@ const docTemplate = `{
         "player.Kind": {
             "type": "string",
             "enum": [
+                "local",
+                "raop",
+                "dlna",
                 "local",
                 "raop",
                 "dlna"
@@ -15081,6 +15311,9 @@ const docTemplate = `{
                 "kind": {
                     "$ref": "#/definitions/player.Kind"
                 },
+                "max_volume": {
+                    "type": "integer"
+                },
                 "model": {
                     "type": "string"
                 },
@@ -15102,6 +15335,9 @@ const docTemplate = `{
                 },
                 "volume": {
                     "type": "integer"
+                },
+                "volume_mode": {
+                    "type": "string"
                 }
             }
         },
@@ -15137,6 +15373,31 @@ const docTemplate = `{
                 "RepeatAll",
                 "RepeatOne"
             ]
+        },
+        "player.SignalPath": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "stages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/player.SignalStage"
+                    }
+                }
+            }
+        },
+        "player.SignalStage": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
         },
         "player.State": {
             "type": "string",

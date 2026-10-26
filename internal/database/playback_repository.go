@@ -37,6 +37,8 @@ type PlayerRow struct {
 	Online           bool
 	EQProfile        string
 	TakeoverBehavior string
+	VolumeMode       string
+	MaxVolume        int
 	LastSeenAt       time.Time
 	CreatedAt        time.Time
 }
@@ -45,6 +47,7 @@ type PlayerRow struct {
 type GroupRow struct {
 	ID             string
 	Name           string
+	Icon           string
 	MasterPlayerID string
 	PartyID        string
 	CreatedAt      time.Time
@@ -85,6 +88,8 @@ func playerRowFromSQLc(r sqlc.Player) PlayerRow {
 		Online:           r.Online != 0,
 		EQProfile:        r.EqProfile,
 		TakeoverBehavior: r.TakeoverBehavior,
+		VolumeMode:       r.VolumeMode,
+		MaxVolume:        int(r.MaxVolume),
 		CreatedAt:        r.CreatedAt,
 	}
 	if r.LastSeenAt.Valid {
@@ -136,6 +141,8 @@ func (r *PlaybackRepository) UpsertPlayer(ctx context.Context, p PlayerRow) erro
 		Online:           boolToInt64(p.Online),
 		EqProfile:        p.EQProfile,
 		TakeoverBehavior: p.TakeoverBehavior,
+		VolumeMode:       p.VolumeMode,
+		MaxVolume:        int64(p.MaxVolume),
 		LastSeenAt:       lastSeen,
 	})
 	if err != nil {
@@ -144,9 +151,15 @@ func (r *PlaybackRepository) UpsertPlayer(ctx context.Context, p PlayerRow) erro
 	return nil
 }
 
-// UpdatePlayerConfig 更新名称与接管行为
-func (r *PlaybackRepository) UpdatePlayerConfig(ctx context.Context, id, name, takeover string) error {
-	return r.queries.UpdatePlayerConfig(ctx, sqlc.UpdatePlayerConfigParams{Name: name, TakeoverBehavior: takeover, ID: id})
+// UpdatePlayerConfig 更新名称、接管行为、音量模式与音量上限
+func (r *PlaybackRepository) UpdatePlayerConfig(ctx context.Context, id, name, takeover, volumeMode string, maxVolume int) error {
+	return r.queries.UpdatePlayerConfig(ctx, sqlc.UpdatePlayerConfigParams{
+		Name:             name,
+		TakeoverBehavior: takeover,
+		VolumeMode:       volumeMode,
+		MaxVolume:        int64(maxVolume),
+		ID:               id,
+	})
 }
 
 // UpdatePlayerVolume 更新音量与静音
@@ -188,6 +201,7 @@ func (r *PlaybackRepository) ListGroups(ctx context.Context) ([]GroupRow, error)
 		out = append(out, GroupRow{
 			ID:             row.ID,
 			Name:           row.Name,
+			Icon:           row.Icon,
 			MasterPlayerID: row.MasterPlayerID,
 			PartyID:        row.PartyID.String,
 			CreatedAt:      row.CreatedAt,
@@ -205,7 +219,7 @@ func (r *PlaybackRepository) GetGroup(ctx context.Context, id string) (GroupRow,
 	if err != nil {
 		return GroupRow{}, fmt.Errorf("get group: %w", err)
 	}
-	return GroupRow{ID: row.ID, Name: row.Name, MasterPlayerID: row.MasterPlayerID, PartyID: row.PartyID.String, CreatedAt: row.CreatedAt}, nil
+	return GroupRow{ID: row.ID, Name: row.Name, Icon: row.Icon, MasterPlayerID: row.MasterPlayerID, PartyID: row.PartyID.String, CreatedAt: row.CreatedAt}, nil
 }
 
 // InsertGroup 新建组
@@ -227,6 +241,18 @@ func (r *PlaybackRepository) UpdateGroup(ctx context.Context, g GroupRow) error 
 		party = sql.NullString{String: g.PartyID, Valid: true}
 	}
 	return r.queries.UpdateGroup(ctx, sqlc.UpdateGroupParams{Name: g.Name, MasterPlayerID: g.MasterPlayerID, PartyID: party, ID: g.ID})
+}
+
+// UpdateGroupIdentity 更新组名称与图标，未命中返回 ErrNotFound
+func (r *PlaybackRepository) UpdateGroupIdentity(ctx context.Context, id, name, icon string) error {
+	n, err := r.queries.UpdateGroupIdentity(ctx, sqlc.UpdateGroupIdentityParams{Name: name, Icon: icon, ID: id})
+	if err != nil {
+		return fmt.Errorf("update group identity: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // DeleteGroup 删除组，未命中返回 ErrNotFound

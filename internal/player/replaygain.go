@@ -111,6 +111,14 @@ type ReplayGainSource interface {
 	GainDB(ctx context.Context, songID int64) (float64, bool)
 }
 
+// LoudnessSource 可选能力：报告组级响度归一（ReplayGain）是否开启。
+//
+// signal_path 用它判断链路是否经过 DSP。实现方不提供该接口时按关闭处理，
+// 这样测试替身与旧实现不需要为了一个诊断字段补方法。
+type LoudnessSource interface {
+	LoudnessEnabled() bool
+}
+
 // gainSetter 由分发器实现：Run 之前设置线性增益。
 type gainSetter interface {
 	SetGain(factor float64)

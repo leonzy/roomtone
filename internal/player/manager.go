@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"songloft/internal/player/dsp"
 	"songloft/internal/player/sink"
@@ -38,7 +39,28 @@ var (
 	// 单独建哨兵是因为这些错误以前用裸 fmt.Errorf，playbackStatus 认不出来就一律 500，
 	// 客户端把“成员列表为空”当成服务端故障。
 	ErrInvalidArgument = errors.New("参数错误")
+	// ErrInvalidName 区域名称去空格后不是 1~40 个字符。
+	ErrInvalidName = errors.New("区域名称不合法")
+	// ErrInvalidIcon 区域图标不在内置白名单内。
+	ErrInvalidIcon = errors.New("区域图标不合法")
 )
+
+// groupIcons 区域图标白名单（与前端内置图标一致，不开放上传）。
+var groupIcons = map[string]bool{
+	"speaker":   true,
+	"bookshelf": true,
+	"soundbar":  true,
+	"headphone": true,
+	"tv":        true,
+	"phone":     true,
+	"laptop":    true,
+	"multiroom": true,
+}
+
+// validGroupIcon 空串表示使用默认图标，其余必须在白名单内。
+func validGroupIcon(icon string) bool {
+	return icon == "" || groupIcons[icon]
+}
 
 // ArgumentError 带用户文案的参数错误，errors.Is 命中 ErrInvalidArgument。
 type ArgumentError struct{ Msg string }
@@ -65,6 +87,7 @@ type Store interface {
 
 	ListGroups(ctx context.Context) ([]Group, error)
 	SaveGroup(ctx context.Context, g Group) error
+	UpdateGroupIdentity(ctx context.Context, id, name, icon string) error
 	DeleteGroup(ctx context.Context, id string) error
 	ListAllMembers(ctx context.Context) (map[string][]Member, error)
 	SaveMember(ctx context.Context, groupID string, m Member) error
@@ -126,6 +149,14 @@ type Manager struct {
 	// 如果允许复用，前端会看到"刚删掉的 id 又冒出来"，拿旧快照做 diff 的
 	// 客户端会把新组当成旧组。所以删除过的 id 进墓碑表，重建时换带时间戳的 id。
 	retiredGroups map[string]bool
+	// sleepTimers 每个区域一个睡眠定时器（到点暂停该组）。
+	//
+	// 只存在内存里：睡眠定时器是"这一次睡前"的临时意图，服务重启后
+	// 不应该继续在半夜暂停用户刚恢复的播放。
+	sleepTimers map[string]*time.Timer
+	// sleepDeadlines 与 sleepTimers 一一对应，供 GET 计算剩余时间，
+	// 同时作为回调的代际标记（旧定时器到点后发现 deadline 不匹配就退出）。
+	sleepDeadlines map[string]time.Time
 }
 
 // NewManager 创建管理器。
@@ -152,9 +183,11 @@ func NewManager(deps ManagerDeps) *Manager {
 		eqChains:  make(map[string]*dsp.EQ),
 		partySync: make(map[string]*partySyncState),
 
-		metrics:       NewMetrics(),
-		syncPending:   make(map[string]time.Time),
-		retiredGroups: make(map[string]bool),
+		metrics:        NewMetrics(),
+		syncPending:    make(map[string]time.Time),
+		retiredGroups:  make(map[string]bool),
+		sleepTimers:    make(map[string]*time.Timer),
+		sleepDeadlines: make(map[string]time.Time),
 	}
 }
 
@@ -206,9 +239,11 @@ func (m *Manager) RegisterPlayer(ctx context.Context, p Player) error {
 	m.mu.Lock()
 	prev, existed := m.players[p.ID]
 	if existed {
-		// 保留用户设置（音量 / EQ / 接管行为 / 名称）
+		// 保留用户设置（音量 / 音量模式 / 上限 / EQ / 接管行为 / 名称）
 		p.Volume = prev.Volume
 		p.Muted = prev.Muted
+		p.VolumeMode = prev.VolumeMode
+		p.MaxVolume = prev.MaxVolume
 		p.EQ = prev.EQ
 		p.Takeover = prev.Takeover
 		if p.Name == "" {
@@ -222,6 +257,20 @@ func (m *Manager) RegisterPlayer(ctx context.Context, p Player) error {
 			// 只有自研客户端才谈"被切走后暂停"，音箱没有这个概念。
 			p.Takeover = TakeoverPause
 		}
+		if p.VolumeMode == "" {
+			p.VolumeMode = VolumeModeDevice
+		}
+		// 注册入口不区分"没传"与 0，0 视为未设置；用户要 0 走 PUT /players/{id}。
+		if p.MaxVolume <= 0 {
+			p.MaxVolume = DefaultMaxVolume
+		}
+	}
+	// 防御存量脏数据：非法模式回退默认，上限越界回退 100。
+	if !validVolumeMode(p.VolumeMode) {
+		p.VolumeMode = VolumeModeDevice
+	}
+	if p.MaxVolume < 0 || p.MaxVolume > 100 {
+		p.MaxVolume = DefaultMaxVolume
 	}
 	p.Online = true
 	m.players[p.ID] = &p
@@ -340,18 +389,30 @@ func (m *Manager) Reconnect(ctx context.Context, id string) (Player, error) {
 	return m.GetPlayer(id)
 }
 
-// UpdatePlayer 更新名称 / 接管行为 / 音量 / EQ。
-func (m *Manager) UpdatePlayer(ctx context.Context, id, name string, takeover TakeoverBehavior) (Player, error) {
+// PlayerUpdate 设备可编辑配置；nil 字段表示不修改。
+type PlayerUpdate struct {
+	Name       *string
+	Takeover   *TakeoverBehavior
+	VolumeMode *string
+	MaxVolume  *int
+}
+
+// UpdatePlayer 更新名称 / 接管行为 / 音量模式 / 音量上限。
+//
+// 音量上限调低时会把当前音量一并钳到新上限，否则 GET /players 会返回
+// 一个超过用户刚设置的上限的值。
+func (m *Manager) UpdatePlayer(ctx context.Context, id string, upd PlayerUpdate) (Player, error) {
 	m.mu.Lock()
 	p, ok := m.players[id]
 	if !ok {
 		m.mu.Unlock()
 		return Player{}, ErrPlayerNotFound
 	}
-	if name != "" {
-		p.Name = name
+	if upd.Name != nil && *upd.Name != "" {
+		p.Name = *upd.Name
 	}
-	if takeover != "" {
+	if upd.Takeover != nil {
+		takeover := *upd.Takeover
 		if takeover != TakeoverPause && takeover != TakeoverFollow {
 			m.mu.Unlock()
 			return Player{}, invalidArg("takeover_behavior 只支持 pause / follow")
@@ -360,27 +421,69 @@ func (m *Manager) UpdatePlayer(ctx context.Context, id, name string, takeover Ta
 			p.Takeover = takeover
 		}
 	}
+	if upd.VolumeMode != nil {
+		mode := *upd.VolumeMode
+		if !validVolumeMode(mode) {
+			m.mu.Unlock()
+			return Player{}, invalidArg("volume_mode 只支持 device / fixed / dsp")
+		}
+		p.VolumeMode = mode
+	}
+	volumeClamped := false
+	if upd.MaxVolume != nil {
+		maxVolume := *upd.MaxVolume
+		if maxVolume < 0 || maxVolume > 100 {
+			m.mu.Unlock()
+			return Player{}, invalidArg("max_volume 必须在 0-100 之间")
+		}
+		p.MaxVolume = maxVolume
+		if p.Volume > maxVolume {
+			p.Volume = maxVolume
+			volumeClamped = true
+		}
+	}
+	s := m.sinks[id]
 	out := *p
 	m.mu.Unlock()
 	if m.deps.Store != nil {
 		_ = m.deps.Store.UpdatePlayerConfig(ctx, out)
+		if volumeClamped {
+			_ = m.deps.Store.UpdatePlayerVolume(ctx, out)
+		}
+	}
+	if volumeClamped && s != nil {
+		v := float64(out.Volume) / 100
+		if out.Muted {
+			v = 0
+		}
+		if err := s.SetVolume(v); err != nil {
+			return out, err
+		}
 	}
 	return out, nil
 }
 
 // SetVolume 设置音量。音箱支持则直接下发，否则只改状态（本地播放器自己取）。
+//
+// volume_mode=fixed 时整次调用被忽略（返回当前值，不报错）：这类设备
+// 的音量由外部控制，服务端不应覆盖。其余模式先钳到 max_volume。
 func (m *Manager) SetVolume(ctx context.Context, id string, volume int, muted bool) (Player, error) {
-	if volume < 0 {
-		volume = 0
-	}
-	if volume > 100 {
-		volume = 100
-	}
 	m.mu.Lock()
 	p, ok := m.players[id]
 	if !ok {
 		m.mu.Unlock()
 		return Player{}, ErrPlayerNotFound
+	}
+	if p.VolumeMode == VolumeModeFixed {
+		out := *p
+		m.mu.Unlock()
+		m.deps.Logger.Debug("ignore volume change: player volume mode is fixed",
+			"player_id", id, "requested", volume, "current", out.Volume)
+		return out, nil
+	}
+	volume = clampVolume(volume)
+	if volume > p.MaxVolume {
+		volume = p.MaxVolume
 	}
 	p.Volume = volume
 	p.Muted = muted
@@ -400,6 +503,15 @@ func (m *Manager) SetVolume(ctx context.Context, id string, volume int, muted bo
 		}
 	}
 	return out, nil
+}
+
+// validVolumeMode 校验音量模式。
+func validVolumeMode(mode string) bool {
+	switch mode {
+	case VolumeModeDevice, VolumeModeFixed, VolumeModeDSP:
+		return true
+	}
+	return false
 }
 
 // SetEQ 更新某设备的 EQ，重算 preamp 并回填。
@@ -447,13 +559,15 @@ func (m *Manager) ListGroups() []GroupView {
 	return out
 }
 
-// GroupView 组 + 派生信息（同步等级、成员能力）。
+// GroupView 组 + 派生信息（同步等级、成员能力、信号路径）。
 type GroupView struct {
 	Group
 	SyncTier   string       `json:"sync_tier"`
 	MemberCaps []MemberCaps `json:"member_caps"`
 	Status     Status       `json:"status"`
 	PartyID    string       `json:"party_id,omitempty"`
+	// SignalPath 只读诊断：源 → 解码 → DSP → 输出 → 设备。
+	SignalPath SignalPath `json:"signal_path"`
 }
 
 // MemberCaps 成员能力摘要（前端用来提示"包含 DLNA 设备"）。
@@ -514,9 +628,14 @@ func (m *Manager) groupViewLocked(g *Group) GroupView {
 	}
 	tier := GroupSyncTier(players).String()
 	view := GroupView{Group: *g, SyncTier: tier, MemberCaps: caps, PartyID: g.PartyID}
+	var output Format
+	source := "unknown"
 	if e := m.engines["group:"+g.ID]; e != nil {
 		view.Status = e.Status()
+		output = e.Format()
+		source = e.SourceFormat()
 	}
+	view.SignalPath = buildSignalPath(players, output, source, m.loudnessEnabledLocked())
 	return view
 }
 
@@ -581,6 +700,7 @@ func (m *Manager) CreateGroup(ctx context.Context, name string, memberIDs []stri
 		for _, g := range m.groups {
 			if g.HasMember(id) {
 				delete(m.groups, g.ID)
+				m.cancelSleepTimerLocked(g.ID)
 				break
 			}
 		}
@@ -605,9 +725,51 @@ func (m *Manager) CreateGroup(ctx context.Context, name string, memberIDs []stri
 	return m.GetGroup(gid)
 }
 
+// RenameGroup 更新区域名称与图标。
+//
+// 名称与图标是用户可见的区域身份，存服务端（player_groups.name/icon），
+// 换设备不丢。name 去首尾空白后必须是 1~40 个字符；icon 为空表示使用
+// 客户端默认图标，否则必须在 groupIcons 白名单内。
+func (m *Manager) RenameGroup(ctx context.Context, id, name, icon string) (GroupView, error) {
+	name = strings.TrimSpace(name)
+	if n := utf8.RuneCountInString(name); n < 1 || n > 40 {
+		return GroupView{}, fmt.Errorf("%w: 名称长度需为 1~40 个字符", ErrInvalidName)
+	}
+	if !validGroupIcon(icon) {
+		return GroupView{}, fmt.Errorf("%w: %s", ErrInvalidIcon, icon)
+	}
+
+	m.mu.RLock()
+	_, ok := m.groups[id]
+	m.mu.RUnlock()
+	if !ok {
+		return GroupView{}, ErrGroupNotFound
+	}
+
+	// 先落库再改内存：落库失败时不能留下“界面已改名、重启又变回去”的状态。
+	if m.deps.Store != nil {
+		if err := m.deps.Store.UpdateGroupIdentity(ctx, id, name, icon); err != nil {
+			return GroupView{}, err
+		}
+	}
+
+	m.mu.Lock()
+	if g, ok := m.groups[id]; ok {
+		g.Name = name
+		g.Icon = icon
+	}
+	m.mu.Unlock()
+
+	if m.deps.Bus != nil {
+		m.deps.Bus.Publish(Event{Type: EventGroupChanged, GroupID: id, Action: "renamed", Name: name})
+	}
+	return m.GetGroup(id)
+}
+
 // purgeEmptyGroups 清理并组后留下的空组（含引擎与持久化记录）。
 func (m *Manager) purgeEmptyGroups(ctx context.Context, ids []string) {
 	for _, id := range ids {
+		m.cancelSleepTimer(id)
 		if e := m.engine("group", id); e != nil {
 			e.Stop()
 			e.Close()
@@ -836,9 +998,11 @@ func (m *Manager) SetGroupVolume(ctx context.Context, groupID string, volume int
 	for _, mem := range members {
 		actual := clampVolume(volume + mem.VolumeOffset)
 		item := GroupVolumeMember{PlayerID: mem.PlayerID, Volume: actual, VolumeOffset: mem.VolumeOffset}
-		if _, err := m.SetVolume(ctx, mem.PlayerID, actual, muted); err != nil {
+		if got, err := m.SetVolume(ctx, mem.PlayerID, actual, muted); err != nil {
 			item.Error = err.Error()
 		} else {
+			// fixed 模式或 max_volume 钳位后实际值可能不同于请求值，回显真实值。
+			item.Volume = got.Volume
 			item.OK = true
 		}
 		out.Members = append(out.Members, item)

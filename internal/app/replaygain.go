@@ -34,6 +34,16 @@ type cachedGain struct {
 // replayGainCacheLimit 缓存条数上限（每条约 40 字节，1 万条也才几百 KB）。
 const replayGainCacheLimit = 10000
 
+// LoudnessEnabled 实现 player.LoudnessSource：ReplayGain 非 off 即视为
+// 组级响度归一开启。signal_path 用它把链路标成 enhanced。
+func (s *replayGainSource) LoudnessEnabled() bool {
+	if s.mode == nil {
+		return false
+	}
+	mode, _ := s.mode()
+	return mode != player.ReplayGainOff && mode.Valid()
+}
+
 // GainDB 实现 player.ReplayGainSource。
 func (s *replayGainSource) GainDB(ctx context.Context, songID int64) (float64, bool) {
 	mode, preventClipping := s.mode()

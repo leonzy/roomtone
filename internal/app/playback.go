@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"songloft/internal/app/ws"
@@ -31,6 +32,7 @@ func (a *App) initPlayback() {
 	bus := player.NewEventBus()
 	a.playbackBus = bus
 	a.wsHub = ws.NewHub(bus, slog.Default())
+	a.playerOffline = newPlayerOfflineTracker()
 
 	store := newPlaybackStore(a.db.PlaybackRepository())
 
@@ -86,12 +88,20 @@ func (a *App) initPlayback() {
 	}
 	budget := player.NewBudget(output.MaxGroups)
 
-	resolver := songTrackResolver{get: func(ctx context.Context, id int64) (string, string, string, float64, error) {
+	resolver := songTrackResolver{get: func(ctx context.Context, id int64) (songTrackInfo, error) {
 		song, err := a.songService.GetByID(ctx, id)
 		if err != nil {
-			return "", "", "", 0, err
+			return songTrackInfo{}, err
 		}
-		return song.Title, song.FilePath, song.URL, song.Duration, nil
+		return songTrackInfo{
+			Title:      song.Title,
+			Path:       song.FilePath,
+			URL:        song.URL,
+			Duration:   song.Duration,
+			Format:     song.Format,
+			SampleRate: song.SampleRate,
+			BitRate:    song.BitRate,
+		}, nil
 	}}
 
 	// ReplayGain：模式每次从配置读（改了立即生效），标签首次播放时读一次并缓存。
@@ -171,6 +181,7 @@ func (a *App) initPlayback() {
 		return nets
 	})
 	a.wsHub.OnMessage(a.handlePlayerMessage)
+	a.wsHub.OnDisconnect(a.handlePlayerDisconnect)
 
 	// 设备发现：mDNS 找 AirPlay 1 音箱，SSDP 找 DLNA renderer。
 	// 扫到的设备直接登记成 player（单机也建只含自己的组），前端从
@@ -313,61 +324,117 @@ func (l localController) SendCommand(cmd local.Command) error {
 	return l.c.SendCommand(cmd)
 }
 
+// playerWSMessage 客户端 WS 上行消息。
+//
+// 兼容两种能力声明：新版客户端用嵌套 caps（codecs / sample_rates /
+// max_channels），旧版把 codecs / max_sample_rate 放在顶层。
+// 两种都认，避免升级期间老客户端被当成默认能力。
+type playerWSMessage struct {
+	Type string `json:"type"`
+	// register_player / unregister_player
+	ID      string              `json:"id"`
+	Name    string              `json:"name"`
+	Kind    string              `json:"kind"`
+	Codecs  []string            `json:"codecs"`
+	MaxRate int                 `json:"max_sample_rate"`
+	Caps    *playerRegisterCaps `json:"caps"`
+	// report
+	PositionMs int64  `json:"position_ms"`
+	Buffering  bool   `json:"buffering"`
+	Volume     int    `json:"volume"`
+	State      string `json:"state"`
+	RTTMs      int64  `json:"rtt_ms"`
+}
+
+type playerRegisterCaps struct {
+	Codecs      []string `json:"codecs"`
+	SampleRates []int    `json:"sample_rates"`
+	MaxChannels int      `json:"max_channels"`
+}
+
+// localCapsFromMessage 把客户端声明转成 player.Caps。
+//
+// 客户端自拉流，服务端只下发指令，所以音量 / seek 都由客户端执行；
+// 同步等级固定 exact（靠 play_at 对齐）。
+func localCapsFromMessage(msg playerWSMessage) player.Caps {
+	codecs := msg.Codecs
+	maxRate := msg.MaxRate
+	channels := 2
+	if msg.Caps != nil {
+		if len(msg.Caps.Codecs) > 0 {
+			codecs = msg.Caps.Codecs
+		}
+		for _, rate := range msg.Caps.SampleRates {
+			if rate > maxRate {
+				maxRate = rate
+			}
+		}
+		if msg.Caps.MaxChannels > 0 {
+			channels = msg.Caps.MaxChannels
+		}
+	}
+	// 有 codecs 但没声明采样率时给一个保守值；否则 RegisterPlayer 会把
+	// 整段 caps 换成默认值，客户端声明的 codecs 就丢了。
+	if maxRate <= 0 && len(codecs) > 0 {
+		maxRate = 48000
+	}
+	caps := player.Caps{
+		MaxSampleRate:  maxRate,
+		Channels:       channels,
+		BitDepth:       16,
+		SupportsVolume: true,
+		SupportsSeek:   true,
+		LatencyMs:      300,
+		SyncTier:       player.SyncExact,
+	}
+	for _, c := range codecs {
+		caps.Codecs = append(caps.Codecs, player.Codec(c))
+	}
+	return caps
+}
+
 // handlePlayerMessage 处理客户端 WS 上行消息。
 //
-// 目前只有两种：register_player（绑定连接与设备）与 report（500ms 状态上报）。
+// register_player（绑定连接与设备）、report（500ms 状态上报）、
+// unregister_player（正常退出，摘出所有组并删除设备）。
 // 消息格式刻意保持极简，客户端 SDK 直接拼 JSON 即可。
 func (a *App) handlePlayerMessage(c *ws.Client, payload []byte) {
-	var msg struct {
-		Type string `json:"type"`
-		// register_player
-		ID      string   `json:"id"`
-		Name    string   `json:"name"`
-		Kind    string   `json:"kind"`
-		Codecs  []string `json:"codecs"`
-		MaxRate int      `json:"max_sample_rate"`
-		// report
-		PositionMs int64  `json:"position_ms"`
-		Buffering  bool   `json:"buffering"`
-		Volume     int    `json:"volume"`
-		State      string `json:"state"`
-		RTTMs      int64  `json:"rtt_ms"`
-	}
+	var msg playerWSMessage
 	if err := jsonUnmarshal(payload, &msg); err != nil {
 		slog.Debug("player ws message decode failed", "err", err)
 		return
 	}
 	switch msg.Type {
 	case "register_player":
-		caps := player.Caps{
-			MaxSampleRate:  msg.MaxRate,
-			Channels:       2,
-			BitDepth:       16,
-			SupportsVolume: true,
-			SupportsSeek:   true,
-			LatencyMs:      300,
-			SyncTier:       player.SyncExact,
-		}
-		for _, c := range msg.Codecs {
-			caps.Codecs = append(caps.Codecs, player.Codec(c))
-		}
 		kind := player.Kind(msg.Kind)
 		if kind == "" {
 			kind = player.KindLocal
 		}
-		p := player.Player{ID: msg.ID, Kind: kind, Name: msg.Name, Caps: caps}
+		p := player.Player{ID: msg.ID, Kind: kind, Name: msg.Name, Caps: localCapsFromMessage(msg)}
 		if p.Name == "" {
 			p.Name = "本机播放器"
 		}
+		// 同一设备重连：取消断线计时，避免 30s 后把刚上线的设备标离线。
+		a.cancelPlayerOffline(msg.ID)
 		if err := a.playerManager.RegisterPlayer(context.Background(), p); err != nil {
 			slog.Warn("注册播放设备失败", "id", msg.ID, "err", err)
 			return
 		}
 		a.wsHub.RegisterDevice(c, msg.ID)
-	case "report":
-		if sender, ok := a.wsHub.Sender(c.PlayerID()); ok {
-			_ = sender
+	case "unregister_player":
+		id := msg.ID
+		if id == "" {
+			id = c.PlayerID()
 		}
+		if id == "" {
+			return
+		}
+		a.cancelPlayerOffline(id)
+		a.wsHub.UnregisterDevice(c)
+		if err := a.playerManager.UnregisterPlayer(context.Background(), id); err != nil {
+			slog.Warn("注销播放设备失败", "id", id, "err", err)
+		}
+	case "report":
 		if p := c.PlayerID(); p != "" {
 			if s, ok := a.playerManager.SinkOf(p); ok {
 				if ls, ok := s.(*local.Sink); ok {
@@ -381,5 +448,76 @@ func (a *App) handlePlayerMessage(c *ws.Client, payload []byte) {
 				}
 			}
 		}
+	}
+}
+
+// playerOfflineGrace 断线后多久标离线。
+//
+// 设计见 docs/architecture_playback.md §5.2：断线 > 30s 才标 offline，
+// 给短暂网络抖动 / 重连留窗口；重连成功会取消计时。
+const playerOfflineGrace = 30 * time.Second
+
+// playerOfflineTracker 按设备 id 管理断线计时器。
+type playerOfflineTracker struct {
+	mu     sync.Mutex
+	timers map[string]*time.Timer
+}
+
+func newPlayerOfflineTracker() *playerOfflineTracker {
+	return &playerOfflineTracker{timers: make(map[string]*time.Timer)}
+}
+
+func (t *playerOfflineTracker) schedule(id string, d time.Duration, fn func()) {
+	t.mu.Lock()
+	if old := t.timers[id]; old != nil {
+		old.Stop()
+	}
+	t.timers[id] = time.AfterFunc(d, func() {
+		t.mu.Lock()
+		delete(t.timers, id)
+		t.mu.Unlock()
+		fn()
+	})
+	t.mu.Unlock()
+}
+
+func (t *playerOfflineTracker) cancel(id string) {
+	t.mu.Lock()
+	if timer := t.timers[id]; timer != nil {
+		timer.Stop()
+		delete(t.timers, id)
+	}
+	t.mu.Unlock()
+}
+
+func (t *playerOfflineTracker) stopAll() {
+	t.mu.Lock()
+	for id, timer := range t.timers {
+		timer.Stop()
+		delete(t.timers, id)
+	}
+	t.mu.Unlock()
+}
+
+// handlePlayerDisconnect WS 断开后延迟标离线。
+//
+// 同一设备可能已经重连（旧连接的 drop 晚于新连接的 register），所以计时器
+// 到期时再查一次 Sender：仍有连接就说明设备在线，不能误标。
+func (a *App) handlePlayerDisconnect(c *ws.Client) {
+	id := c.PlayerID()
+	if id == "" || a.playerOffline == nil {
+		return
+	}
+	a.playerOffline.schedule(id, playerOfflineGrace, func() {
+		if _, ok := a.wsHub.Sender(id); ok {
+			return
+		}
+		a.playerManager.SetOnline(context.Background(), id, false)
+	})
+}
+
+func (a *App) cancelPlayerOffline(id string) {
+	if a.playerOffline != nil {
+		a.playerOffline.cancel(id)
 	}
 }

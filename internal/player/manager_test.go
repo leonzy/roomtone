@@ -108,6 +108,19 @@ func (s *memStore) SaveGroup(_ context.Context, g player.Group) error {
 	return nil
 }
 
+func (s *memStore) UpdateGroupIdentity(_ context.Context, id, name, icon string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, ok := s.groups[id]
+	if !ok {
+		return player.ErrGroupNotFound
+	}
+	g.Name = name
+	g.Icon = icon
+	s.groups[id] = g
+	return nil
+}
+
 func (s *memStore) DeleteGroup(_ context.Context, id string) error {
 	s.mu.Lock()
 	delete(s.groups, id)
@@ -412,5 +425,87 @@ func TestAddMemberRejectsDLNAInExactGroup(t *testing.T) {
 	}
 	if view, _ := m.GetGroup(gid); view.SyncTier != "exact" {
 		t.Fatalf("纯 RAOP 组应恒为 exact，实际 %s", view.SyncTier)
+	}
+}
+
+// TestSetVolumeClampsToMaxVolume max_volume 是硬上限：SetVolume 必须钳位。
+func TestSetVolumeClampsToMaxVolume(t *testing.T) {
+	m, _, _ := newTestManager(t, "a")
+	ctx := context.Background()
+	maxVolume := 60
+	if _, err := m.UpdatePlayer(ctx, "a", player.PlayerUpdate{MaxVolume: &maxVolume}); err != nil {
+		t.Fatalf("update max volume: %v", err)
+	}
+	p, err := m.SetVolume(ctx, "a", 80, false)
+	if err != nil {
+		t.Fatalf("set volume: %v", err)
+	}
+	if p.Volume != 60 {
+		t.Fatalf("音量 = %d，期望钳到 60", p.Volume)
+	}
+	got, err := m.GetPlayer("a")
+	if err != nil {
+		t.Fatalf("get player: %v", err)
+	}
+	if got.Volume != 60 || got.MaxVolume != 60 {
+		t.Fatalf("落库值 = volume %d / max %d，期望 60 / 60", got.Volume, got.MaxVolume)
+	}
+}
+
+// TestSetVolumeFixedModeIgnores volume_mode=fixed 时忽略 SetVolume，返回当前值且不报错。
+func TestSetVolumeFixedModeIgnores(t *testing.T) {
+	m, _, _ := newTestManager(t, "a")
+	ctx := context.Background()
+	if _, err := m.SetVolume(ctx, "a", 40, false); err != nil {
+		t.Fatalf("set initial volume: %v", err)
+	}
+	mode := player.VolumeModeFixed
+	if _, err := m.UpdatePlayer(ctx, "a", player.PlayerUpdate{VolumeMode: &mode}); err != nil {
+		t.Fatalf("update volume mode: %v", err)
+	}
+	p, err := m.SetVolume(ctx, "a", 80, true)
+	if err != nil {
+		t.Fatalf("fixed 模式不该报错：%v", err)
+	}
+	if p.Volume != 40 || p.Muted {
+		t.Fatalf("fixed 模式应保持当前值 40/未静音，实际 %d/%v", p.Volume, p.Muted)
+	}
+	got, err := m.GetPlayer("a")
+	if err != nil {
+		t.Fatalf("get player: %v", err)
+	}
+	if got.Volume != 40 || got.Muted {
+		t.Fatalf("内存值被改动：%d/%v", got.Volume, got.Muted)
+	}
+}
+
+// TestUpdatePlayerMaxVolumeClampsCurrent 调低上限时当前音量一并钳位。
+func TestUpdatePlayerMaxVolumeClampsCurrent(t *testing.T) {
+	m, _, _ := newTestManager(t, "a")
+	ctx := context.Background()
+	if _, err := m.SetVolume(ctx, "a", 80, false); err != nil {
+		t.Fatalf("set volume: %v", err)
+	}
+	maxVolume := 60
+	p, err := m.UpdatePlayer(ctx, "a", player.PlayerUpdate{MaxVolume: &maxVolume})
+	if err != nil {
+		t.Fatalf("update max volume: %v", err)
+	}
+	if p.Volume != 60 {
+		t.Fatalf("当前音量 = %d，期望随上限钳到 60", p.Volume)
+	}
+}
+
+// TestUpdatePlayerRejectsInvalidVolumeSettings 非法模式 / 越界上限返回参数错误。
+func TestUpdatePlayerRejectsInvalidVolumeSettings(t *testing.T) {
+	m, _, _ := newTestManager(t, "a")
+	ctx := context.Background()
+	badMode := "hardware"
+	if _, err := m.UpdatePlayer(ctx, "a", player.PlayerUpdate{VolumeMode: &badMode}); !errors.Is(err, player.ErrInvalidArgument) {
+		t.Fatalf("非法 volume_mode 错误 = %v，期望 ErrInvalidArgument", err)
+	}
+	badMax := 101
+	if _, err := m.UpdatePlayer(ctx, "a", player.PlayerUpdate{MaxVolume: &badMax}); !errors.Is(err, player.ErrInvalidArgument) {
+		t.Fatalf("越界 max_volume 错误 = %v，期望 ErrInvalidArgument", err)
 	}
 }

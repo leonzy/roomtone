@@ -111,7 +111,7 @@ func (q *Queries) DeleteState(ctx context.Context, arg DeleteStateParams) error 
 }
 
 const getGroup = `-- name: GetGroup :one
-SELECT id, name, master_player_id, party_id, created_at FROM player_groups WHERE id = ?
+SELECT id, name, master_player_id, party_id, created_at, icon FROM player_groups WHERE id = ?
 `
 
 func (q *Queries) GetGroup(ctx context.Context, id string) (PlayerGroup, error) {
@@ -123,6 +123,7 @@ func (q *Queries) GetGroup(ctx context.Context, id string) (PlayerGroup, error) 
 		&i.MasterPlayerID,
 		&i.PartyID,
 		&i.CreatedAt,
+		&i.Icon,
 	)
 	return i, err
 }
@@ -144,7 +145,7 @@ func (q *Queries) GetParty(ctx context.Context, id string) (PartySession, error)
 }
 
 const getPlayer = `-- name: GetPlayer :one
-SELECT id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, last_seen_at, created_at FROM players WHERE id = ?
+SELECT id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, last_seen_at, created_at, volume_mode, max_volume FROM players WHERE id = ?
 `
 
 func (q *Queries) GetPlayer(ctx context.Context, id string) (Player, error) {
@@ -164,6 +165,8 @@ func (q *Queries) GetPlayer(ctx context.Context, id string) (Player, error) {
 		&i.TakeoverBehavior,
 		&i.LastSeenAt,
 		&i.CreatedAt,
+		&i.VolumeMode,
+		&i.MaxVolume,
 	)
 	return i, err
 }
@@ -344,7 +347,7 @@ func (q *Queries) ListGroupMembers(ctx context.Context, groupID string) ([]Playe
 }
 
 const listGroups = `-- name: ListGroups :many
-SELECT id, name, master_player_id, party_id, created_at FROM player_groups ORDER BY created_at, id
+SELECT id, name, master_player_id, party_id, created_at, icon FROM player_groups ORDER BY created_at, id
 `
 
 func (q *Queries) ListGroups(ctx context.Context) ([]PlayerGroup, error) {
@@ -362,6 +365,7 @@ func (q *Queries) ListGroups(ctx context.Context) ([]PlayerGroup, error) {
 			&i.MasterPlayerID,
 			&i.PartyID,
 			&i.CreatedAt,
+			&i.Icon,
 		); err != nil {
 			return nil, err
 		}
@@ -409,7 +413,7 @@ func (q *Queries) ListParties(ctx context.Context) ([]PartySession, error) {
 }
 
 const listPlayers = `-- name: ListPlayers :many
-SELECT id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, last_seen_at, created_at FROM players ORDER BY created_at, id
+SELECT id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, last_seen_at, created_at, volume_mode, max_volume FROM players ORDER BY created_at, id
 `
 
 func (q *Queries) ListPlayers(ctx context.Context) ([]Player, error) {
@@ -435,6 +439,8 @@ func (q *Queries) ListPlayers(ctx context.Context) ([]Player, error) {
 			&i.TakeoverBehavior,
 			&i.LastSeenAt,
 			&i.CreatedAt,
+			&i.VolumeMode,
+			&i.MaxVolume,
 		); err != nil {
 			return nil, err
 		}
@@ -504,6 +510,24 @@ func (q *Queries) UpdateGroup(ctx context.Context, arg UpdateGroupParams) error 
 	return err
 }
 
+const updateGroupIdentity = `-- name: UpdateGroupIdentity :execrows
+UPDATE player_groups SET name = ?, icon = ? WHERE id = ?
+`
+
+type UpdateGroupIdentityParams struct {
+	Name string
+	Icon string
+	ID   string
+}
+
+func (q *Queries) UpdateGroupIdentity(ctx context.Context, arg UpdateGroupIdentityParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateGroupIdentity, arg.Name, arg.Icon, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const updateGroupMemberPosition = `-- name: UpdateGroupMemberPosition :exec
 UPDATE player_group_members SET position = ? WHERE group_id = ? AND player_id = ?
 `
@@ -534,17 +558,25 @@ func (q *Queries) UpdatePartyLeader(ctx context.Context, arg UpdatePartyLeaderPa
 }
 
 const updatePlayerConfig = `-- name: UpdatePlayerConfig :exec
-UPDATE players SET name = ?, takeover_behavior = ? WHERE id = ?
+UPDATE players SET name = ?, takeover_behavior = ?, volume_mode = ?, max_volume = ? WHERE id = ?
 `
 
 type UpdatePlayerConfigParams struct {
 	Name             string
 	TakeoverBehavior string
+	VolumeMode       string
+	MaxVolume        int64
 	ID               string
 }
 
 func (q *Queries) UpdatePlayerConfig(ctx context.Context, arg UpdatePlayerConfigParams) error {
-	_, err := q.db.ExecContext(ctx, updatePlayerConfig, arg.Name, arg.TakeoverBehavior, arg.ID)
+	_, err := q.db.ExecContext(ctx, updatePlayerConfig,
+		arg.Name,
+		arg.TakeoverBehavior,
+		arg.VolumeMode,
+		arg.MaxVolume,
+		arg.ID,
+	)
 	return err
 }
 
@@ -593,8 +625,8 @@ func (q *Queries) UpdatePlayerVolume(ctx context.Context, arg UpdatePlayerVolume
 }
 
 const upsertPlayer = `-- name: UpsertPlayer :exec
-INSERT INTO players (id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, last_seen_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO players (id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, volume_mode, max_volume, last_seen_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     kind = excluded.kind,
     name = excluded.name,
@@ -617,6 +649,8 @@ type UpsertPlayerParams struct {
 	Online           int64
 	EqProfile        string
 	TakeoverBehavior string
+	VolumeMode       string
+	MaxVolume        int64
 	LastSeenAt       sql.NullTime
 }
 
@@ -633,6 +667,8 @@ func (q *Queries) UpsertPlayer(ctx context.Context, arg UpsertPlayerParams) erro
 		arg.Online,
 		arg.EqProfile,
 		arg.TakeoverBehavior,
+		arg.VolumeMode,
+		arg.MaxVolume,
 		arg.LastSeenAt,
 	)
 	return err

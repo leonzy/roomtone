@@ -42,7 +42,7 @@ func (s *playbackStore) SavePlayer(ctx context.Context, p player.Player) error {
 }
 
 func (s *playbackStore) UpdatePlayerConfig(ctx context.Context, p player.Player) error {
-	return s.repo.UpdatePlayerConfig(ctx, p.ID, p.Name, string(p.Takeover))
+	return s.repo.UpdatePlayerConfig(ctx, p.ID, p.Name, string(p.Takeover), p.VolumeMode, p.MaxVolume)
 }
 
 func (s *playbackStore) UpdatePlayerVolume(ctx context.Context, p player.Player) error {
@@ -68,13 +68,13 @@ func (s *playbackStore) ListGroups(ctx context.Context) ([]player.Group, error) 
 	}
 	out := make([]player.Group, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, player.Group{ID: r.ID, Name: r.Name, MasterID: r.MasterPlayerID, PartyID: r.PartyID})
+		out = append(out, player.Group{ID: r.ID, Name: r.Name, Icon: r.Icon, MasterID: r.MasterPlayerID, PartyID: r.PartyID})
 	}
 	return out, nil
 }
 
 func (s *playbackStore) SaveGroup(ctx context.Context, g player.Group) error {
-	row := database.GroupRow{ID: g.ID, Name: g.Name, MasterPlayerID: g.MasterID, PartyID: g.PartyID}
+	row := database.GroupRow{ID: g.ID, Name: g.Name, Icon: g.Icon, MasterPlayerID: g.MasterID, PartyID: g.PartyID}
 	if _, err := s.repo.GetGroup(ctx, g.ID); err != nil {
 		if errors.Is(err, database.ErrNotFound) {
 			return s.repo.InsertGroup(ctx, row)
@@ -82,6 +82,14 @@ func (s *playbackStore) SaveGroup(ctx context.Context, g player.Group) error {
 		return err
 	}
 	return s.repo.UpdateGroup(ctx, row)
+}
+
+func (s *playbackStore) UpdateGroupIdentity(ctx context.Context, id, name, icon string) error {
+	err := s.repo.UpdateGroupIdentity(ctx, id, name, icon)
+	if errors.Is(err, database.ErrNotFound) {
+		return player.ErrGroupNotFound
+	}
+	return err
 }
 
 func (s *playbackStore) DeleteGroup(ctx context.Context, id string) error {
@@ -162,17 +170,19 @@ func (s *playbackStore) LoadState(ctx context.Context, ownerKind, ownerID string
 
 func playerFromRow(r database.PlayerRow) player.Player {
 	return player.Player{
-		ID:       r.ID,
-		Kind:     player.Kind(r.Kind),
-		Name:     r.Name,
-		Address:  r.Address,
-		Model:    r.Model,
-		Caps:     player.ParseCaps(r.Capabilities),
-		Volume:   r.Volume,
-		Muted:    r.Muted,
-		Online:   r.Online,
-		Takeover: player.TakeoverBehavior(r.TakeoverBehavior),
-		EQ:       player.ParseEQ(r.EQProfile),
+		ID:         r.ID,
+		Kind:       player.Kind(r.Kind),
+		Name:       r.Name,
+		Address:    r.Address,
+		Model:      r.Model,
+		Caps:       player.ParseCaps(r.Capabilities),
+		Volume:     r.Volume,
+		Muted:      r.Muted,
+		VolumeMode: r.VolumeMode,
+		MaxVolume:  r.MaxVolume,
+		Online:     r.Online,
+		Takeover:   player.TakeoverBehavior(r.TakeoverBehavior),
+		EQ:         player.ParseEQ(r.EQProfile),
 	}
 }
 
@@ -180,6 +190,14 @@ func playerRow(p player.Player) database.PlayerRow {
 	takeover := string(p.Takeover)
 	if takeover == "" {
 		takeover = string(player.TakeoverPause)
+	}
+	volumeMode := p.VolumeMode
+	if volumeMode == "" {
+		volumeMode = player.VolumeModeDevice
+	}
+	maxVolume := p.MaxVolume
+	if maxVolume <= 0 {
+		maxVolume = player.DefaultMaxVolume
 	}
 	return database.PlayerRow{
 		ID:               p.ID,
@@ -193,23 +211,47 @@ func playerRow(p player.Player) database.PlayerRow {
 		Online:           p.Online,
 		EQProfile:        player.EQJSON(p.EQ),
 		TakeoverBehavior: takeover,
+		VolumeMode:       volumeMode,
+		MaxVolume:        maxVolume,
 	}
+}
+
+// songTrackInfo 解析曲目时一次性取出的字段。
+//
+// Format / SampleRate / BitRate 只用于 signal_path 诊断；解码仍由 ffmpeg
+// 按实际文件处理，不参与组内格式协商。
+type songTrackInfo struct {
+	Title      string
+	Path       string
+	URL        string
+	Duration   float64
+	Format     string
+	SampleRate int
+	BitRate    int
 }
 
 // songTrackResolver 用 SongService 解析。单独定义成函数类型，
 // 避免在 app 包里再引一层接口。
 type songTrackResolver struct {
-	get func(ctx context.Context, id int64) (title, path, url string, duration float64, err error)
+	get func(ctx context.Context, id int64) (songTrackInfo, error)
 }
 
 func (r songTrackResolver) ResolveTrack(ctx context.Context, songID int64) (player.Track, error) {
-	title, path, url, duration, err := r.get(ctx, songID)
+	info, err := r.get(ctx, songID)
 	if err != nil {
 		return player.Track{}, fmt.Errorf("resolve song %d: %w", songID, err)
 	}
-	t := player.Track{SongID: songID, Title: title, Path: path, Duration: time.Duration(duration * float64(time.Second))}
-	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
-		t.RemoteURL = url
+	t := player.Track{
+		SongID:     songID,
+		Title:      info.Title,
+		Path:       info.Path,
+		Duration:   time.Duration(info.Duration * float64(time.Second)),
+		Format:     info.Format,
+		SampleRate: info.SampleRate,
+		BitRate:    info.BitRate,
+	}
+	if strings.HasPrefix(info.URL, "http://") || strings.HasPrefix(info.URL, "https://") {
+		t.RemoteURL = info.URL
 	}
 	if t.Path == "" && t.RemoteURL == "" {
 		return player.Track{}, fmt.Errorf("song %d 没有可播放的本地文件或地址", songID)

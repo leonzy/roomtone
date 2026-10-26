@@ -78,6 +78,7 @@ func (m *Manager) DeleteGroup(ctx context.Context, groupID string) error {
 	delete(m.engines, "group:"+groupID)
 	delete(m.groups, groupID)
 	m.retiredGroups[groupID] = true
+	m.cancelSleepTimerLocked(groupID)
 	m.mu.Unlock()
 
 	if m.deps.Store != nil {

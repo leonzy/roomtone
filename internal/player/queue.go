@@ -179,18 +179,35 @@ func (q *Queue) Append(songIDs ...int64) int {
 
 // InsertNext 插播：插到当前项之后（规范顺序上），并把它作为下一首。
 func (q *Queue) InsertNext(songID int64) int {
+	return q.InsertNextMany(songID)
+}
+
+// InsertNextMany 批量插播：按传入顺序插到当前项之后，并保证它们
+// 在随机播放顺序里也紧跟当前项（否则开了 shuffle 后“下一首”会失效）。
+// 返回第一首插入项在规范顺序中的下标。
+func (q *Queue) InsertNextMany(songIDs ...int64) int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if len(songIDs) == 0 {
+		return q.current
+	}
 	if len(q.items) == 0 {
-		q.items = []int64{songID}
+		q.items = append([]int64(nil), songIDs...)
 		q.current = 0
 		q.rebuildOrderLocked()
 		return 0
 	}
 	at := q.current + 1
-	q.items = append(q.items[:at], append([]int64{songID}, q.items[at:]...)...)
-	// 当前下标不变，但插入了新项，需要重排 order 并把新项排在当前项之后。
-	q.rebuildOrderLocked()
+	items := make([]int64, 0, len(q.items)+len(songIDs))
+	items = append(items, q.items[:at]...)
+	items = append(items, songIDs...)
+	items = append(items, q.items[at:]...)
+	q.items = items
+	priority := make([]int, len(songIDs))
+	for i := range priority {
+		priority[i] = at + i
+	}
+	q.rebuildOrderWithPriorityLocked(priority)
 	return at
 }
 
@@ -422,6 +439,12 @@ func (q *Queue) Restore(s QueueSnapshot) {
 
 // rebuildOrderLocked 在结构变化后重建播放顺序，保持当前项位置不变。
 func (q *Queue) rebuildOrderLocked() {
+	q.rebuildOrderWithPriorityLocked(nil)
+}
+
+// rebuildOrderWithPriorityLocked 重建播放顺序；priority 中的下标会紧跟
+// 当前项，其余项再随机。用于“下一首播放”在 shuffle 下仍然真的下一首。
+func (q *Queue) rebuildOrderWithPriorityLocked(priority []int) {
 	n := len(q.items)
 	if !q.shuffle || n == 0 {
 		q.order = nil
@@ -430,12 +453,20 @@ func (q *Queue) rebuildOrderLocked() {
 	}
 	cur := q.current
 	order := make([]int, 0, n)
+	seen := make(map[int]bool, n)
 	if cur >= 0 && cur < n {
 		order = append(order, cur)
+		seen[cur] = true
 	}
-	rest := make([]int, 0, n)
+	for _, idx := range priority {
+		if idx >= 0 && idx < n && !seen[idx] {
+			order = append(order, idx)
+			seen[idx] = true
+		}
+	}
+	rest := make([]int, 0, n-len(order))
 	for i := 0; i < n; i++ {
-		if i != cur {
+		if !seen[i] {
 			rest = append(rest, i)
 		}
 	}

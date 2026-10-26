@@ -81,7 +81,7 @@ Legend: ✅ on par or better / ⚠️ gap but acceptable / ❌ not implemented /
 | Capability | LMS | This project | Verdict |
 |---|---|---|---|
 | Server-side alarm (timed playback) | ✅ CLI `alarm`, repeat days / volume / playlist | ✅ `alarms` table + 15s scheduler; starts the playlist on the target group and fades the volume in; `/alarms` CRUD + `/alarms/{id}/test` | ✅ |
-| Sleep timer (timed stop) | ✅ | ⚠️ implemented client-side (Flutter `SleepTimer`); per-device, not persisted across clients | ⚠️ |
+| Sleep timer (timed stop) | ✅ | ✅ server-side `/groups/{id}/sleep`; pauses the group when it fires; in-memory, lost on restart | ✅ |
 | Party / multi-group playback | ❌ no such concept | ✅ coarse alignment across groups (1500ms tolerance, seek-back when exceeded) | ✅ |
 
 ### 3.6 Queue, library, interfaces

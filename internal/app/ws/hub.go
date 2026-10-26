@@ -151,10 +151,11 @@ func (c *Client) SetPlayerID(id string) {
 
 // Hub WS 服务端。
 type Hub struct {
-	bus     *player.EventBus
-	tickets *TicketStore
-	logger  *slog.Logger
-	onMsg   func(c *Client, payload []byte)
+	bus          *player.EventBus
+	tickets      *TicketStore
+	logger       *slog.Logger
+	onMsg        func(c *Client, payload []byte)
+	onDisconnect func(c *Client)
 
 	mu      sync.RWMutex
 	clients map[*Client]struct{}
@@ -219,6 +220,16 @@ func (h *Hub) Tickets() *TicketStore { return h.tickets }
 func (h *Hub) OnMessage(fn func(c *Client, payload []byte)) {
 	h.mu.Lock()
 	h.onMsg = fn
+	h.mu.Unlock()
+}
+
+// OnDisconnect 注册连接断开回调。
+//
+// 回调在连接已从 hub 索引中摘除后执行，调用方可以安全地查询 Sender 判断
+// 同一设备是否已经重连。回调里不要做阻塞操作：它在 readLoop 的收尾路径上。
+func (h *Hub) OnDisconnect(fn func(c *Client)) {
+	h.mu.Lock()
+	h.onDisconnect = fn
 	h.mu.Unlock()
 }
 
@@ -292,6 +303,16 @@ func (h *Hub) RegisterDevice(c *Client, playerID string) {
 	h.mu.Unlock()
 }
 
+// UnregisterDevice 解除连接与设备的绑定（客户端正常退出时调用）。
+func (h *Hub) UnregisterDevice(c *Client) {
+	h.mu.Lock()
+	if c.playerID != "" && h.byID[c.playerID] == c {
+		delete(h.byID, c.playerID)
+	}
+	c.playerID = ""
+	h.mu.Unlock()
+}
+
 // Sender 取某设备的指令通道。
 func (h *Hub) Sender(playerID string) (CommandSender, bool) {
 	h.mu.RLock()
@@ -351,7 +372,11 @@ func (h *Hub) drop(c *Client) {
 		if c.playerID != "" && h.byID[c.playerID] == c {
 			delete(h.byID, c.playerID)
 		}
+		fn := h.onDisconnect
 		h.mu.Unlock()
 		_ = c.conn.Close()
+		if fn != nil {
+			fn(c)
+		}
 	})
 }

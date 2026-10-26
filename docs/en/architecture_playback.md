@@ -20,7 +20,7 @@
 | G2 | **Push to AirPlay speakers (AirPlay 1 / RAOP)** | Server pushes PCM to the speaker; no client involved |
 | G3 | **Push to DLNA/UPnP speakers** | Server drives the renderer over SOAP; the device pulls the stream |
 | G4 | **Multi-room sync** | Exact sync inside AirPlay groups; aligned start only for DLNA |
-| G5 | **First-party client joins as a player** | Flutter client registers as a `local` sink and can share a group |
+| G5 | **First-party client joins as a player** | Flutter client registers as a `local` sink and can share a group. ⏳ **not implemented on the client** (the server side is ready, see §5.2) |
 | G6 | **Resume after restart** | Restore track and position after a server restart or device reconnect |
 | G7 | **Party mode** | Multiple groups play the same track at once; each group keeps its own volume and can join/leave without affecting the others (§4.7) |
 | G8 | **Per-speaker equalizer** | Independent 10-band EQ per speaker, applied inside the server-side PCM pipeline (§4.8) |
@@ -98,6 +98,25 @@ internal/player/
 ```
 
 ## 4. Core Mechanics
+
+### 4.0 Zone semantics
+
+The user-visible unit of playback is the **zone**; the backend calls it `group`. They map one to one, with no new entity:
+
+| Concept | Backend entity | Notes |
+|---|---|---|
+| Zone | `groups` row | One or more output devices; a single-member group = a standalone zone |
+| Output | `players` row | `local` / `raop` / `dlna` |
+| Control focus | client-local state | "Which zone I am looking at"; **never sent to the server**, affects no playback |
+
+Four hard constraints:
+
+1. **Zones run in parallel.** Each zone has one engine (`engines["group:"+id]` in `manager.go`), each holding its own queue, transport state and timeline, and several can sound at once. `GET /playback` returns every zone, not "the current zone".
+2. **Switching focus sends no command.** Switching zones on the client only changes the local `PlaybackFocus`; only inline transport, volume and explicit transfer send requests.
+3. **Transfer is an explicit action.** `POST /groups/{to}/transfer` is never triggered implicitly by "tapping another zone" (the v2 frontend design did that; v3 changed it — see [interaction design §4.2](./architecture_playback_ui.md)).
+4. **Parallelism has a ceiling.** Every playing zone holds one decode slot (default 4, `budget.go`); each group in a party holds one, and a group with non-flat EQ is forced to hold one. Starting a fifth zone returns 503 `ErrBudgetExhausted`, and the UI must say "simultaneous playback limit reached" rather than "transcoder busy". This is one of the hard gaps versus Roon (§11.1 H5) and cannot be removed by UI work.
+
+**This Device is a built-in zone**: after startup the client must register itself as a `local` device over WS `register_player`, and the server creates a single-member group automatically. Until it registers, This Device appears in no list — that is the root cause of "the playback output page has no This Device" (see §5.2).
 
 ### 4.1 One decode source, many sinks (the foundation of sync)
 
@@ -312,17 +331,33 @@ type PullSink interface {
 
 ### 5.2 `local` sink (first-party client)
 
+> **Status: implemented on the server, not implemented on the client (F7-02).** The `register_player` branch at `internal/app/playback.go:356` and `sink/local` both exist, but `clients/player` has never sent this message, so the `local` sink currently only has the fake client from unit tests.
+
 ```
 client connects WS /api/v1/playback/events
-  → register_player {kind:"local", caps:{codecs:[...], sample_rates:[44100,48000]}}
+  → register_player {id, kind:"local", name, caps:{codecs:[...], sample_rates:[44100,48000]}}
 server sends load {song_id, position, play_at:<unix_ms>}
 client starts at (play_at - local clock offset)
-client reports {position, buffering, volume, state} every 500ms
+client reports {position, buffering, volume, state, rtt_ms} every 500ms
 ```
 
 - The clock offset is estimated once from the server's `server_time` plus a half-RTT correction; ±50ms is achievable on a LAN.
 - The client pulls from the existing `/songs/{id}/stream`, with `format` chosen by negotiation.
 - **This is the highest value-per-effort tier**: no external protocol risk, yet "phone + living-room speaker" works immediately.
+
+**Registration lifecycle (the client must follow it)**:
+
+| Moment | Action | Server behaviour |
+|---|---|---|
+| Startup / WS connected | `register_player` (`id` persisted, unchanged across restarts) | `UpsertPlayer` + auto-create a single-member group + broadcast `speaker_seen` |
+| Every 500ms | `report` | Refresh `last_seen_at`, determine online status |
+| Disconnected > 30s | — | Mark `online=false`, broadcast `member_changed{action:offline}` |
+| Reconnect | `register_player` again with the same `id` | Reuse the original zone, do not create a new one |
+| Normal exit | `unregister_player` | Detach from all groups, clean orphan groups, release the sink |
+
+- **`id` must be persisted**: store a random UUID locally; do not use the device model or IP — otherwise a reinstall or network change creates a new zone and leaves a zombie behind.
+- **The client must not apply EQ while the server is in control**: EQ has already been applied in the server-side PCM pipeline (§4.8); enabling it again on the client means double equalisation.
+- **Degraded state before registration**: the client can still play locally (pure local mode), but the zone list shows "This Device output unavailable + Retry" and must not silently hide it.
 
 ### 5.3 `raop` sink (AirPlay 1)
 
@@ -420,6 +455,10 @@ CREATE TABLE players (
     eq_profile    TEXT NOT NULL DEFAULT '{}',  -- JSON: {enabled,preset,bands[10],preamp}
     takeover_behavior TEXT NOT NULL DEFAULT 'pause'  -- when this device is taken over: pause | follow (local only)
                   CHECK(takeover_behavior IN ('pause','follow')),
+    volume_mode   TEXT NOT NULL DEFAULT 'device'     -- 0043: device | fixed | dsp
+                  CHECK(volume_mode IN ('device','fixed','dsp')),
+    max_volume    INTEGER NOT NULL DEFAULT 100       -- 0043: hard volume ceiling 0-100
+                  CHECK(max_volume BETWEEN 0 AND 100),
     last_seen_at  DATETIME,
     created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -427,6 +466,7 @@ CREATE TABLE players (
 CREATE TABLE player_groups (
     id               TEXT PRIMARY KEY,
     name             TEXT NOT NULL DEFAULT '',
+    icon             TEXT NOT NULL DEFAULT '', -- 0044: zone icon key, empty = default
     master_player_id TEXT NOT NULL DEFAULT '',
     party_id         TEXT,                   -- non-null = this group is in a party
     created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -490,9 +530,9 @@ Paths are relative to `/api/v1` (`@BasePath` in `main.go`) and map one-to-one on
 | GET | `/players` | — | Device list: online, standby, caps, volume, EQ |
 | POST | `/players` | `{address, kind, name?, device_id?, public_key?}` | Manual add; `kind` is `raop` / `dlna`, 201 on success; 403 when network sinks are disabled |
 | POST | `/players/discover` | — | Trigger SSDP + mDNS scan, returns `{speakers, added, updated, skipped, errors}`; 503 when discovery is disabled |
-| PUT | `/players/{id}` | `{name?, takeover_behavior?}` | Rename / multi-client conflict policy (`pause` / `follow`) |
+| PUT | `/players/{id}` | `{name?, takeover_behavior?, volume_mode?, max_volume?}` | Rename / multi-client conflict policy (`pause` / `follow`) / volume mode (`device` / `fixed` / `dsp`) and ceiling (0-100; lowering it clamps the current volume) |
 | DELETE | `/players/{id}` | — | Permanent delete: stops the engine before detaching members; a solo group inside a party leaves the party first |
-| POST | `/players/{id}/volume` | `{volume, muted}` | Single-device volume |
+| POST | `/players/{id}/volume` | `{volume, muted}` | Single-device volume; clamped to `max_volume`, ignored (returns the current value) when `volume_mode=fixed` |
 | POST | `/players/{id}/power` | `{on}` | Standby / wake; `standby` only means the server stops pushing, not a powered-off device |
 | POST | `/players/{id}/reconnect` | — | Drop the cached sink and re-handshake; 409 while still offline |
 | GET | `/players/{id}/eq` | — | Includes the server-computed `preamp` |
@@ -503,9 +543,10 @@ Paths are relative to `/api/v1` (`@BasePath` in `main.go`) and map one-to-one on
 
 | Method | Path | Body / params | Notes |
 |---|---|---|---|
-| GET | `/groups` | — | Groups (including `sync_tier`, `member_caps`, `status`) |
+| GET | `/groups` | — | Groups (including `sync_tier`, `member_caps`, `status`, `signal_path`); `member_caps[].syncing` is true while a member is still converging after joining/waking. `signal_path` is a read-only per-zone diagnostic (`lossless\|enhanced\|lossy` + five-stage chain, F7-08 backend implemented) |
 | POST | `/groups` | `{name, member_ids, master_id?}` | 201; 409 when a member already belongs to another group, 400 on sync-tier mismatch |
 | GET | `/groups/{id}` | — | Single group |
+| PUT | `/groups/{id}` | `{name, icon?}` | Zone rename and icon; `name` is 1–40 characters after trimming, `icon` must be in the whitelist (empty = default); persisted across restarts |
 | DELETE | `/groups/{id}` | — | Dissolve the group, members fall back to their solo groups; 409 while the group is in a party (leave the party first) |
 | POST | `/groups/{id}/master` | `{player_id}` | Change master; 400 for a non-member |
 | POST | `/groups/{id}/members` | `{player_id}` | Join during playback, attaching at the current position; 409 if already in another group |
@@ -519,6 +560,8 @@ Paths are relative to `/api/v1` (`@BasePath` in `main.go`) and map one-to-one on
 | POST | `/groups/{id}/queue` | `{song_ids[]}` | Append songs |
 | PUT | `/groups/{id}/queue/reorder` | `{from, to}` or `{remove_index}` | Move semantics; remove and reorder are mutually exclusive |
 | POST | `/groups/{id}/transport` | `{action, position?, repeat?, shuffle?}` | `play\|pause\|stop\|next\|prev\|seek` (seek in seconds); `repeat=off\|all\|one` and `shuffle=bool` also go here; 503 when the decode budget is exhausted |
+| POST | `/groups/{id}/sleep` | `{minutes}` | Set a one-shot sleep timer; `0` cancels, `1~720` minutes; pauses the group and broadcasts `state` when it fires; in-memory only, lost on restart |
+| GET | `/groups/{id}/sleep` | — | `{remaining_seconds, active}`; `remaining_seconds` is rounded up, `active=false` after cancel or firing |
 
 **Alarms**
 
@@ -557,7 +600,7 @@ Every endpoint needs swag annotations and `@Security BearerAuth`; `@Router` path
 
 **There is no `/playback/targets`**: v2 returns everything from `GET /playback` (groups, status, caps, `party_id`), so the output picker needs no separate endpoint. There is also no "current party" GET: the party id lives in each group's `party_id`, so clients read `/playback` first and then `/playback/party/{id}`.
 
-**Transfer compensation semantics**: `transfer` starts the destination at `position + transfer_compensation_ms` (default 800ms), compensating for the gap between the source stopping and the destination sounding. Compensation happens exactly once, on the server; clients must not add their own (see frontend doc §4.3).
+**Transfer compensation semantics**: `transfer` starts the destination at `position + transfer_compensation_ms` (default 800ms), compensating for the gap between the source stopping and the destination sounding. Compensation happens exactly once, on the server; clients must not add their own (see frontend doc §4.7).
 
 **Standby semantics**: `standby=true` from `POST /players/{id}/power` only means the server stops pushing to that device (DLNA sends Stop and clears the URI, RAOP stops RTP); it does not power the hardware off, since neither RTSP nor DLNA has a generic power-on command. Standby members leave the sync ring and re-attach at the current position when woken.
 
@@ -587,7 +630,7 @@ Common envelope: `{seq, type, time_ms, …}`. `seq` is monotonic and shared by e
 | `state` | `group_id, song_id, position_ms, status` | Playback state, track or position changes | The only source of playback state; decide relevance by `group_id` |
 | `target_changed` | `group_id, from_group_id, reason` | Playback was moved to another group (`reason=transfer`) | Follow `players.takeover_behavior`: `pause` stops immediately and informs the user, `follow` silently becomes a pure controller |
 | `member_changed` | `group_id?, player_id, action` | `action=join\|update\|leave\|offline\|online\|deleted\|standby\|wake\|reorder`; `join`/`update`/`leave`/`reorder` carry `group_id` (`reorder` has no `player_id`), `offline`/`online` fire once per containing group | Standby and wake only travel here; there are no separate `power` / `standby` / `wake` events |
-| `group_changed` | `group_id, player_id?, action` | `action=deleted` (dissolved), `master_changed` (carries `player_id`) | **Creating a group emits nothing**: the caller refetches `/playback` or waits for the first `state` |
+| `group_changed` | `group_id, player_id?, action` | `action=deleted` (dissolved), `master_changed` (carries `player_id`), `renamed` (name/icon changed, carries `name`) | **Creating a group emits nothing**: the caller refetches `/playback` or waits for the first `state` |
 | `speaker_seen` | `player_id, name, kind` | Discovery found a new device | Offer "new speaker found"; never auto-join any group |
 | `party_changed` | `party_id, group_id?, name?, action` | `action=created` (carries `name`), `joined` / `left` (carry `group_id`), `ended` | Refetch `/playback/party/{id}`; clear party state after `ended` |
 | `group_drift` | `party_id, group_id, offset_ms, corrected, unaligned` | Each correction-loop measurement inside a party; `corrected=false` marks a failed correction, `unaligned=true` means retries were abandoned | After 3 `corrected=false` events or `unaligned=true`, mark the group "out of sync"; do not repeat toasts |
@@ -658,6 +701,8 @@ Version one exposes REST/WS only, avoiding a three-repo change.
 
 **MVP (P0+P1+P2, unicast without sync) ≈ 2.5 months; with sync (including the correction loop) + EQ ≈ 3.6 months; with party and engineering wrap-up ≈ 4.4 months (19 weeks, ~103 person-days).**
 
+> **P0 status (2026-10-26)**: the server side (queue / state machine / `local` sink / WS events) is complete and tested; **the two-end integration was never done** — the client has neither a WS client nor `register_player`, so the `local` sink only has the fake client from unit tests. The gap list and follow-up tasks are in [development plan §0.2 / §5.1](./playback_development_plan.md#02-v3-revision-design-vs-implementation-gaps-2026-10-26-audit).
+
 ### 9.1 Automated verification
 
 - **Unit**: timeline math (injected fake clock), SDP generation, AES/RSA known-answer vectors, RTP golden bytes, queue state machine.
@@ -684,7 +729,38 @@ Version one exposes REST/WS only, avoiding a three-repo change.
 | The correction loop introduces audible skips | Medium | Worse listening experience | Only act above 10ms, once per member per cycle, silence fill above 200ms; `player_drift_ms` records every adjustment |
 | EQ forcing decoding and exhausting slots | Medium | Feature unusable | Error message names the cause; the UI shows remaining slots before EQ is enabled |
 
-## 11. Appendix: Reference Index
+## 11. Capability Boundary vs Roon
+
+The interaction model is aligned with Roon (Zone / focus / grouping / transfer / signal path — see the [interaction design](./architecture_playback_ui.md)), but **"fully achieving Roon's effect" does not hold at the audio layer**. The table below splits the gaps into two kinds: those a design change can close, and those that need a different protocol.
+
+### 11.1 Hard gaps (a design change cannot close them)
+
+| # | Capability | Roon | This project | Nature of the gap |
+|---|---|---|---|---|
+| H1 | **Sync precision** | RAAT end-to-end ~1ms (shared clock + device-side buffer feedback) | RAOP targets ±20ms; DLNA only aligns start times (200–500ms, drifting) | **Protocol ceiling**: RAOP has no shared clock, so a correction loop can only pull it back after the fact; two speakers in one room will comb-filter |
+| H2 | **Local output fidelity** | macOS hog mode / WASAPI exclusive, bit-perfect, native DSD | Client `just_audio` → OS mixer, resampled by the system, DSD must be converted to PCM | **Client audio stack**: bit-perfect needs CoreAudio/AAudio exclusive access; no server change can fix it |
+| H3 | **DSP depth** | Parametric EQ, convolution (room correction), upsampling, crossfeed, headroom | 10-band graphic EQ + loudness normalization | **Scope**: convolution and upsampling are a different order of engineering |
+| H4 | **Device coverage** | Roon Ready / RAAT devices (hundreds) | AirPlay 1 + DLNA + This Device | **Ecosystem**: RAAT is proprietary and cannot be joined |
+| H5 | **Concurrent zones** | Scales with CPU; dozens of zones playing different content | 4 concurrent decode groups by default; the fifth returns 503 (`budget.go`) | **Resource model**: tunable, but bounded by CPU and single-host decoding |
+
+### 11.2 Fixable but not yet fixed (design layer)
+
+| # | Capability | Roon's approach | Current state | Recommendation |
+|---|---|---|---|---|
+| S1 | **Volume modes** | Per device, one of Device volume / Fixed volume / DSP volume | Only `volume` + `volume_offset` | Add a `volume_mode` column; Fixed is needed by users feeding a preamp (avoids double volume) |
+| S2 | **Volume limits** | Per-zone maximum to prevent accidental blasting | None | Add `max_volume`, clamp server-side and echo it back |
+| S3 | **Sleep timer** | Yes ("stop in 30 minutes") | Implemented via `/groups/{id}/sleep` (in-memory, pauses the group when it fires) | Could persist to the alarms table to survive restarts |
+| S4 | **Queue "play next"** | Play Now / Play Next / Add to Queue | `Queue.InsertNext` exists, **not exposed in the UI** | Frontend wiring only |
+| S5 | **Focus follows playback** | Optional: focus switches to the zone that starts playing | Listed as undecided | Make it a setting, default off |
+| S6 | **Transfer gap** | RAAT pre-connects, near-instant | 0.5–3s (RAOP handshake + buffering) | Protocol-determined; only an honest transition state can soften it. **Implemented**: target row shows “Switching…”, source row shows “Handing over”, cleared on the target's `state` event, and a “Switch timed out, check the device” hint after 5s (`zone_transfer_provider.dart`) |
+
+### 11.3 Conclusion
+
+- **If the goal is "Roon-style multi-room control"** → the design is sufficient; finishing F7 gets you there, no new protocol needed.
+- **If the goal is "Roon's fidelity and sync"** → it needs a RAAT-like protocol (shared clock + device-side buffer feedback) and an exclusive client audio stack — a different project in scope, outside this design.
+- **Do not** file H1–H5 as "to be optimized": they are boundaries, not backlog items. Stating them plainly is more useful than pretending they can be closed.
+
+## 12. Appendix: Reference Index
 
 | Topic | Reference |
 |---|---|

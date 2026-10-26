@@ -40,6 +40,25 @@ v2 does exactly two things:
 
 **Every M5 / M6 / M7 task is re-run against the v2 criteria.** Results that already pass are kept; only the new assertions need re-running. Nothing is skipped because "it passed before".
 
+## 0.2 v3 revision: design vs implementation gaps (2026-10-26 audit)
+
+v2 fixed "acceptance written as prose"; v3 has to fix **"the docs say it is done, but the user cannot see it"**. The trigger was a hands-on check: `/settings/output` did not even list This Device, and the player bar had no output entry at all. After checking item by item, every gap sits on the **client** side — the backend M0–M8 code and tests are real (per-group engines, correction loop, prefetch, metrics, power, group volume are all there), while the client only built "the device-management panel inside settings"; not a line of the player-page shape or the WS link described in the design exists.
+
+| # | Design item | Design source | Code status | Evidence | Handling |
+|---|---|---|---|---|---|
+| 1 | Client WS client (ticket → upgrade → reconnect → seq dedup → degraded polling) | UI §7.4 | **Does not exist.** `clients/player` has no WebSocket dependency or code | `grep -rln "WebSocket\|web_socket_channel" clients/player/lib` returns nothing | F7-01 |
+| 2 | This Device registered as a `local` sink (G5) | Architecture §5.2, UI §7.3 | **Does not exist.** The server's `register_player` branch never receives a message | `grep -rn "register_player" clients/player/lib` returns nothing; `internal/app/playback.go:356` is the only entry | F7-02 |
+| 3 | Output entry on the player bar | UI §3.2 | **Does not exist.** Player widgets do not reference the output feature; `/settings/output` is the only entry | `grep -rn "OutputPage\|TransferSheet" clients/player/lib` only hits `app_router.dart:300` | F7-03 |
+| 4 | Player-page output picker sheet | UI §4 | **Does not exist.** Only the settings-page `OutputPage` (AppBar "Playback output" + device list) | `output_page.dart:146` | F7-04 |
+| 5 | Zone naming and icons | UI §6.2 (implicit) | **Backend implemented**: `PUT /groups/{id}` + `player_groups.icon` (0044); the client naming/icon UI is not started | `routers.go`, `RenameGroup` in `manager.go` | F7-05 |
+| 6 | Group volume UI | Architecture §7.1 `GET/POST /groups/{id}/volume` | **API and provider exist, the page never calls them** (dead code) | `grep -rn "setGroupVolume" clients/player/lib` only `output_provider.dart:304` | F7-06 |
+| 7 | `takeover_behavior` setting | UI §7.3 | **API parameter only**, no settings-page entry | `output_api.dart:82`; DB `0040_players.sql:17` | F7-07 |
+| 8 | Signal path indicator | New in this document (Roon model) | **Backend implemented**: `GroupView.signal_path` (three-colour kind + five-stage chain); the client `signal_path.dart` is not started | `internal/player/signal_path.go` | F7-08 |
+| 9 | **Zones running in parallel** (per-zone queue/transport, picker switches control focus) | New in this document (Roon model) | Backend **already supports it** (`m.engines["group:"+g.ID]`, `GET /playback` returns every zone); the UI design is still "single focus + tap-to-move" | `manager.go:1050`, `manager.go:439` | Design revision UI §4 |
+| 10 | Disconnect degradation: fall back to 3s polling after 3 failures | UI §7.4 | No WS; `OutputPage` polls every 4s, i.e. permanently degraded | `output_page.dart:20` comment | Part of F7-01 |
+
+**Conclusion**: M0–M8's "code complete" holds, but v0.1's acceptance sentence "can drive client playback (`local` sink)" never held — with no client participating, the `local` sink only has the fake client from unit tests. The `[x] M2` in §11 should be read as "server side complete"; client integration is not `Not run`, it is **not started**.
+
 ## 1. Delivery scope
 
 | Version | Milestones | What the user can perceive | Cumulative person-days |
@@ -295,6 +314,23 @@ The frontend lives in `clients/player`; landing points are in [interaction desig
 
 Frontend total ≈ 28 person-days. F4 and F5 are independent and can run in parallel.
 
+### 5.1 F7: client integration and the Roon-style zone picker (new in v3)
+
+F0-02 / F0-03 / F1-01 / F1-02 are ticked "done" in §11 but were never started (see §0.2). F7 is not a new feature; it is **actually building the client part that was already designed**, and redoing the interaction around Roon's zone model.
+
+| ID | Task | Main files | Acceptance (executable assertions) | Depends | d |
+|---|---|---|---|---|---|
+| F7-01 | WS client: ticket → upgrade → backoff reconnect → `seq` dedup → degraded polling | `lib/features/playback/data/playback_socket.dart` | ① first event within 1s after `POST /playback/events/ticket`; ② reconnect intervals after a drop are 1/2/4/8s; ③ inject `seq=5` then `seq=3`, UI state unchanged; ④ after 3 consecutive failures the `GET /playback` polling interval is 3s and "Live state unavailable" appears at the top; ⑤ `rg 'Timer.periodic' lib/features/playback` only hits the degraded path | F0-01 | 2 |
+| F7-02 | Register This Device as a `local` sink + heartbeat + command execution | `playback/data/local_output.dart`, `playback/domain/command.dart` | ① within 5s of startup `GET /players` shows `kind=local` with `online=true`; ② after killing the WS, that device is `online=false` within 30s; ③ server `load{play_at}` to actual sound deviation < 150ms; ④ all four commands `pause/seek/volume/skip` change `just_audio` state; ⑤ local EQ is greyed out while the server is in control | F7-01, B2-04 | 3 |
+| F7-03 | Player-bar zone entry (zone name + icon + status dot) | `player/presentation/widgets/zone_button.dart` | ① visible on all three player bars: mini / desktop / mobile; ② with no speakers it shows "This Device" instead of a blank; ③ tapping opens the picker without interrupting playback (`position` from `GET /playback` keeps increasing) | F7-04 | 1.5 |
+| F7-04 | Roon-style zone picker: full zone list + inline volume/transport + focus switching | `output/presentation/widgets/zone_picker.dart` | ① the list contains every zone (including idle/offline), sorted "online → same network → name"; ② tapping a zone row **only switches focus**: every zone's `status` in `GET /playback` is unchanged before and after; ③ inline ▶ changes only that zone's `status`; ④ inline volume slider debounces 300ms then `POST /players/{id}/volume`; ⑤ focus is persisted and returns to the last zone after a restart | F7-01, F7-02 | 3 |
+| F7-05 | Zone naming and icons | backend `PUT /groups/{id}` + `output/presentation/widgets/zone_rename.dart` | ① after `PUT`, `GET /groups/{id}` returns the new name; ② survives a server restart; ③ name is 1–40 characters, empty returns 400; ④ an icon key outside the whitelist returns 400 | B8-04 | 1.5 |
+| F7-06 | Group volume UI wiring | `output/presentation/widgets/group_volume.dart` | ① after dragging the group slider each member's actual volume = `clamp(base + offset)`; ② a per-member ±10 trim echoes back immediately; ③ on partial failure list the failing members and do not roll back the successes | B5-10 | 1 |
+| F7-07 | `takeover_behavior` setting | `settings/presentation/pages/speaker_settings_page.dart` | ① after switching, `GET /players/{id}` returns the new value; ② when taken over by another device, `pause` pauses immediately and `follow` degrades silently; ③ uses the cached value when offline | F1-02 | 0.5 |
+| F7-08 | Signal path indicator | backend `GroupView.signal_path` + `player/presentation/widgets/signal_path.dart` | ① passthrough = green, through DSP = purple, lossy transcode = orange; ② after enabling EQ the same track's `signal_path` changes from `lossless` to `enhanced`; ③ tapping shows the five stages "source → decode → DSP → output → device" matching the actual parameters | B6-01 | 2 |
+
+F7 total ≈ 14.5 person-days. **F7-02 is a prerequisite for the v0.1 acceptance sentence**: without it, "can drive client playback" does not hold, and the `local` sink only has the fake client from unit tests.
+
 ## 6. Gates
 
 When a gate fails, **do not change the acceptance criteria**; change scope or technology. Each gate records the fallback up front so the decision is not improvised later.
@@ -368,14 +404,15 @@ Task detail lives in §4 / §5; only milestones are tracked here so the two neve
 
 - [x] M0 foundations (B0-01 ~ B0-09) — done
 - [x] M1 queue and transport (B1-01 ~ B1-06) — done
-- [x] M2 decode and local sink (B2-01 ~ B2-06) → v0.1 — done; client integration Not run
+- [x] M2 decode and local sink (B2-01 ~ B2-06) → v0.1 — **server side** done; client integration **not started** (no WS / no `register_player`, see §0.2)
 - [x] M3 RAOP (B3-01 ~ B3-08) → G1 → v0.2 — code complete; **G1 real-device matrix Not run**
 - [x] M4 DLNA (B4-01 ~ B4-08) → v0.3 — code complete; real devices Not run
 - [x] M5 sync groups (B5-01 ~ B5-11) → G2 → v0.4 — code and scripts complete; **G2 real dual-device cross-correlation Not run** (script self-test passes, see X-06)
 - [x] M6 per-speaker EQ (B6-01 ~ B6-07) → G3 → v0.5 — done; G3 real-device listening Not run
 - [x] M7 party (B7-01 ~ B7-07) → G4 — done (`party_test.go` in CI); G4 real devices Not run
 - [x] M8 resilience and observability (B8-01 ~ B8-05) → v1.0 — done (B8-04 lifecycle endpoints, B8-03 metrics, B8-05 power)
-- [x] Frontend F0 ~ F6 — done (`clients/player`: F0 panel/standby, F1 group creation and member params, F2 transfer, F3 EQ, F4 party, F5 metrics, F6 standby greying); real-device and TV/Lynx walkthroughs Not run; member ordering uses up/down buttons (no drag on TV) against `PUT /groups/{id}/members/order`, and the "aligning" badge uses `member_caps[].syncing`
+- [~] Frontend F0 ~ F6 — **settings-page shape only** (`/settings/output` device/group management panel: grouping, member parameters, transfer, EQ, party, metrics, standby); **F0-02 WS client, F0-03 player-bar entry and picker sheet, F1-01 local dual-mode takeover, F1-02 takeover preference are all not started** (see §0.2); real-device and TV/Lynx walkthroughs Not run
+- [ ] F7 client integration + Roon-style zone picker (F7-01 ~ F7-08) — not started; F7-02 is a prerequisite for the v0.1 acceptance sentence
 - [~] X wrap-up: X-02 allowlist / X-04 Bundle limits / X-05 performance baseline / X-06 documentation backfill (incl. the compatibility matrix) / X-07 guard done; **X-01/X-03 partial** (Swagger fully checked through this round's new endpoints; the Docker discovery fallback doc awaits real-device conclusions)
 
 ### 11.1 Next commit sequence (dependency order, one commit each)
