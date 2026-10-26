@@ -310,6 +310,12 @@ run: ## 运行项目（开发环境，使用默认配置：admin/admin/58091）
 	@echo "$(BLUE)Username: admin, Password: admin, 端口: 58091$(NC)"
 	$(GO) run -tags dev . -username admin -password admin -port 58091
 
+.PHONY: run-lite
+run-lite: ## 运行项目（开发环境 lite：不嵌前端，未构建前端产物时用这个）
+	@echo "$(BLUE)正在启动服务（lite，纯 API）...$(NC)"
+	@echo "$(BLUE)Username: admin, Password: admin, 端口: 58091$(NC)"
+	$(GO) run -tags "dev lite" . -username admin -password admin -port 58091
+
 .PHONY: run-prod
 run-prod: ## 运行项目（生产环境）
 	@echo "$(BLUE)正在启动生产环境服务...$(NC)"
