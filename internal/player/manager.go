@@ -1582,6 +1582,38 @@ func (m *Manager) GroupIDOf(playerID string) string {
 	return ""
 }
 
+// DeviceControl 设备侧反控入口（DACP / RAAT subscribe_transport 共用）。
+//
+// cmd: play / pause / stop / nextitem / previtem / preventplayback /
+// setvolume（value 为 0..1）/ seek（value 为秒）。未知命令返回错误。
+func (m *Manager) DeviceControl(ctx context.Context, playerID, cmd string, value float64) error {
+	gid := m.GroupIDOf(playerID)
+	e := m.engine("group", gid)
+	if e == nil {
+		return ErrPlayerNotFound
+	}
+	switch cmd {
+	case "play":
+		return e.Play(ctx)
+	case "pause", "preventplayback":
+		return e.Pause()
+	case "stop":
+		e.Stop()
+		return nil
+	case "nextitem":
+		return e.Next(ctx, false)
+	case "previtem":
+		return e.Prev(ctx)
+	case "setvolume":
+		_, err := m.SetVolume(ctx, playerID, int(value*100), false)
+		return err
+	case "seek":
+		return e.Seek(ctx, time.Duration(value)*time.Second)
+	default:
+		return fmt.Errorf("device control: unknown cmd %q", cmd)
+	}
+}
+
 // MirrorReport 把某台设备的上报镜像到它所在组的引擎。
 //
 // 设备不在任何组里时直接忽略：单机播放不需要服务端记账。

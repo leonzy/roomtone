@@ -44,6 +44,9 @@ type Client struct {
 	session  string
 	timeout  time.Duration
 	instance string
+	// DefaultHeaders 每个请求都携带的头（DACP-ID / Active-Remote 等）。
+	// Do 的 headers 参数优先级更高，可覆盖。
+	DefaultHeaders map[string]string
 }
 
 // Dial 建立控制连接。
@@ -56,7 +59,11 @@ func Dial(ctx context.Context, addr string, timeout time.Duration) (*Client, err
 	if err != nil {
 		return nil, fmt.Errorf("raop: 连接 %s 失败: %w", addr, err)
 	}
-	return &Client{conn: conn, br: bufio.NewReader(conn), timeout: timeout, instance: fmt.Sprintf("%08X%08X", randomUint32(), randomUint32())}, nil
+	return &Client{
+		conn: conn, br: bufio.NewReader(conn), timeout: timeout,
+		instance:       fmt.Sprintf("%08X%08X", randomUint32(), randomUint32()),
+		DefaultHeaders: map[string]string{},
+	}, nil
 }
 
 // Session 返回 RECORD 之后设备给的会话 id。
@@ -72,9 +79,12 @@ func (c *Client) Do(ctx context.Context, method, uri string, headers map[string]
 	defer c.mu.Unlock()
 
 	c.cseq++
-	requestHeaders := make(map[string]string, len(headers)+2)
+	requestHeaders := make(map[string]string, len(headers)+2+len(c.DefaultHeaders))
 	requestHeaders["User-Agent"] = "Roomtone/1.0"
 	requestHeaders["Client-Instance"] = c.instance
+	for k, v := range c.DefaultHeaders {
+		requestHeaders[k] = v
+	}
 	for k, v := range headers {
 		requestHeaders[k] = v
 	}

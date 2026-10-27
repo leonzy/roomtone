@@ -35,6 +35,8 @@ type Options struct {
 	Latency time.Duration
 	// DialTimeout 建连超时。
 	DialTimeout time.Duration
+	// OnControl 设备反控回调（DACP：音箱物理按键/遥控）。nil 表示不启用。
+	OnControl func(cmd string, value float64)
 }
 
 // Sink RAOP 输出端（AirPlay 1 / RAOP 协议）。
@@ -84,6 +86,8 @@ type Sink struct {
 	pendingAESKey string
 	// plan 当前曲目信息（gapless 接续时只更新它）。
 	plan sink.StreamPlan
+	// dacp 反控端点（Open 成功后启动，对齐 Roon 每 AirPlayClient 一个）。
+	dacp *DACPServer
 }
 
 // New 创建 sink。真正建连在 Open。
@@ -251,6 +255,20 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 		return statusError("SET_PARAMETER", resp.Status)
 	}
 	s.startKeepAlive(cl, s.sessionDone, 15*time.Second)
+
+	// DACP 反控端点：RECORD 成功后启动，DACP-ID/Active-Remote 随后续所有
+	// 请求携带（对齐 AirPlayClientV1.CreateRequest:2884-2893）。
+	if s.opts.OnControl != nil {
+		d := NewDACPServer(s.opts.OnControl)
+		if err := d.Start(); err != nil {
+			slog.Warn("DACP 反控端点启动失败（不影响播放）", "device", s.id, "err", err)
+		} else {
+			s.dacp = d
+			cl.DefaultHeaders["DACP-ID"] = d.ID
+			cl.DefaultHeaders["Active-Remote"] = d.ActiveRemote
+			slog.Info("DACP 反控已启用", "device", s.id, "dacp_id", d.ID)
+		}
+	}
 	return nil
 }
 
@@ -549,6 +567,10 @@ func (s *Sink) abortSessionLocked() {
 }
 
 func (s *Sink) closeConnsLocked() {
+	if s.dacp != nil {
+		s.dacp.Close() //nolint:errcheck // 关闭失败无需处理
+		s.dacp = nil
+	}
 	s.clockMu.Lock()
 	s.clockConn, s.clockSeen = nil, false
 	s.clockMu.Unlock()

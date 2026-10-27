@@ -134,13 +134,16 @@ func (a *App) initPlayback() {
 
 	latency := time.Duration(output.DefaultLatencyMs) * time.Millisecond
 	a.playerManager = player.NewManager(player.ManagerDeps{
-		Store:                 store,
-		Bus:                   bus,
-		Budget:                budget,
-		Resolver:              resolver,
-		Decoder:               decoder,
-		Runners:               runners,
-		Builder:               &playerSinkBuilder{hub: a.wsHub, lan: a.lanURL, streamPlan: a.dlnaStreamPlan},
+		Store:    store,
+		Bus:      bus,
+		Budget:   budget,
+		Resolver: resolver,
+		Decoder:  decoder,
+		Runners:  runners,
+		Builder: &playerSinkBuilder{
+			hub: a.wsHub, lan: a.lanURL, streamPlan: a.dlnaStreamPlan,
+			deviceControl: a.playerManager.DeviceControl,
+		},
 		Logger:                slog.Default(),
 		Latency:               latency,
 		PartyEnabled:          output.PartyEnabled,
@@ -248,6 +251,8 @@ type playerSinkBuilder struct {
 	hub        *ws.Hub
 	lan        *services.LANURLResolver
 	streamPlan func(context.Context, string, sink.StreamPlan) (sink.StreamPlan, error)
+	// deviceControl 设备侧反控入口（DACP / RAAT 共用）。nil 时反控不启用。
+	deviceControl func(ctx context.Context, playerID, cmd string, value float64) error
 }
 
 // Build 实现 player.SinkBuilder。
@@ -269,6 +274,17 @@ func (b *playerSinkBuilder) Build(ctx context.Context, p *player.Player) (sink.S
 			return nil, fmt.Errorf("%w: 音箱地址为空", player.ErrPlayerOffline)
 		}
 		rate, ch := outputFormat(p.Caps)
+		var onControl func(cmd string, value float64)
+		if b.deviceControl != nil {
+			// 反控来自设备主动回调，没有请求 ctx，用独立超时 ctx 防悬挂。
+			onControl = func(cmd string, value float64) {
+				cctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := b.deviceControl(cctx, p.ID, cmd, value); err != nil {
+					slog.Warn("设备反控失败", "player", p.ID, "cmd", cmd, "err", err)
+				}
+			}
+		}
 		return raop.New(p.ID, raop.Options{
 			ALAC:        true,
 			Address:     p.Address,
@@ -278,6 +294,7 @@ func (b *playerSinkBuilder) Build(ctx context.Context, p *player.Player) (sink.S
 			SampleRate:  rate,
 			Channels:    ch,
 			DialTimeout: 5 * time.Second,
+			OnControl:   onControl,
 		}), nil
 
 	case player.KindDLNA:
