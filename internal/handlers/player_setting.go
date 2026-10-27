@@ -101,8 +101,8 @@ func (h *ConfigHandler) UpdatePlayerDiscoverySetting(w http.ResponseWriter, r *h
 		req.Protocols = []string{"raop", "dlna"}
 	}
 	for _, p := range req.Protocols {
-		if p != "raop" && p != "dlna" {
-			respondError(w, http.StatusBadRequest, "protocols 只支持 raop / dlna", nil)
+		if p != "raop" && p != "dlna" && p != "raat" {
+			respondError(w, http.StatusBadRequest, "protocols 只支持 raop / raat / dlna", nil)
 			return
 		}
 	}

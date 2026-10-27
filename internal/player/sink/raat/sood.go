@@ -26,6 +26,10 @@ const (
 
 	// RaatServiceID RAAT 服务标识，响应的 service_id 必须等于它。
 	RaatServiceID = "5e2042ad-9bc5-4508-be92-ff68f19bdc93"
+	// RaatServerServiceID RAATServer（Roon 内置设备端）的服务标识——
+	// 与普通 RAAT 设备不同（RoonBase.dll Sooloos.RAATServer.ServiceId =
+	// RoonServiceId）。本机 Roon 的 RAATServer 用这个 ID 响应 SOOD。
+	RaatServerServiceID = "d7634b85-8190-470f-aa51-6cb5538dc1b9"
 )
 
 // 错误（假 Transceiver 的非阻塞语义用）。
@@ -126,8 +130,11 @@ func parseResponse(data []byte) (Device, bool) {
 		kvs[key] = string(data[i : i+vlen])
 		i += vlen
 	}
-	// 必填字段（规格 §①）：缺失或 service_id 不匹配则丢弃
-	if kvs["service_id"] != RaatServiceID {
+	// 必填字段（规格 §①）：缺失或 service_id 不匹配则丢弃。
+	// 接受两种服务标识：普通 RAAT 设备（5e2042ad）与 RAATServer
+	// （d7634b85，本机 Roon 内置设备端——实测发现，见
+	// docs/raat-protocol-notes.md）。
+	if kvs["service_id"] != RaatServiceID && kvs["service_id"] != RaatServerServiceID {
 		return d, false
 	}
 	d.UniqueID = kvs["unique_id"]

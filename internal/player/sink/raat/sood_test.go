@@ -77,6 +77,11 @@ func TestParseResponse(t *testing.T) {
 	if _, ok := parseResponse(bad); ok {
 		t.Fatal("service_id 不匹配应丢弃")
 	}
+	// RAATServer 的服务标识（d7634b85）也接受
+	rs := build("unique_id", "rs", "service_id", RaatServerServiceID, "tcp_port", "1", "machine_name", "mac")
+	if dev, ok := parseResponse(rs); !ok || dev.UniqueID != "rs" {
+		t.Fatalf("RAATServer 服务标识应被接受: %+v", dev)
+	}
 	// 缺 service_id → 丢弃
 	if _, ok := parseResponse(build("unique_id", "x")); ok {
 		t.Fatal("缺 service_id 应丢弃")

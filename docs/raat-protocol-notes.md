@@ -48,11 +48,49 @@
 - 首次 Sync 记录 `first_local_time`；后续 Sync 的 offset 变化累计进
   `cumulative_delta`（`AverageDrift = cumDelta / elapsed`）
 
-## RAATServer 联调记录（AC-B3）
+## RAATServer 联调记录（AC-B3，2026-10-27 实测）
 
-（待用户环境实测后补：发现 `raat:<unique_id>` 出现在 /players、起播
-出声、进度推进、pause/resume/seek、subscribe_transport 按钮可达、
-连续播放 ≥10 分钟无 Dropout 刷屏。）
+**环境**：本机 Roon 2.74（RAATServer 进程 + RoonAppliance 进程，
+libraatmanager 1.1.48），Mac Studio Speakers（CoreAudio 输出）。
+
+**架构实测发现**（与计划初稿假设的关键差异）：
+
+1. **本机 Roon 的 RAAT 架构是双进程自连**：RAATServer 进程（63629）
+   是**设备端**（libraatmanager [server]，每输出设备一个 TCP 监听
+   端口，如 51838=Mac Studio Speakers）；RoonAppliance 进程（63636）
+   是 **Core 侧**（RaatZonePlayer + libraatmanager [client] 连
+   51838）+ RnetJsonClient（连 RAATServer 的 9200 发现设备）。
+   9004 是引用计数端口（RoonAppliance 连接保持 RAATServer 存活，
+   断开即退出——本机补丁已 NOP ev_autoexit）。
+2. **RAATServer 的 ServiceId 是 `d7634b85-8190-470f-aa51-6cb5538dc1b9`**
+   （RoonBase.dll `Sooloos.RAATServer.ServiceId = RoonServiceId`），
+   **不是**普通 RAAT 设备的 `5e2042ad-...`！sood.go 已修正为双标识
+   兼容（实测发现）。
+3. **SOOD 发现**：本机 RoonAppliance 的 SOOD 响应器**不响应外部查询**
+   （实测：20+ 次组播/单播查询——GUID/非-GUID tid、SO_REUSEPORT 绑
+   9003 收发、随机端口发——均无响应；Roon 主程序自己也不靠 SOOD
+   发现本机设备——走 RnetJsonClient 直连 9200）。SOOD 用于发现
+   **远程** RAAT 设备；本机无远程设备 → 发现层无法在本机闭环。
+4. **协议层完全互通验证通过**（`TestLiveConnProbe`）：直连 51838
+   （Mac Studio Speakers 的 RAAT 控制通道端口）发 info——
+   - 帧格式 `[4B BE total][4B BE type][4B BE rid][JSON]` ✓
+   - REQUEST=0x80000001 / RESPONSE=0x80000002 ✓
+   - rid 正确回带（1→1、2→2、3→3）✓
+   - JSON 请求/响应解析 ✓（响应 `{"status": "NotImplemented"}`——
+     libraatmanager C 库的手拼 JSON，键后带空格）
+5. **完整播放链路受本机单 session 限制**：51838 被 RoonAppliance
+   独占（我们的第二连接所有请求返回 NotImplemented——session 未
+   绑定设备）；51840（第二监听端口）无绑定设备（accept 后立即断连）。
+   info→setup→stream→start→音频的完整链路需要远程 RAAT 音箱或
+   停用 Roon 的 Mac Studio Speakers 输出后重试。
+
+**AC-B3 验收状态**：
+- ✅ 协议互通（帧格式/类型/rid/JSON，与真机 libraatmanager 1.1.48）
+- ⚠️ 完整播放链路（起播出声/进度/暂停/seek/10 分钟无 Dropout）：
+  受本机单 session 限制未闭环——需远程 RAAT 音箱（Roon Ready）
+  或停用 Roon 的本机输出后重试。协议实现按规范完成且经
+  fakeRAATDevice 端到端测试（握手序列/起播/数据/音量/位置/gapless/
+  错误路径全覆盖），真机差异风险集中在设备侧行为差异（见已知边界）。
 
 ## 已知边界（诚实记录）
 
