@@ -203,14 +203,15 @@ func Discover(ctx context.Context, timeout time.Duration, xc Transceiver) ([]Dev
 			return sortDevices(seen), ctx.Err()
 		default:
 		}
+		// 先查截止再发轮询：避免在 deadline 边缘多发一轮
+		if time.Now().After(deadline) {
+			return sortDevices(seen), nil
+		}
 		if time.Now().After(nextRound) {
 			if err := sendRound(); err != nil {
 				return nil, fmt.Errorf("raat/sood: 发送第二轮查询失败: %w", err)
 			}
 			nextRound = time.Now().Add(roundInterval)
-		}
-		if time.Now().After(deadline) {
-			return sortDevices(seen), nil
 		}
 		xc.Deadline(time.Now().Add(minDuration(time.Until(nextRound), time.Until(deadline))))
 		n, from, err := xc.Read(buf)
