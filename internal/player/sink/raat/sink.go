@@ -28,6 +28,9 @@ type Options struct {
 	ReadyThreshold time.Duration
 	// OnControl 设备反控回调（subscribe_transport）。nil 不启用。
 	OnControl func(cmd string, value float64) error
+	// FLAC 压缩音频通道（B9）：info 声明 codecs 含 "flac" 时开启，
+	// setup 带 wire_codec:"flac"，WriteFrame 走 CODEC_DATA=5。
+	FLAC bool
 	// DialTimeout 建连超时。
 	DialTimeout time.Duration
 }
@@ -83,6 +86,10 @@ type Sink struct {
 	// clock 时钟源（SyncToClock 后非 nil）；precise 时钟同步成功标记。
 	clock   *ClockSource
 	precise bool
+	// flacSetup setup 已声明 wire_codec:"flac"（WriteFrame 走 CODEC_DATA）。
+	flacSetup bool
+	// deviceCodecs info 声明的线编码列表（如 ["flac"]）。
+	deviceCodecs []string
 }
 
 // New 创建 sink。真正建连在 Open。
@@ -136,12 +143,25 @@ type infoResponse struct {
 	Output struct {
 		SupportedFormats string `json:"supported_formats"`
 	} `json:"output"`
+	// Codecs 设备声明的线编码列表（RaatTransportClient.cs:751：info 顶层
+	// "codecs"，如 ["flac"]）。
+	Codecs []string `json:"codecs"`
 	Volume struct {
 		IsSupported bool `json:"is_supported"`
 	} `json:"volume"`
 	Transport struct {
 		IsSupported bool `json:"is_supported"`
 	} `json:"transport"`
+}
+
+// hasCodec 设备是否声明支持某线编码。
+func (r *infoResponse) hasCodec(name string) bool {
+	for _, c := range r.Codecs {
+		if c == name {
+			return true
+		}
+	}
+	return false
 }
 
 // setupResponse setup 请求的响应形态。
@@ -193,13 +213,13 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 		}
 	}()
 
-	// info：解析 supported_formats / volume / transport
+	// info：解析 supported_formats / volume / transport / codecs
 	var info infoResponse
 	if err := ctrl.RequestSimple(ctx, "info", nil, &info); err != nil {
 		s.closeLocked()
 		return err
 	}
-	_ = info // 能力字段 B6 的 RAATScanner 用（这里经 infoProbe 已取）
+	s.deviceCodecs = info.Codecs
 
 	// set_client_type("roomtone")
 	if err := ctrl.RequestSimple(ctx, "set_client_type", map[string]any{"client_type": "roomtone"}, nil); err != nil {
@@ -207,7 +227,9 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 		return err
 	}
 
-	// setup：format{pcm, rate, bits:16, ch}
+	// setup：format{pcm, rate, bits:16, ch}；FLAC 开启且采样率合法时带
+	// wire_codec:"flac"（RaatTransportClient.cs:2258；采样率限制
+	// ShouldUseFlacWireCodec RaatZonePlayer.cs:2207）。
 	setupArgs := map[string]any{
 		"format": map[string]any{
 			"sample_type":     "pcm",
@@ -216,12 +238,22 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 			"channels":        s.opts.Channels,
 		},
 	}
+	// FLAC 三条件：Options 开启 + 设备 info 声明 codecs 含 "flac" +
+	// 采样率在 FLAC streamable subset（对齐 RaatZonePlayer.cs:677-680 的
+	// flag2 判定：__raat_flac_bit && Client.SupportedCodecs 含 flac &&
+	// BitsPerSample != 1 && ShouldUseFlacWireCodec）。
+	if s.opts.FLAC && s.deviceHasCodec("flac") && shouldUseFlacWireCodec(s.opts.SampleRate) {
+		setupArgs["wire_codec"] = "flac"
+	}
 	var setup setupResponse
 	if err := ctrl.RequestSimple(ctx, "setup", setupArgs, &setup); err != nil {
 		s.closeLocked()
 		return err
 	}
 	s.clockPort = setup.ClockPort
+	if _, ok := setupArgs["wire_codec"]; ok {
+		s.flacSetup = true
+	}
 
 	// Dial 音频通道
 	audioAddr := hostOfAddr(addr)
@@ -367,7 +399,42 @@ func (s *Sink) WriteFrame(f sink.Frame) error {
 		return errors.New("raat: 会话未建立")
 	}
 	// stream_sample 为流内相对位置（f.SampleIndex - anchorSample）
+	if s.flacEnabled() {
+		// PCM → FLAC 帧（882 采样/帧，与分发帧对齐）→ CODEC_DATA。
+		// EncodeFlacFrame 无状态（每帧独立编码），无需持有编码器。
+		frameBytes, err := EncodeFlacFrame(f.Data)
+		if err != nil {
+			return fmt.Errorf("raat: flac 编码失败: %w", err)
+		}
+		return s.audio.WriteCodec(f.SampleIndex-s.anchorSample, frameBytes)
+	}
 	return s.audio.WritePCM(f.SampleIndex-s.anchorSample, f.Data)
+}
+
+// flacEnabled FLAC 开启且 setup 已声明 wire_codec（设备支持 + 采样率合法）。
+func (s *Sink) flacEnabled() bool {
+	return s.opts.FLAC && s.flacSetup
+}
+
+// deviceHasCodec 设备 info 是否声明支持某线编码。
+func (s *Sink) deviceHasCodec(name string) bool {
+	for _, c := range s.deviceCodecs {
+		if c == name {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldUseFlacWireCodec 逐字对齐 RaatZonePlayer.cs:2207。
+func shouldUseFlacWireCodec(sampleRate int) bool {
+	if sampleRate > 0 && sampleRate < 655360 {
+		if sampleRate >= 65536 {
+			return sampleRate%10 == 0
+		}
+		return true
+	}
+	return false
 }
 
 func (s *Sink) Seek(sample uint64) error {

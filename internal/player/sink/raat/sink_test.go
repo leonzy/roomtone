@@ -37,6 +37,8 @@ type fakeRAATDevice struct {
 	conns []net.Conn
 	// setup 响应（可定制：NotSupported 错误路径）
 	setupResp string
+	// infoResp 可定制的 info 响应（默认内置）
+	infoResp string
 	// 关闭控制连接（错误路径）
 	closeCtrl bool
 
@@ -151,7 +153,11 @@ func (d *fakeRAATDevice) handleCtrl(conn net.Conn) {
 func (d *fakeRAATDevice) respondCtrl(conn net.Conn, rid uint32, name, setupResp string) {
 	switch name {
 	case "info":
-		d.writeResp(conn, rid, 0x01, `{"status":"Success","info":{"name":"fake"},"volume":{"is_supported":true},"transport":{"is_supported":true},"output":{"supported_formats":"44100/16/2, 48000/24/2, 88200/24/2"}}`)
+		resp := d.infoResp
+		if resp == "" {
+			resp = `{"status":"Success","info":{"name":"fake"},"volume":{"is_supported":true},"transport":{"is_supported":true},"output":{"supported_formats":"44100/16/2, 48000/24/2, 88200/24/2"}}`
+		}
+		d.writeResp(conn, rid, 0x01, resp)
 	case "set_client_type":
 		d.writeResp(conn, rid, 0x01, `{"status":"Success"}`)
 	case "setup":
@@ -225,13 +231,27 @@ func (d *fakeRAATDevice) handleAudio(conn net.Conn) {
 		switch cmd {
 		case cmdStreamID:
 			payload = make([]byte, 4)
+			if _, err := readFull3(br, payload); err != nil {
+				return
+			}
 		case cmdStreamSample:
 			payload = make([]byte, 8)
+			if _, err := readFull3(br, payload); err != nil {
+				return
+			}
+		case cmdCodecData:
+			// CODEC_DATA：FLAC 帧自定界（帧头 blocksize + CRC16 帧尾），
+			// 长度不固定——设备端（libraatmanager）是流式解码器。fake 侧
+			// 用单次非定长读（本地回环下一次 read ≈ 一次 write）。
+			buf := make([]byte, 4096)
+			n, err := br.Read(buf)
+			if err != nil {
+				return
+			}
+			payload = append([]byte(nil), buf[:n]...)
 		default:
-			// DATA/CODEC_DATA：读一帧（882 采样 = 3528 字节；测试约定）
+			// DATA：PCM 帧定长（882 采样 = 3528 字节；测试约定）
 			payload = make([]byte, 882*4)
-		}
-		if len(payload) > 0 {
 			if _, err := readFull3(br, payload); err != nil {
 				return
 			}
