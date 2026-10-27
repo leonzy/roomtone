@@ -19,6 +19,7 @@ import (
 	"songloft/internal/player/sink"
 	"songloft/internal/player/sink/dlna"
 	"songloft/internal/player/sink/local"
+	"songloft/internal/player/sink/raat"
 	"songloft/internal/player/sink/raop"
 	"songloft/internal/player/sink/raop2"
 	"songloft/internal/services"
@@ -204,6 +205,7 @@ func (a *App) initPlayback() {
 		Registry: a.playerManager,
 		Scanners: []discovery.Scanner{
 			&discovery.RAOPScanner{Timeout: 2 * time.Second},
+			&discovery.RAATScanner{Timeout: 2 * time.Second},
 			&discovery.DLNAScanner{Timeout: 3 * time.Second},
 		},
 		Logger:    slog.Default(),
@@ -319,6 +321,29 @@ func (b *playerSinkBuilder) Build(ctx context.Context, p *player.Player) (sink.S
 			DialTimeout: 5 * time.Second,
 			OnControl:   onControl,
 			Password:    p.Password,
+		}), nil
+
+	case player.KindRAAT:
+		if p.Address == "" {
+			return nil, fmt.Errorf("%w: 设备地址为空", player.ErrPlayerOffline)
+		}
+		rate, ch := outputFormat(p.Caps)
+		var onControl func(cmd string, v float64) error
+		if b.deviceControl != nil {
+			// 反控来自设备主动回调，无请求 ctx，用独立超时 ctx 防悬挂。
+			onControl = func(cmd string, v float64) error {
+				cctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				return b.deviceControl(cctx, p.ID, cmd, v)
+			}
+		}
+		return raat.New(p.ID, raat.Options{
+			Address:        p.Address,
+			SampleRate:     rate,
+			Channels:       ch,
+			BufferSize:     2 * time.Second,
+			ReadyThreshold: time.Second,
+			OnControl:      onControl,
 		}), nil
 
 	case player.KindDLNA:

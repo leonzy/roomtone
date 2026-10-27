@@ -320,3 +320,83 @@ func (u *udpTransceiver) Deadline(t time.Time) {
 func (u *udpTransceiver) Close() error {
 	return u.conn.Close()
 }
+
+// Info info 探测结果（RAATScanner 用）。
+type Info struct {
+	SupportedFormats   string
+	VolumeSupported    bool
+	TransportSupported bool
+}
+
+// ParseSupportedFormats 解析 supported_formats（"rate/bits/ch1|ch2, ..."）。
+// 位深=1 为 DSD，不计入 bits（不抬 PCM 位深上限）；channels 取最大。
+func ParseSupportedFormats(s string) (maxRate, bits, channels int) {
+	for _, entry := range splitTrim(s, ",") {
+		parts := splitTrim(entry, "/")
+		if len(parts) != 3 {
+			continue
+		}
+		rate := atoi(parts[0])
+		b := atoi(parts[1])
+		ch := 0
+		for _, c := range splitTrim(parts[2], "|") {
+			if n := atoi(c); n > ch {
+				ch = n
+			}
+		}
+		if rate > maxRate {
+			maxRate = rate
+		}
+		if b > 1 && b > bits { // DSD（bits=1）不计入
+			bits = b
+		}
+		if ch > channels {
+			channels = ch
+		}
+	}
+	return maxRate, bits, channels
+}
+
+// ProbeInfo TCP 连设备控制通道发 info（1.5s 超时），失败返回错误。
+func ProbeInfo(ctx context.Context, addr string, timeout time.Duration) (Info, error) {
+	if timeout <= 0 {
+		timeout = 1500 * time.Millisecond
+	}
+	pctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	conn, err := DialControl(pctx, addr)
+	if err != nil {
+		return Info{}, err
+	}
+	defer conn.Close() //nolint:errcheck // 探测路径
+	var resp struct {
+		Status string `json:"status"`
+		Output struct {
+			SupportedFormats string `json:"supported_formats"`
+		} `json:"output"`
+		Volume struct {
+			IsSupported bool `json:"is_supported"`
+		} `json:"volume"`
+		Transport struct {
+			IsSupported bool `json:"is_supported"`
+		} `json:"transport"`
+	}
+	if err := conn.RequestSimple(pctx, "info", nil, &resp); err != nil {
+		return Info{}, err
+	}
+	return Info{
+		SupportedFormats:   resp.Output.SupportedFormats,
+		VolumeSupported:    resp.Volume.IsSupported,
+		TransportSupported: resp.Transport.IsSupported,
+	}, nil
+}
+
+func splitTrim(s, sep string) []string {
+	var out []string
+	for _, part := range strings.Split(s, sep) {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}

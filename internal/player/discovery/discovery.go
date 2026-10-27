@@ -374,6 +374,8 @@ func protocolsSet(list []string) map[player.Kind]bool {
 			out[player.KindRAOP] = true
 		case "dlna", "upnp":
 			out[player.KindDLNA] = true
+		case "raat":
+			out[player.KindRAAT] = true
 		}
 	}
 	return out

@@ -11,6 +11,7 @@ import (
 
 	"songloft/internal/player"
 	"songloft/internal/player/sink/dlna"
+	"songloft/internal/player/sink/raat"
 	"songloft/internal/player/sink/raop"
 	"songloft/internal/player/sink/raop2"
 )
@@ -249,4 +250,69 @@ func colonMAC(id string) string {
 		parts = append(parts, id[i:i+2])
 	}
 	return strings.Join(parts, ":")
+}
+
+// RAATScanner 通过 SOOD 发现 RAAT 设备，并做一次 TCP info 探测取精确能力
+// （对齐 Roon 常连接取能力的思路，避免"发现期只有保守 44.1k 假能力"）。
+type RAATScanner struct {
+	// Timeout SOOD 发现与 info 探测的超时。
+	Timeout time.Duration
+	// Discover 注入用；nil 走真实 SOOD。
+	Discover func(ctx context.Context, timeout time.Duration) ([]raat.Device, error)
+	// ProbeInfo 注入用；nil 走真实 TCP info 探测。
+	ProbeInfo func(ctx context.Context, addr string, timeout time.Duration) (raat.Info, error)
+}
+
+// Kind 实现 Scanner。
+func (s *RAATScanner) Kind() player.Kind { return player.KindRAAT }
+
+// Scan 实现 Scanner。info 探测失败（超时）的设备跳过，不整体报错。
+func (s *RAATScanner) Scan(ctx context.Context) ([]Speaker, error) {
+	discover := s.Discover
+	if discover == nil {
+		discover = func(ctx context.Context, timeout time.Duration) ([]raat.Device, error) {
+			return raat.Discover(ctx, timeout, nil)
+		}
+	}
+	probe := s.ProbeInfo
+	if probe == nil {
+		probe = raat.ProbeInfo
+	}
+	devs, err := discover(ctx, s.Timeout)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Speaker, 0, len(devs))
+	for _, d := range devs {
+		info, err := probe(ctx, d.Addr(), s.Timeout)
+		if err != nil {
+			// 探测失败：跳过该设备（不整体报错）
+			slog.Debug("raat: info 探测失败，跳过设备", "device", d.UniqueID, "err", err)
+			continue
+		}
+		rate, bits, channels := raat.ParseSupportedFormats(info.SupportedFormats)
+		if rate == 0 {
+			rate, bits, channels = 44100, 16, 2 // 保守缺省
+		}
+		sp := Speaker{
+			// id 前缀与 players.id 的约定一致：raat:<unique_id>
+			ID:      "raat:" + d.UniqueID,
+			Kind:    player.KindRAAT,
+			Name:    d.Name,
+			Model:   d.Model,
+			Address: d.Addr(),
+			Caps: player.Caps{
+				Codecs:         []player.Codec{player.CodecL16},
+				MaxSampleRate:  rate,
+				Channels:       channels,
+				BitDepth:       bits,
+				SupportsVolume: info.VolumeSupported,
+				SupportsSeek:   true,
+				LatencyMs:      2000,
+				SyncTier:       player.SyncExact,
+			},
+		}
+		out = append(out, sp)
+	}
+	return out, nil
 }

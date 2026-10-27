@@ -1500,7 +1500,7 @@ func (m *Manager) sinkFor(ctx context.Context, p *Player) (sink.Sink, bool) {
 		m.deps.Logger.Warn("build sink failed", "player", p.ID, "err", err)
 		return nil, false
 	}
-	if p.Kind == KindRAOP {
+	if p.Kind == KindRAOP || p.Kind == KindRAAT {
 		volume := float64(min(p.Volume, p.MaxVolume)) / 100
 		if p.Muted {
 			volume = 0
