@@ -498,7 +498,10 @@ func (e *Engine) Stop() {
 // Seek 跳转到 position。
 func (e *Engine) Seek(ctx context.Context, position time.Duration) error {
 	e.mu.Lock()
-	wasPlaying := e.transport.State() == StatePlaying || e.transport.State() == StateBuffering
+	// loading 也算“在播”：此时 run 协程正在开解码器，若不重启，
+	// stopLocked 杀掉协程后状态机会永远停在 loading（音箱在缓冲期按
+	// seek 就会触发）。
+	wasPlaying := e.transport.State() == StatePlaying || e.transport.State() == StateBuffering || e.transport.State() == StateLoading
 	e.transport.Seek(position)
 	e.stopLocked()
 	if wasPlaying {
@@ -533,6 +536,11 @@ func (e *Engine) Next(ctx context.Context, auto bool) error {
 		e.emitState()
 		return nil
 	}
+	// 播放中切歌：停掉当前解码环，立即起播下一首（对齐 Prev 的
+	// stopLocked→startLocked 模式）。此前缺这一步，startLocked 因
+	// running=true 提前返回，队列游标推进后旧解码环继续播完当前曲，
+	// EOF 处 queue.Next(true) 再推一格——用户按下一首反而整组停播。
+	e.stopLocked()
 	release, err := e.acquireLocked()
 	if err != nil {
 		e.mu.Unlock()
