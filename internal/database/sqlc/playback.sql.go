@@ -145,7 +145,7 @@ func (q *Queries) GetParty(ctx context.Context, id string) (PartySession, error)
 }
 
 const getPlayer = `-- name: GetPlayer :one
-SELECT id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, last_seen_at, created_at, volume_mode, max_volume FROM players WHERE id = ?
+SELECT id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, last_seen_at, created_at, volume_mode, max_volume, password FROM players WHERE id = ?
 `
 
 func (q *Queries) GetPlayer(ctx context.Context, id string) (Player, error) {
@@ -167,6 +167,7 @@ func (q *Queries) GetPlayer(ctx context.Context, id string) (Player, error) {
 		&i.CreatedAt,
 		&i.VolumeMode,
 		&i.MaxVolume,
+		&i.Password,
 	)
 	return i, err
 }
@@ -413,7 +414,7 @@ func (q *Queries) ListParties(ctx context.Context) ([]PartySession, error) {
 }
 
 const listPlayers = `-- name: ListPlayers :many
-SELECT id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, last_seen_at, created_at, volume_mode, max_volume FROM players ORDER BY created_at, id
+SELECT id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, last_seen_at, created_at, volume_mode, max_volume, password FROM players ORDER BY created_at, id
 `
 
 func (q *Queries) ListPlayers(ctx context.Context) ([]Player, error) {
@@ -441,6 +442,7 @@ func (q *Queries) ListPlayers(ctx context.Context) ([]Player, error) {
 			&i.CreatedAt,
 			&i.VolumeMode,
 			&i.MaxVolume,
+			&i.Password,
 		); err != nil {
 			return nil, err
 		}
@@ -558,7 +560,7 @@ func (q *Queries) UpdatePartyLeader(ctx context.Context, arg UpdatePartyLeaderPa
 }
 
 const updatePlayerConfig = `-- name: UpdatePlayerConfig :exec
-UPDATE players SET name = ?, takeover_behavior = ?, volume_mode = ?, max_volume = ? WHERE id = ?
+UPDATE players SET name = ?, takeover_behavior = ?, volume_mode = ?, max_volume = ?, password = ? WHERE id = ?
 `
 
 type UpdatePlayerConfigParams struct {
@@ -566,6 +568,7 @@ type UpdatePlayerConfigParams struct {
 	TakeoverBehavior string
 	VolumeMode       string
 	MaxVolume        int64
+	Password         string
 	ID               string
 }
 
@@ -575,6 +578,7 @@ func (q *Queries) UpdatePlayerConfig(ctx context.Context, arg UpdatePlayerConfig
 		arg.TakeoverBehavior,
 		arg.VolumeMode,
 		arg.MaxVolume,
+		arg.Password,
 		arg.ID,
 	)
 	return err
@@ -625,8 +629,8 @@ func (q *Queries) UpdatePlayerVolume(ctx context.Context, arg UpdatePlayerVolume
 }
 
 const upsertPlayer = `-- name: UpsertPlayer :exec
-INSERT INTO players (id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, volume_mode, max_volume, last_seen_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO players (id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, volume_mode, max_volume, password, last_seen_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     kind = excluded.kind,
     name = excluded.name,
@@ -651,6 +655,7 @@ type UpsertPlayerParams struct {
 	TakeoverBehavior string
 	VolumeMode       string
 	MaxVolume        int64
+	Password         string
 	LastSeenAt       sql.NullTime
 }
 
@@ -669,6 +674,7 @@ func (q *Queries) UpsertPlayer(ctx context.Context, arg UpsertPlayerParams) erro
 		arg.TakeoverBehavior,
 		arg.VolumeMode,
 		arg.MaxVolume,
+		arg.Password,
 		arg.LastSeenAt,
 	)
 	return err

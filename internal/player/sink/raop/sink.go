@@ -37,6 +37,9 @@ type Options struct {
 	DialTimeout time.Duration
 	// OnControl 设备反控回调（DACP：音箱物理按键/遥控）。nil 表示不启用。
 	OnControl func(cmd string, value float64)
+	// Password 设备密码（AirPlay 1 = RTSP HTTP Digest，见 digest.go）。
+	// 空串表示无密码；遇 401 且无密码时 Open 报错。
+	Password string
 }
 
 // Sink RAOP 输出端（AirPlay 1 / RAOP 协议）。
@@ -183,7 +186,7 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	s.sessionDone = make(chan struct{})
 	uri := s.uri()
 
-	if resp, err := cl.Do(ctx, "OPTIONS", "*", nil, nil); err != nil {
+	if resp, err := s.doAuth(ctx, cl, "OPTIONS", "*", nil, nil); err != nil {
 		s.abortSessionLocked()
 		return err
 	} else if resp.Status != 200 {
@@ -201,7 +204,7 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 		AESKey:      s.pendingAESKey,
 		AESIV:       EncodeIV(s.aesIV),
 	})
-	if resp, err := cl.Do(ctx, "ANNOUNCE", uri, map[string]string{
+	if resp, err := s.doAuth(ctx, cl, "ANNOUNCE", uri, map[string]string{
 		"Content-Type": "application/sdp",
 	}, sdp); err != nil {
 		s.abortSessionLocked()
@@ -220,7 +223,7 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	s.startTimingReader(timing)
 	transport := fmt.Sprintf("RTP/AVP/UDP;unicast;interleaved=0-1;mode=record;control_port=%d;timing_port=%d",
 		localPort(control), localPort(timing))
-	resp, err := cl.Do(ctx, "SETUP", uri, map[string]string{"Transport": transport}, nil)
+	resp, err := s.doAuth(ctx, cl, "SETUP", uri, map[string]string{"Transport": transport}, nil)
 	if err != nil {
 		s.abortSessionLocked()
 		return err
@@ -245,7 +248,7 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	if s.volume > 0 {
 		db = 20 * math.Log10(s.volume)
 	}
-	resp, err = cl.Do(ctx, "SET_PARAMETER", uri, map[string]string{"Content-Type": "text/parameters"}, []byte(fmt.Sprintf("volume: %.2f\r\n", db)))
+	resp, err = s.doAuth(ctx, cl, "SET_PARAMETER", uri, map[string]string{"Content-Type": "text/parameters"}, []byte(fmt.Sprintf("volume: %.2f\r\n", db)))
 	if err != nil {
 		s.abortSessionLocked()
 		return fmt.Errorf("raop: initial volume failed: %w", err)
@@ -548,6 +551,30 @@ func (s *Sink) Close() error {
 
 // --- 内部 ---
 
+// doAuth 发请求；遇 401 且配置了密码时算 HTTP Digest 并重试一次
+// （对齐 AirPlayClientV1.cs:1320-1356：挑战发生在 OPTIONS，摘要按
+// method=OPTIONS/uri=* 计算，授权通过后同一头随后续所有请求复用）。
+// 无密码遇 401 返回明确错误；已授权仍 401 视为密码错误。
+func (s *Sink) doAuth(ctx context.Context, cl *Client, method, uri string, headers map[string]string, body []byte) (*Response, error) {
+	resp, err := cl.Do(ctx, method, uri, headers, body)
+	if err != nil || resp.Status != 401 {
+		return resp, err
+	}
+	if s.opts.Password == "" {
+		return nil, fmt.Errorf("raop: 设备要求密码（401），请在该设备的设置里填写密码")
+	}
+	if cl.authorization != "" {
+		return nil, fmt.Errorf("raop: 设备拒绝授权（401），请检查密码")
+	}
+	www := resp.HeaderValue("WWW-Authenticate")
+	realm, nonce, ok := parseWWWAuthenticate(www)
+	if !ok {
+		return nil, fmt.Errorf("raop: 401 响应缺少 realm 的 WWW-Authenticate: %q", www)
+	}
+	cl.authorization = authorizationHeader(realm, nonce, "*", computeDigest(realm, s.opts.Password, "OPTIONS", "*", nonce))
+	return cl.Do(ctx, method, uri, headers, body)
+}
+
 func statusError(method string, status int) error {
 	if status == 453 {
 		return fmt.Errorf("raop: %s 返回 453（音箱拒绝新会话，可能仍有上一连接未释放或被其他播放占用）", method)
@@ -617,7 +644,7 @@ func (s *Sink) startKeepAlive(cl *Client, done <-chan struct{}, interval time.Du
 }
 
 func (s *Sink) recordLocked(ctx context.Context) error {
-	resp, err := s.rtsp.Do(ctx, "RECORD", s.uri(), map[string]string{
+	resp, err := s.doAuth(ctx, s.rtsp, "RECORD", s.uri(), map[string]string{
 		"Range":    "npt=0-",
 		"RTP-Info": fmt.Sprintf("seq=%d;rtptime=%d", s.pkt.Seq, s.tsLocked(s.anchor)),
 	}, nil)

@@ -42,7 +42,7 @@ func (s *playbackStore) SavePlayer(ctx context.Context, p player.Player) error {
 }
 
 func (s *playbackStore) UpdatePlayerConfig(ctx context.Context, p player.Player) error {
-	return s.repo.UpdatePlayerConfig(ctx, p.ID, p.Name, string(p.Takeover), p.VolumeMode, p.MaxVolume)
+	return s.repo.UpdatePlayerConfig(ctx, p.ID, p.Name, string(p.Takeover), p.VolumeMode, p.MaxVolume, p.Password)
 }
 
 func (s *playbackStore) UpdatePlayerVolume(ctx context.Context, p player.Player) error {
@@ -183,6 +183,7 @@ func playerFromRow(r database.PlayerRow) player.Player {
 		Online:     r.Online,
 		Takeover:   player.TakeoverBehavior(r.TakeoverBehavior),
 		EQ:         player.ParseEQ(r.EQProfile),
+		Password:   r.Password,
 	}
 }
 
@@ -213,6 +214,7 @@ func playerRow(p player.Player) database.PlayerRow {
 		TakeoverBehavior: takeover,
 		VolumeMode:       volumeMode,
 		MaxVolume:        maxVolume,
+		Password:         p.Password,
 	}
 }
 

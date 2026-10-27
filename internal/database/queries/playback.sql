@@ -5,8 +5,8 @@ SELECT * FROM players ORDER BY created_at, id;
 SELECT * FROM players WHERE id = ?;
 
 -- name: UpsertPlayer :exec
-INSERT INTO players (id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, volume_mode, max_volume, last_seen_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO players (id, kind, name, address, model, capabilities, volume, muted, online, eq_profile, takeover_behavior, volume_mode, max_volume, password, last_seen_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     kind = excluded.kind,
     name = excluded.name,
@@ -17,7 +17,7 @@ ON CONFLICT(id) DO UPDATE SET
     last_seen_at = excluded.last_seen_at;
 
 -- name: UpdatePlayerConfig :exec
-UPDATE players SET name = ?, takeover_behavior = ?, volume_mode = ?, max_volume = ? WHERE id = ?;
+UPDATE players SET name = ?, takeover_behavior = ?, volume_mode = ?, max_volume = ?, password = ? WHERE id = ?;
 
 -- name: UpdatePlayerVolume :exec
 UPDATE players SET volume = ?, muted = ? WHERE id = ?;

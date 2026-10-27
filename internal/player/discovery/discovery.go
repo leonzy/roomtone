@@ -234,13 +234,13 @@ func (d *Discovery) Scan(ctx context.Context) (Result, error) {
 
 	airplayHosts := make(map[string]bool)
 	for _, sp := range res.Speakers {
-		if sp.Kind == player.KindRAOP && !sp.Caps.NeedsPassword {
+		if sp.Kind == player.KindRAOP {
 			airplayHosts[speakerHost(sp.Address)] = true
 		}
 	}
 	if registry, ok := d.reg.(interface{ ListPlayers() []player.Player }); ok {
 		for _, p := range registry.ListPlayers() {
-			if p.Kind == player.KindRAOP && p.Online && !p.Caps.NeedsPassword {
+			if p.Kind == player.KindRAOP && p.Online {
 				airplayHosts[speakerHost(p.Address)] = true
 			}
 		}
@@ -255,12 +255,10 @@ func (d *Discovery) Scan(ctx context.Context) (Result, error) {
 	}
 	res.Speakers = preferred
 	for _, sp := range res.Speakers {
-		if sp.Caps.NeedsPassword {
-			// 需要密码的设备第一版直接跳过：RAOP 的密码是 FairPlay 认证，
-			// 不是简单的 challenge-response，做了也放不出声。
-			res.Skipped = append(res.Skipped, Skipped{ID: sp.ID, Name: sp.Name, Reason: "设备需要密码"})
-			continue
-		}
+		// 需要密码的设备照常注册（Caps.NeedsPassword 照记，UI 可标注）：
+		// AirPlay 1 密码 = RTSP HTTP Digest（见 raop/digest.go），非 FairPlay；
+		// FairPlay/SRP6 属 AirPlay 2 配对，不在支持范围。无密码起播时
+		// Open 会给出明确的 401 错误提示填密码。
 		_, err := d.reg.GetPlayer(sp.ID)
 		existed := err == nil
 		p := player.Player{

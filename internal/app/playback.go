@@ -295,6 +295,7 @@ func (b *playerSinkBuilder) Build(ctx context.Context, p *player.Player) (sink.S
 			Channels:    ch,
 			DialTimeout: 5 * time.Second,
 			OnControl:   onControl,
+			Password:    p.Password,
 		}), nil
 
 	case player.KindDLNA:

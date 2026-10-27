@@ -98,6 +98,10 @@ type Player struct {
 	EQ         EQProfile
 	// Standby 已待机（不再收帧、不进同步环）。只存内存，重启后按物理状态重新探测。
 	Standby bool `json:"standby,omitempty"`
+	// Password 受密码保护设备的密码（AirPlay 1 = RTSP HTTP Digest，见
+	// raop/digest.go）。json:"-" 防泄漏：不出 API，更新走 PlayerUpdate.Password
+	// 单独通道。
+	Password string `json:"-"`
 }
 
 // SupportsCodec 是否支持某编码。

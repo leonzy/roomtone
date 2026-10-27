@@ -47,6 +47,9 @@ type Client struct {
 	// DefaultHeaders 每个请求都携带的头（DACP-ID / Active-Remote 等）。
 	// Do 的 headers 参数优先级更高，可覆盖。
 	DefaultHeaders map[string]string
+	// authorization Digest 授权头（密码设备 401 挑战后写入），
+	// 随后续所有请求携带（对齐 Roon 的 _auth_header 复用）。
+	authorization string
 }
 
 // Dial 建立控制连接。
@@ -87,6 +90,9 @@ func (c *Client) Do(ctx context.Context, method, uri string, headers map[string]
 	}
 	for k, v := range headers {
 		requestHeaders[k] = v
+	}
+	if c.authorization != "" {
+		requestHeaders["Authorization"] = c.authorization
 	}
 	req := BuildRequest(method, uri, c.cseq, c.session, requestHeaders, body)
 	deadline := time.Now().Add(c.timeout)

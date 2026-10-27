@@ -247,13 +247,14 @@ func (m *Manager) RegisterPlayer(ctx context.Context, p Player) error {
 			delete(m.sinks, p.ID)
 			_ = stale.Close()
 		}
-		// 保留用户设置（音量 / 音量模式 / 上限 / EQ / 接管行为 / 名称）
+		// 保留用户设置（音量 / 音量模式 / 上限 / EQ / 接管行为 / 名称 / 密码）
 		p.Volume = prev.Volume
 		p.Muted = prev.Muted
 		p.VolumeMode = prev.VolumeMode
 		p.MaxVolume = prev.MaxVolume
 		p.EQ = prev.EQ
 		p.Takeover = prev.Takeover
+		p.Password = prev.Password
 		if prev.Name != "" {
 			p.Name = prev.Name
 		}
@@ -409,6 +410,9 @@ type PlayerUpdate struct {
 	Takeover   *TakeoverBehavior
 	VolumeMode *string
 	MaxVolume  *int
+	// Password 设备密码（AirPlay 1 = HTTP Digest）。非 nil 更新（空串清空），
+	// nil 不覆盖；不出 Player JSON，API 侧单独通道传入。
+	Password *string
 }
 
 // UpdatePlayer 更新名称 / 接管行为 / 音量模式 / 音量上限。
@@ -451,6 +455,9 @@ func (m *Manager) UpdatePlayer(ctx context.Context, id string, upd PlayerUpdate)
 		}
 		p.VolumeMode = mode
 	}
+	if upd.Password != nil {
+		p.Password = *upd.Password
+	}
 	volumeClamped := false
 	if upd.MaxVolume != nil {
 		maxVolume := *upd.MaxVolume
@@ -462,6 +469,13 @@ func (m *Manager) UpdatePlayer(ctx context.Context, id string, upd PlayerUpdate)
 		if p.Volume > maxVolume {
 			p.Volume = maxVolume
 			volumeClamped = true
+		}
+	}
+	// 密码更新后旧 sink 的握手凭据已失效，丢弃重建（下次起播用新密码）。
+	if upd.Password != nil {
+		if stale, ok := m.sinks[id]; ok {
+			delete(m.sinks, id)
+			_ = stale.Close()
 		}
 	}
 	s := m.sinks[id]

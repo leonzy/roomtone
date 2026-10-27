@@ -98,14 +98,32 @@ func TestScanClassifiesDevices(t *testing.T) {
 	if len(res.Speakers) != 3 {
 		t.Fatalf("去重后应有 3 台，实际 %d: %+v", len(res.Speakers), res.Speakers)
 	}
-	if len(res.Added) != 1 || res.Added[0] != "dlna:uuid-1" {
-		t.Errorf("新增应为 dlna:uuid-1，实际 %v", res.Added)
+	if len(res.Added) != 2 {
+		t.Errorf("新增应为 2 台（含密码设备），实际 %v", res.Added)
+	}
+	addedSet := map[string]bool{res.Added[0]: true, res.Added[1]: true}
+	if !addedSet["dlna:uuid-1"] || !addedSet["raop:11:22:33:44:55:66"] {
+		t.Errorf("新增应含 dlna:uuid-1 与密码设备，实际 %v", res.Added)
 	}
 	if len(res.Updated) != 1 || res.Updated[0] != "raop:aa:bb:cc:dd:ee:ff" {
 		t.Errorf("已存在的设备应记为 updated，实际 %v", res.Updated)
 	}
-	if len(res.Skipped) != 1 || res.Skipped[0].ID != "raop:11:22:33:44:55:66" {
-		t.Errorf("需要密码的设备应跳过，实际 %+v", res.Skipped)
+	// A4：需要密码的设备照常注册（Caps.NeedsPassword 照记，UI 可标注），
+	// 不再进 Skipped；无密码起播时 Open 报明确的 401 错误。
+	if len(res.Skipped) != 0 {
+		t.Errorf("不应再跳过设备，实际 %+v", res.Skipped)
+	}
+	foundProtected := false
+	for _, sp := range res.Speakers {
+		if sp.ID == "raop:11:22:33:44:55:66" {
+			foundProtected = true
+			if !sp.Caps.NeedsPassword {
+				t.Errorf("密码设备的 Caps.NeedsPassword 应照记")
+			}
+		}
+	}
+	if !foundProtected {
+		t.Errorf("需要密码的设备应出现在 Speakers 中")
 	}
 	// 重复项保留第一条地址
 	for _, sp := range res.Speakers {
@@ -113,15 +131,15 @@ func TestScanClassifiesDevices(t *testing.T) {
 			t.Errorf("重复项应保留第一条，实际 %q", sp.Address)
 		}
 	}
-	if reg.has("raop:11:22:33:44:55:66") {
-		t.Error("需要密码的设备不应入库")
+	if !reg.has("raop:11:22:33:44:55:66") {
+		t.Error("需要密码的设备应照常入库（A4：不再跳过）")
 	}
 	if res.ScannedAt.IsZero() {
 		t.Error("ScannedAt 应填写")
 	}
 	last, at := d.Last()
-	if len(last.Added) != 1 || at.IsZero() {
-		t.Errorf("Last 应返回最近一次结果，实际 %+v", last)
+	if len(last.Added) != 2 || at.IsZero() {
+		t.Errorf("Last 应返回最近一次结果（含密码设备），实际 %+v", last)
 	}
 }
 

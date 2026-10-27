@@ -127,6 +127,7 @@ type Player struct {
 	CreatedAt        time.Time
 	VolumeMode       string
 	MaxVolume        int64
+	Password         string
 }
 
 type PlayerGroup struct {

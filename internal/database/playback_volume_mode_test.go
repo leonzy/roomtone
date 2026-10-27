@@ -45,7 +45,7 @@ func TestPlayerVolumeModeRoundTrip(t *testing.T) {
 		t.Fatalf("重新注册覆盖了用户设置：mode %q / max %d", got.VolumeMode, got.MaxVolume)
 	}
 
-	if err := repo.UpdatePlayerConfig(ctx, "p1", "书房", "follow", "dsp", 45); err != nil {
+	if err := repo.UpdatePlayerConfig(ctx, "p1", "书房", "follow", "dsp", 45, "pw"); err != nil {
 		t.Fatalf("update config: %v", err)
 	}
 	got, err = repo.GetPlayer(ctx, "p1")

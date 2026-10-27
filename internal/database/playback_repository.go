@@ -39,8 +39,11 @@ type PlayerRow struct {
 	TakeoverBehavior string
 	VolumeMode       string
 	MaxVolume        int
-	LastSeenAt       time.Time
-	CreatedAt        time.Time
+	// Password 受密码保护设备的密码（AirPlay 1 = HTTP Digest）。
+	// 只进服务端，不出 API；UpsertPlayer 的 ON CONFLICT 不更新它。
+	Password   string
+	LastSeenAt time.Time
+	CreatedAt  time.Time
 }
 
 // GroupRow 同步组行
@@ -90,6 +93,7 @@ func playerRowFromSQLc(r sqlc.Player) PlayerRow {
 		TakeoverBehavior: r.TakeoverBehavior,
 		VolumeMode:       r.VolumeMode,
 		MaxVolume:        int(r.MaxVolume),
+		Password:         r.Password,
 		CreatedAt:        r.CreatedAt,
 	}
 	if r.LastSeenAt.Valid {
@@ -143,6 +147,7 @@ func (r *PlaybackRepository) UpsertPlayer(ctx context.Context, p PlayerRow) erro
 		TakeoverBehavior: p.TakeoverBehavior,
 		VolumeMode:       p.VolumeMode,
 		MaxVolume:        int64(p.MaxVolume),
+		Password:         p.Password,
 		LastSeenAt:       lastSeen,
 	})
 	if err != nil {
@@ -151,13 +156,14 @@ func (r *PlaybackRepository) UpsertPlayer(ctx context.Context, p PlayerRow) erro
 	return nil
 }
 
-// UpdatePlayerConfig 更新名称、接管行为、音量模式与音量上限
-func (r *PlaybackRepository) UpdatePlayerConfig(ctx context.Context, id, name, takeover, volumeMode string, maxVolume int) error {
+// UpdatePlayerConfig 更新名称、接管行为、音量模式、音量上限与密码
+func (r *PlaybackRepository) UpdatePlayerConfig(ctx context.Context, id, name, takeover, volumeMode string, maxVolume int, password string) error {
 	return r.queries.UpdatePlayerConfig(ctx, sqlc.UpdatePlayerConfigParams{
 		Name:             name,
 		TakeoverBehavior: takeover,
 		VolumeMode:       volumeMode,
 		MaxVolume:        int64(maxVolume),
+		Password:         password,
 		ID:               id,
 	})
 }
