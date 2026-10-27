@@ -24,6 +24,28 @@ func DecodeBplistAny(data []byte) (map[string]any, error) {
 	return raw, nil
 }
 
+// DecodeBplistNumbers 解码 binary plist 到 map[string]int（数字值形态，
+// 如 SETUP#1 响应的 {timingPort, eventPort}）。
+func DecodeBplistNumbers(data []byte) (map[string]int, error) {
+	raw, err := DecodeBplistAny(data)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]int, len(raw))
+	for k, v := range raw {
+		n, ok := v.(uint64)
+		if !ok {
+			if f, ok := v.(float64); ok {
+				out[k] = int(f)
+				continue
+			}
+			return nil, fmt.Errorf("airplay/bplist: 键 %q 的值不是数字（%T）", k, v)
+		}
+		out[k] = int(n)
+	}
+	return out, nil
+}
+
 // DecodeBplist 解码 binary plist 到 map[string][]byte（data 值形态）。
 //
 // 值不是 data（协议形态不符）时报错，便于在配对路径上尽早发现分歧。

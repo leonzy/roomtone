@@ -46,6 +46,8 @@ type RTSPClient struct {
 	instance string
 	// DefaultHeaders 每个请求都携带的头（DACP-ID / Active-Remote 等）。
 	DefaultHeaders map[string]string
+	// authorization Digest 授权头（密码设备 401 挑战后写入）。
+	authorization string
 	// enc 加密上下文（InitEncryption 后非 nil）。
 	enc *EncryptionContext
 }
@@ -230,6 +232,10 @@ func ReadResponse(br *bufio.Reader) (*Response, error) {
 		resp.Body = buf
 	}
 	return resp, nil
+}
+
+func randomUint32() uint32 {
+	return uint32(randomUint64()>>32) ^ uint32(randomUint64())
 }
 
 func randomUint64() uint64 {

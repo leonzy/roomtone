@@ -24,6 +24,15 @@ func newGCM16(key []byte) (cipher.AEAD, error) {
 	return cipher.NewGCMWithNonceSize(block, 16)
 }
 
+// chachaSealAAD ChaCha20-Poly1305 加密（带 AAD），返回 ct ‖ tag。
+func chachaSealAAD(key, nonce, plaintext, aad []byte) ([]byte, error) {
+	aead, err := chachaNew(key)
+	if err != nil {
+		return nil, err
+	}
+	return aead.Seal(nil, nonce, plaintext, aad), nil
+}
+
 // gcmSeal AES-GCM（128 位 tag，16 字节 IV），返回 ct ‖ tag。
 func gcmSeal(key, iv, plaintext []byte) ([]byte, error) {
 	gcm, err := newGCM16(key)
