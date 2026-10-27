@@ -14,6 +14,16 @@ func EncodeBplist(v any) ([]byte, error) {
 	return plist.Marshal(v, plist.BinaryFormat)
 }
 
+// DecodeBplistAny 解码到 map[string]any（保留原始类型：string/[]byte/...）。
+// pair-setup-pin #1 的 {method:"pin", user:...} 是字符串字典。
+func DecodeBplistAny(data []byte) (map[string]any, error) {
+	var raw map[string]any
+	if _, err := plist.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("airplay/bplist: 解码失败: %w", err)
+	}
+	return raw, nil
+}
+
 // DecodeBplist 解码 binary plist 到 map[string][]byte（data 值形态）。
 //
 // 值不是 data（协议形态不符）时报错，便于在配对路径上尽早发现分歧。
