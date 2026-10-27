@@ -621,3 +621,22 @@ func TestSinkErrorPaths(t *testing.T) {
 		t.Fatal("控制连接关闭后应出现 EventError/EventOffline")
 	}
 }
+
+func TestSinkStartHonorsFutureDeadline(t *testing.T) {
+	d := newFakeRAATDevice(t)
+	s := openSink(t, d)
+	at := time.Now().Add(2 * time.Second)
+	if err := s.Start(at); err != nil {
+		t.Fatal(err)
+	}
+	reqs := waitReqs(t, d, 5)
+	var body struct {
+		Offset int64 `json:"min_offset"`
+	}
+	if err := json.Unmarshal(reqs[4].body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if time.Duration(body.Offset) < 1500*time.Millisecond || time.Duration(body.Offset) > 2*time.Second {
+		t.Fatalf("future start ignored: offset=%s", time.Duration(body.Offset))
+	}
+}

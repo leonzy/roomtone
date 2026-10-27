@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"songloft/internal/player"
+	"songloft/internal/player/sink"
 	"songloft/internal/player/sink/dlna"
 	"songloft/internal/player/sink/raat"
 	"songloft/internal/player/sink/raop"
@@ -90,6 +91,24 @@ func (s *RAOPScanner) Scan(ctx context.Context) ([]Speaker, error) {
 // features 位 → SupportsArtwork/BPlistNowPlaying 等、编组信息进 Model）。
 func mergeAirPlay2(sp *Speaker, d raop2.Device) {
 	sp.Caps.AirPlay2 = true
+	sp.Caps.SupportsVolume, sp.Caps.SupportsSeek = true, true
+	if len(sp.Caps.Codecs) == 0 {
+		sp.Caps.Codecs = []sink.Codec{sink.CodecL16}
+	}
+	if sp.Caps.LatencyMs == 0 {
+		sp.Caps.LatencyMs = 2000
+	}
+	sp.Caps.DeviceID = d.DeviceID
+	sp.Address = d.Address
+	if d.Channels > 0 {
+		sp.Caps.Channels = d.Channels
+	}
+	if d.SampleRate > 0 {
+		sp.Caps.MaxSampleRate = d.SampleRate
+	}
+	if d.BitDepth > 0 {
+		sp.Caps.BitDepth = d.BitDepth
+	}
 	sp.Caps.NeedsPassword = sp.Caps.NeedsPassword || d.RequiresPassword
 	if d.PublicKey != "" {
 		sp.Caps.PublicKey = d.PublicKey

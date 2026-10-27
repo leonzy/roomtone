@@ -316,6 +316,7 @@ func TestConnStreamingResponse(t *testing.T) {
 		}
 	}()
 
+	finished := make(chan struct{})
 	var mu sync.Mutex
 	var calls []struct {
 		raw   string
@@ -328,10 +329,18 @@ func TestConnStreamingResponse(t *testing.T) {
 			final bool
 		}{string(r), final})
 		mu.Unlock()
+		if final {
+			close(finished)
+		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("stream final response did not arrive")
 	}
 	mu.Lock()
 	defer mu.Unlock()

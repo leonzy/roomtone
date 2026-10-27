@@ -516,18 +516,15 @@ func (s *Sink) startTimingReader() {
 			if err != nil {
 				return
 			}
-			if n < 16 || buf[1]&0xf0 != 0xd0 || buf[1] != 0xd2 {
+			if n < 32 || buf[0]>>6 != 2 || buf[1] != 0xd2 {
 				continue
 			}
-			// 0xd2 请求 → 0xd3 应答：头四字节原样回显（换类型），后接收到的
-			// 时间戳与当前时间。
+			received := airplay.ToNTP(time.Now())
 			resp := airplay.BuildTimingPacket(
-				airplay.NTPTime{Sec: uint32(binary.BigEndian.Uint32(buf[4:8])), Frac: binary.BigEndian.Uint32(buf[8:12])},
-				airplay.NTPTime{Sec: uint32(binary.BigEndian.Uint32(buf[4:8])), Frac: binary.BigEndian.Uint32(buf[8:12])},
-				airplay.ToNTP(time.Now()),
-			)
-			resp[1] = 0xd3
-			_, _ = s.timng.WriteToUDP(resp, from)
+				airplay.NTPTime{Sec: binary.BigEndian.Uint32(buf[24:28]), Frac: binary.BigEndian.Uint32(buf[28:32])},
+				received, airplay.ToNTP(time.Now()))
+			copy(resp[2:4], buf[2:4])
+			_, _ = conn.WriteToUDP(resp, from)
 		}
 	}()
 }
@@ -542,14 +539,27 @@ func (s *Sink) startControlReader() {
 			if err != nil {
 				return
 			}
-			if n < 8 || buf[1] != 0xd5 {
+			receiver := net.ParseIP(hostOf(s.opts.Address))
+			if n != 8 || buf[0]>>6 != 2 || buf[1]&0x7f != 0x55 || (receiver != nil && !from.IP.Equal(receiver)) {
+				continue
+			}
+			first, count := binary.BigEndian.Uint16(buf[4:6]), int(binary.BigEndian.Uint16(buf[6:8]))
+			if count < 1 || count > 4000 {
 				continue
 			}
 			s.mu.Lock()
-			for i := 4; i+2 <= n; i += 2 {
-				seq := binary.BigEndian.Uint16(buf[i : i+2])
+			if s.ctrl != conn {
+				s.mu.Unlock()
+				return
+			}
+			for i := 0; i < count; i++ {
+				seq := first + uint16(i)
 				if pkt, ok := s.backlog[seq]; ok {
-					_, _ = s.ctrl.WriteToUDP(pkt, from)
+					reply := make([]byte, 4+len(pkt))
+					reply[0], reply[1] = 0x80, 0xd6
+					binary.BigEndian.PutUint16(reply[2:4], seq)
+					copy(reply[4:], pkt)
+					_, _ = conn.WriteToUDP(reply, from)
 				}
 			}
 			s.mu.Unlock()
@@ -649,7 +659,7 @@ func (s *Sink) writeChunkLocked(sampleIndex int64, pcm []byte) error {
 	}
 
 	// sync 包（>1s 间隔）
-	if !s.lastSync.IsZero() && time.Since(s.lastSync) > time.Second {
+	if s.lastSync.IsZero() || time.Since(s.lastSync) > time.Second {
 		s.sendSyncLocked(rtpTime)
 	}
 
@@ -660,11 +670,19 @@ func (s *Sink) writeChunkLocked(sampleIndex int64, pcm []byte) error {
 }
 
 // sendSyncLocked 同步包（0x80 0xd4 0x0007 + rtpNow + NTP + rtpAtPlay）。
-func (s *Sink) sendSyncLocked(rtpTime uint32) {
+func (s *Sink) sendSyncLocked(_ uint32) {
 	s.lastSync = time.Now()
-	pkt := airplay.BuildSyncPacket(rtpTime, s.rtpAtPlay, airplay.ToNTP(time.Now()))
-	dst := &net.UDPAddr{IP: net.ParseIP(hostOf(s.opts.Address)), Port: s.serverPort}
-	_, _ = s.audio.WriteTo(pkt, dst)
+	playing := s.rtpBase + uint32(s.audibleSampleLocked())
+	buffered := playing + uint32(s.opts.Latency.Seconds()*float64(s.opts.SampleRate))
+	pkt := airplay.BuildSyncPacket(playing, buffered, airplay.ToNTP(time.Now()))
+	if s.sent == 0 {
+		pkt[0] = 0x90
+	}
+	if s.ctrl == nil || s.controlPort == 0 {
+		return
+	}
+	dst := &net.UDPAddr{IP: net.ParseIP(hostOf(s.opts.Address)), Port: s.controlPort}
+	_, _ = s.ctrl.WriteToUDP(pkt, dst)
 }
 
 func (s *Sink) Seek(sample uint64) error {
@@ -806,9 +824,8 @@ func (s *Sink) audibleSampleLocked() int64 {
 // UpdateMetadata 实现 sink.MetadataSink：DMAP（同 V1）+ SupportsBPlistNowPlaying
 // 时后补 POST /command updateMRPlaybackState。
 func (s *Sink) UpdateMetadata(m sink.NowPlaying) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.rtsp == nil {
+	cl, uri, cur, _ := s.metadataTarget()
+	if cl == nil {
 		return nil
 	}
 	var e airplay.DMAPEncoder
@@ -825,18 +842,18 @@ func (s *Sink) UpdateMetadata(m sink.NowPlaying) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := s.rtsp.Do(ctx, "SET_PARAMETER", s.uri(), map[string]string{
+	if _, err := cl.Do(ctx, "SET_PARAMETER", uri, map[string]string{
 		"Content-Type": "application/x-dmap-tagged",
-		"RTP-Info":     "rtptime=" + strconv.FormatUint(uint64(s.rtpBase+uint32(s.audibleSampleLocked())), 10),
+		"RTP-Info":     "rtptime=" + strconv.FormatUint(uint64(cur), 10),
 	}, body); err != nil {
 		return err
 	}
-	return s.updatePlaybackStateLocked(ctx)
+	return s.updatePlaybackState(ctx, cl)
 }
 
-// updatePlaybackStateLocked POST /command {type:updateMRPlaybackState,
+// updatePlaybackState POST /command {type:updateMRPlaybackState,
 // params:{mrPlaybackState:1}}（对齐 UpdatePlaybackState；Roon 只发 1）。
-func (s *Sink) updatePlaybackStateLocked(ctx context.Context) error {
+func (s *Sink) updatePlaybackState(ctx context.Context, cl *RTSPClient) error {
 	if !s.opts.SupportsBPlistNowPlaying {
 		return nil
 	}
@@ -847,7 +864,7 @@ func (s *Sink) updatePlaybackStateLocked(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.rtsp.Do(ctx, "POST", "/command", map[string]string{
+	if _, err := cl.Do(ctx, "POST", "/command", map[string]string{
 		"Content-Type": "application/x-apple-binary-plist",
 	}, body); err != nil {
 		// 对齐 Roon：不被接受只记日志。
@@ -858,13 +875,10 @@ func (s *Sink) updatePlaybackStateLocked(ctx context.Context) error {
 
 // UpdateProgress 实现 sink.ProgressSink（progress: start/cur/end，同 V1）。
 func (s *Sink) UpdateProgress(pos, total time.Duration) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.rtsp == nil {
+	cl, uri, cur, rate := s.metadataTarget()
+	if cl == nil {
 		return nil
 	}
-	cur := s.rtpBase + uint32(s.audibleSampleLocked())
-	rate := int64(s.opts.SampleRate)
 	posSamples := int64(pos.Seconds() * float64(rate))
 	totalSamples := int64(total.Seconds() * float64(rate))
 	start := cur - uint32(posSamples)
@@ -873,7 +887,7 @@ func (s *Sink) UpdateProgress(pos, total time.Duration) error {
 		strconv.FormatUint(uint64(cur), 10) + "/" + strconv.FormatUint(uint64(end), 10) + "\r\n")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err := s.rtsp.Do(ctx, "SET_PARAMETER", s.uri(), map[string]string{
+	_, err := cl.Do(ctx, "SET_PARAMETER", uri, map[string]string{
 		"Content-Type": "text/parameters",
 		"RTP-Info":     "rtptime=" + strconv.FormatUint(uint64(cur), 10),
 	}, body)
@@ -882,9 +896,8 @@ func (s *Sink) UpdateProgress(pos, total time.Duration) error {
 
 // UpdateArtwork 实现 sink.ArtworkSink（image/jpeg，同 V1）。
 func (s *Sink) UpdateArtwork(path string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.rtsp == nil {
+	cl, uri, cur, _ := s.metadataTarget()
+	if cl == nil {
 		return nil
 	}
 	ctype := "image/none"
@@ -899,9 +912,18 @@ func (s *Sink) UpdateArtwork(path string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err := s.rtsp.Do(ctx, "SET_PARAMETER", s.uri(), map[string]string{
+	_, err := cl.Do(ctx, "SET_PARAMETER", uri, map[string]string{
 		"Content-Type": ctype,
-		"RTP-Info":     "rtptime=" + strconv.FormatUint(uint64(s.rtpBase+uint32(s.audibleSampleLocked())), 10),
+		"RTP-Info":     "rtptime=" + strconv.FormatUint(uint64(cur), 10),
 	}, raw)
 	return err
+}
+
+func (s *Sink) metadataTarget() (*RTSPClient, string, uint32, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.rtsp == nil {
+		return nil, "", 0, 0
+	}
+	return s.rtsp, s.uri(), s.rtpBase + uint32(s.audibleSampleLocked()), s.opts.SampleRate
 }

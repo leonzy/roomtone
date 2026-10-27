@@ -516,3 +516,37 @@ func TestUpdatePlayerRejectsInvalidVolumeSettings(t *testing.T) {
 		t.Fatalf("越界 max_volume 错误 = %v，期望 ErrInvalidArgument", err)
 	}
 }
+
+// Replacing an already playing target must replace its decoder, not just its queue.
+func TestTransferReplacesBusyTargetAndStopsSource(t *testing.T) {
+	m, builder, _ := newTestManager(t, "a", "b")
+	ctx := context.Background()
+	from, _ := m.Engine(m.GroupIDOf("a"))
+	to, _ := m.Engine(m.GroupIDOf("b"))
+	if err := from.Load(ctx, []int64{11}, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := to.Load(ctx, []int64{22}, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	defer from.Stop()
+	defer to.Stop()
+	waitFor(t, "both engines playing", 4*time.Second, func() bool {
+		return from.Status().State == player.StatePlaying && to.Status().State == player.StatePlaying
+	})
+	if err := m.Transfer(ctx, m.GroupIDOf("a"), m.GroupIDOf("b"), ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "target receives source song", 4*time.Second, func() bool { return builder.get("b").Plan().SongID == 11 && to.Status().State == player.StatePlaying })
+	if from.Status().State != player.StateIdle {
+		t.Fatalf("source not stopped: %+v", from.Status())
+	}
+	before := builder.get("a").FrameCount()
+	time.Sleep(80 * time.Millisecond)
+	if got := builder.get("a").FrameCount(); got > before+1 {
+		t.Fatalf("source still sends audio: %d -> %d", before, got)
+	}
+	if to.Status().SongID != 11 {
+		t.Fatalf("target kept original song: %+v", to.Status())
+	}
+}

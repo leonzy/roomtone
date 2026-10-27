@@ -346,6 +346,11 @@ func (s *Sink) startStreamLocked(ctx context.Context) error {
 				// Start 先于 Ready 到达：补发 start。异步——回调运行在
 				// readLoop 内，阻塞请求会死锁（读循环等自己发出的应答）。
 				go func() {
+					s.mu.Lock()
+					defer s.mu.Unlock()
+					if s.ctrl == nil || s.closed {
+						return
+					}
 					if err := s.sendStart(context.Background()); err != nil {
 						slog.Warn("raat: Ready 后补发 start 失败", "device", s.id, "err", err)
 					}
@@ -378,13 +383,16 @@ func (s *Sink) startStreamLocked(ctx context.Context) error {
 // 时刻锚定 wallStart。精度边界：±(RTT/2+处理) ≈ ±10-50ms（SyncExact）；
 // ±1ms（SyncPrecise）由 B8 时钟协议补齐。
 func (s *Sink) sendStart(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	var resp struct {
 		Status string `json:"status"`
 		Time   int64  `json:"time"`
 	}
-	args := map[string]any{
-		"min_offset": 200 * time.Millisecond, // JSON 序列化为 200000000ns
-	}
+	// P0 receivers also have to honor the engine's future start deadline.
+	// A constant 200ms starts the clock master early while followers wait for at.
+	offset := max(200*time.Millisecond, time.Until(s.startAt))
+	args := map[string]any{"min_offset": offset}
 	if s.precise && s.clock != nil && s.clock.OK() {
 		// 时钟主时间轴：start 带绝对 time（master 设备时间轴上的起播时刻）
 		args["time"] = s.clock.DeviceTime(s.startAt)

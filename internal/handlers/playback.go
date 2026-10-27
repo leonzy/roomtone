@@ -103,7 +103,7 @@ func (h *PlaybackHandler) UpdatePlayer(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
 		return
 	}
-	upd := player.PlayerUpdate{MaxVolume: req.MaxVolume}
+	upd := player.PlayerUpdate{MaxVolume: req.MaxVolume, Password: req.Password}
 	if req.Name != "" {
 		upd.Name = &req.Name
 	}
@@ -123,10 +123,11 @@ func (h *PlaybackHandler) UpdatePlayer(w http.ResponseWriter, r *http.Request) {
 }
 
 type updatePlayerRequest struct {
-	Name             string `json:"name"`
-	TakeoverBehavior string `json:"takeover_behavior"`
-	VolumeMode       string `json:"volume_mode"`
-	MaxVolume        *int   `json:"max_volume"`
+	Password         *string `json:"password"`
+	Name             string  `json:"name"`
+	TakeoverBehavior string  `json:"takeover_behavior"`
+	VolumeMode       string  `json:"volume_mode"`
+	MaxVolume        *int    `json:"max_volume"`
 }
 
 // SetVolume 设置音量

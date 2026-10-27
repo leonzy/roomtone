@@ -130,6 +130,33 @@ func (s *Sink) subscribeTransport() {
 	if s.opts.OnControl == nil {
 		return
 	}
+	type control struct {
+		cmd   string
+		value float64
+	}
+	commands := make(chan control, 32)
+	conn := s.ctrl
+	go func() {
+		for {
+			select {
+			case <-conn.closed:
+				return
+			case c := <-commands:
+				if err := s.opts.OnControl(c.cmd, c.value); err != nil {
+					slog.Warn("raat: device control failed", "device", s.id, "cmd", c.cmd, "err", err)
+				}
+			}
+		}
+	}()
+	dispatch := func(cmd string, value float64) {
+		s.recordControl(cmd, value)
+		select {
+		case <-conn.closed:
+		case commands <- control{cmd, value}:
+		default:
+			slog.Warn("raat: device control queue full", "device", s.id)
+		}
+	}
 	s.ctrl.OnServerRequest = func(raw json.RawMessage) {
 		var note struct {
 			Control struct {
@@ -145,10 +172,7 @@ func (s *Sink) subscribeTransport() {
 			return
 		}
 		if note.Control.Button != "" {
-			s.recordControl(note.Control.Button, 0)
-			if err := s.opts.OnControl(note.Control.Button, 0); err != nil {
-				slog.Warn("raat: 设备反控失败", "device", s.id, "cmd", note.Control.Button, "err", err)
-			}
+			dispatch(note.Control.Button, 0)
 			return
 		}
 		if note.Control.Seek != nil {
@@ -159,10 +183,7 @@ func (s *Sink) subscribeTransport() {
 				// 绝对语义，边界如实标注）
 				slog.Debug("raat: relative seek 通知按绝对语义透传", "device", s.id, "seconds", seconds)
 			}
-			s.recordControl("seek", seconds)
-			if err := s.opts.OnControl("seek", seconds); err != nil {
-				slog.Warn("raat: 设备反控失败", "device", s.id, "cmd", "seek", "err", err)
-			}
+			dispatch("seek", seconds)
 		}
 	}
 	// 订阅（响应忽略；后续通知走 OnServerRequest）

@@ -144,7 +144,7 @@ func (a *App) initPlayback() {
 		Runners:  runners,
 		Builder: &playerSinkBuilder{
 			hub: a.wsHub, lan: a.lanURL, streamPlan: a.dlnaStreamPlan,
-			deviceControl: a.playerManager.DeviceControl,
+			deviceControl: a.deviceControl,
 		},
 		Logger:                slog.Default(),
 		Latency:               latency,
@@ -610,4 +610,12 @@ func (a *App) cancelPlayerOffline(id string) {
 	if a.playerOffline != nil {
 		a.playerOffline.cancel(id)
 	}
+}
+
+// Resolve the manager at callback time: the builder is created before NewManager returns.
+func (a *App) deviceControl(ctx context.Context, playerID, cmd string, value float64) error {
+	if a.playerManager == nil {
+		return player.ErrPlayerNotFound
+	}
+	return a.playerManager.DeviceControl(ctx, playerID, cmd, value)
 }

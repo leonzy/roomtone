@@ -10,8 +10,8 @@ const (
 	PayloadType byte = 0x60
 	// ControlSync 同步包类型（RTP 扩展 0x54 + marker 位）。
 	ControlSync byte = 0xd4
-	// ControlTiming 定时包类型（0x56 + marker 位）。
-	ControlTiming byte = 0xd6
+	// ControlTiming timing response (0x53 + marker bit).
+	ControlTiming byte = 0xd3
 	// rtpHeaderLen RTP 固定头长度。
 	rtpHeaderLen = 12
 	// NTPEpochOffset 1900-01-01 到 1970-01-01 的秒数。
@@ -70,12 +70,12 @@ func BuildTimingPacket(origin, receive, transmit NTPTime) []byte {
 	out[0] = 0x80
 	out[1] = ControlTiming
 	binary.BigEndian.PutUint16(out[2:4], 7)
-	binary.BigEndian.PutUint32(out[4:8], origin.Sec)
-	binary.BigEndian.PutUint32(out[8:12], origin.Frac)
-	binary.BigEndian.PutUint32(out[12:16], receive.Sec)
-	binary.BigEndian.PutUint32(out[16:20], receive.Frac)
-	binary.BigEndian.PutUint32(out[20:24], transmit.Sec)
-	binary.BigEndian.PutUint32(out[24:28], transmit.Frac)
+	binary.BigEndian.PutUint32(out[8:12], origin.Sec)
+	binary.BigEndian.PutUint32(out[12:16], origin.Frac)
+	binary.BigEndian.PutUint32(out[16:20], receive.Sec)
+	binary.BigEndian.PutUint32(out[20:24], receive.Frac)
+	binary.BigEndian.PutUint32(out[24:28], transmit.Sec)
+	binary.BigEndian.PutUint32(out[28:32], transmit.Frac)
 	return out
 }
 

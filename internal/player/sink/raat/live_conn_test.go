@@ -3,6 +3,7 @@ package raat
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -23,9 +24,11 @@ import (
 //     直连 9200）；RAATServer 的 ServiceId 是 d7634b85（RoonServiceId）
 //     而非普通 RAAT 设备的 5e2042ad——已修正 sood.go 双标识兼容
 func TestLiveConnProbe(t *testing.T) {
-	for _, addr := range []string{
-		"127.0.0.1:51838",
-	} {
+	addr := os.Getenv("TEST_RAAT_ADDRESS")
+	if addr == "" {
+		t.Skip("set TEST_RAAT_ADDRESS to opt into a live RAAT receiver probe")
+	}
+	for _, addr := range []string{addr} {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		c, err := DialControl(ctx, addr)
 		if err != nil {

@@ -176,3 +176,15 @@ Status: lesson / promotion candidate / promoted (authoritative destination)
 - Fix: independent timing locking with connection identity, teardown of acknowledged owned sessions on failure, and no green success path for failed connections. A fake receiver gates RECORD on four timing exchanges; handshake and failure-cleanup regressions passed 10 repetitions.
 - Hardware evidence: [Cocoon validation](docs/en/cocoon-validation-20261027.md). After authorizing playback, the user confirmed audible continuous sound. Pause/resume reconnected successfully; the test ended paused. Long playback, format matrices and multiroom remain unverified.
 - Seen 1x (2026-10-27). Status: local uncommitted fix, not pushed or released.
+
+
+### AIRPLAY-004: Validate new protocol wiring and locks against wire contracts
+
+- On 2026-10-27, b34daad review found V2 timing/resend/sync/Digest violations of the existing V1 contract, lost discovery metadata, screen requests holding the audio lock, and RAAT remote callbacks blocking their own response reader.
+- Fix: complete transport identity, byte-level loopback assertions, snapshot-only audio locks, an ordered control worker and future-start scheduling. Nine old-code regressions fail and pass after fixes; key tests passed ten repeats. See [review](docs/en/playback-feature-review-20261027.md).
+- Seen 1× (2026-10-27). Status: uncommitted local fixes; new hardware protocols/precise synchronization Not run; platform test limits retained.
+
+
+### PLAYBACK-005: Replacing a busy zone must terminate its old session
+
+- 2026-10-28: Load replaced the queue while startLocked returned on running, leaving the target on its previous song. Stop the old run before loading and isolate stale failure/progress/completion callbacks by run context. Old-code regression timed out; the fix passed five repeats. See the playback feature review. Seen 1×.

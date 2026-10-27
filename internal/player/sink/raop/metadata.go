@@ -34,11 +34,6 @@ func (s *Sink) audibleSampleLocked() int64 {
 
 // UpdateMetadata 实现 sink.MetadataSink。
 func (s *Sink) UpdateMetadata(m sink.NowPlaying) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.rtsp == nil {
-		return nil
-	}
 	var e dmapEncoder
 	e.Begin("mlit")
 	e.WriteU8("mikd", 2)
@@ -51,53 +46,33 @@ func (s *Sink) UpdateMetadata(m sink.NowPlaying) error {
 	if err != nil {
 		return err
 	}
-	return s.setParameterDMAPLocked(context.Background(), body)
+	return s.setParameterDMAP(context.Background(), body)
 }
 
 // UpdateProgress 实现 sink.ProgressSink。
 func (s *Sink) UpdateProgress(pos, total time.Duration) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.rtsp == nil {
+	cl, uri, cur, rate := s.metadataTarget()
+	if cl == nil {
 		return nil
 	}
-	cur := s.tsLocked(s.audibleSampleLocked())
-	rate := int64(s.opts.SampleRate)
-	posSamples := int64(pos.Seconds() * float64(rate))
-	totalSamples := int64(total.Seconds() * float64(rate))
-	start := cur - uint32(posSamples) // uint32 环回，与 Roon 的 uint 运算一致
-	end := start + uint32(totalSamples)
+	start := cur - uint32(pos.Seconds()*float64(rate))
+	end := start + uint32(total.Seconds()*float64(rate))
 	body := []byte("progress: " + uitoa(uint64(start)) + "/" + uitoa(uint64(cur)) + "/" + uitoa(uint64(end)) + "\r\n")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err := s.rtsp.Do(ctx, "SET_PARAMETER", s.uri(), map[string]string{
-		"Content-Type": "text/parameters",
-		"RTP-Info":     "rtptime=" + uitoa(uint64(cur)),
-	}, body)
+	_, err := cl.Do(ctx, "SET_PARAMETER", uri, map[string]string{"Content-Type": "text/parameters", "RTP-Info": "rtptime=" + uitoa(uint64(cur))}, body)
 	return err
 }
 
 // UpdateArtwork 实现 sink.ArtworkSink。path 为空时发 image/none 清屏。
 func (s *Sink) UpdateArtwork(path string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.rtsp == nil {
-		return nil
-	}
 	if path == "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, err := s.rtsp.Do(ctx, "SET_PARAMETER", s.uri(), map[string]string{
-			"Content-Type": "image/none",
-			"RTP-Info":     "rtptime=" + uitoa(uint64(s.tsLocked(s.audibleSampleLocked()))),
-		}, nil)
-		return err
+		return s.setDisplayParameter(context.Background(), "image/none", nil)
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	// 设备只认 JPEG；其它格式转码（对齐 Roon 发送端总是准备好的 JPEG）。
 	if ct := http.DetectContentType(raw); ct != "image/jpeg" {
 		img, _, err := image.Decode(bytes.NewReader(raw))
 		if err != nil {
@@ -109,22 +84,30 @@ func (s *Sink) UpdateArtwork(path string) error {
 		}
 		raw = buf.Bytes()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_, err = s.rtsp.Do(ctx, "SET_PARAMETER", s.uri(), map[string]string{
-		"Content-Type": "image/jpeg",
-		"RTP-Info":     "rtptime=" + uitoa(uint64(s.tsLocked(s.audibleSampleLocked()))),
-	}, raw)
-	return err
+	return s.setDisplayParameter(context.Background(), "image/jpeg", raw)
 }
 
-func (s *Sink) setParameterDMAPLocked(ctx context.Context, body []byte) error {
+func (s *Sink) setParameterDMAP(ctx context.Context, body []byte) error {
+	return s.setDisplayParameter(ctx, "application/x-dmap-tagged", body)
+}
+
+// Snapshot only; a slow screen response must not hold the PCM writer mutex.
+func (s *Sink) metadataTarget() (*Client, string, uint32, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.rtsp == nil {
+		return nil, "", 0, 0
+	}
+	return s.rtsp, s.uri(), s.tsLocked(s.audibleSampleLocked()), s.opts.SampleRate
+}
+func (s *Sink) setDisplayParameter(ctx context.Context, ctype string, body []byte) error {
+	cl, uri, cur, _ := s.metadataTarget()
+	if cl == nil {
+		return nil
+	}
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	_, err := s.rtsp.Do(cctx, "SET_PARAMETER", s.uri(), map[string]string{
-		"Content-Type": "application/x-dmap-tagged",
-		"RTP-Info":     "rtptime=" + uitoa(uint64(s.tsLocked(s.audibleSampleLocked()))),
-	}, body)
+	_, err := cl.Do(cctx, "SET_PARAMETER", uri, map[string]string{"Content-Type": ctype, "RTP-Info": "rtptime=" + uitoa(uint64(cur))}, body)
 	return err
 }
 

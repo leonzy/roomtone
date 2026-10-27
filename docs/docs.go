@@ -1638,6 +1638,68 @@ const docTemplate = `{
                     }
                 }
             },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "用给定歌曲序列覆盖队列并定位到 index（不自动播放）。客户端是队列编辑者，服务端只保存区域排了什么；空数组表示清空队列。正在解码且当前曲目被换掉时会停掉解码并落到 paused。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放控制"
+                ],
+                "summary": "整体替换组队列",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "歌曲序列与当前下标",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.queueReplaceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的状态",
+                        "schema": {
+                            "$ref": "#/definitions/player.Status"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "组不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -9599,6 +9661,50 @@ const docTemplate = `{
                 }
             }
         },
+        "/songs/batch": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按 ids 顺序返回歌曲完整对象，用于把区域队列的 song_id 还原成可渲染的列表。不存在的 id 直接跳过。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "批量获取歌曲",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "逗号分隔的歌曲 ID，最多 500 个",
+                        "name": "ids",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "songs 为歌曲数组，total 为实际返回数量",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "ids 为空、超限或含非法值",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/songs/batch-delete": {
             "post": {
                 "security": [
@@ -13595,6 +13701,20 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.queueReplaceRequest": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer"
+                },
+                "song_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
         "handlers.registryInstallRequest": {
             "type": "object",
             "properties": {
@@ -13940,6 +14060,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "password": {
                     "type": "string"
                 },
                 "takeover_behavior": {
@@ -14921,6 +15044,10 @@ const docTemplate = `{
         "player.Caps": {
             "type": "object",
             "properties": {
+                "airplay2": {
+                    "description": "AirPlay2 设备声明了 _airplay._tcp（V2 能力面：配对/加密 RTSP/编组）。\n缺省 false，旧库行无感。",
+                    "type": "boolean"
+                },
                 "bit_depth": {
                     "type": "integer"
                 },
@@ -14951,6 +15078,18 @@ const docTemplate = `{
                 "public_key": {
                     "description": "PublicKey RAOP 加密用的 PEM 公钥（TXT pk）。为空表示只能明文。",
                     "type": "string"
+                },
+                "requires_pairing": {
+                    "description": "RequiresPairing features/StatusFlags 声明需要配对（AirPlay 2）。",
+                    "type": "boolean"
+                },
+                "supports_artwork": {
+                    "description": "SupportsArtwork features 位（设备能显示封面）。",
+                    "type": "boolean"
+                },
+                "supports_bplist_now_playing": {
+                    "description": "SupportsBPlistNowPlaying features 位（updateMRPlaybackState）。",
+                    "type": "boolean"
                 },
                 "supports_seek": {
                     "type": "boolean"
@@ -15100,14 +15239,13 @@ const docTemplate = `{
                 "local",
                 "raop",
                 "dlna",
-                "local",
-                "raop",
-                "dlna"
+                "raat"
             ],
             "x-enum-varnames": [
                 "KindLocal",
                 "KindRAOP",
-                "KindDLNA"
+                "KindDLNA",
+                "KindRAAT"
             ]
         },
         "player.Member": {
@@ -15842,11 +15980,13 @@ const docTemplate = `{
             "type": "integer",
             "enum": [
                 0,
-                1
+                1,
+                2
             ],
             "x-enum-varnames": [
                 "SyncExact",
-                "SyncAligned"
+                "SyncAligned",
+                "SyncPrecise"
             ]
         },
         "source.HealthClass": {

@@ -569,6 +569,15 @@ definitions:
       to:
         type: integer
     type: object
+  handlers.queueReplaceRequest:
+    properties:
+      index:
+        type: integer
+      song_ids:
+        items:
+          type: integer
+        type: array
+    type: object
   handlers.registryInstallRequest:
     properties:
       download_url:
@@ -813,6 +822,8 @@ definitions:
       max_volume:
         type: integer
       name:
+        type: string
+      password:
         type: string
       takeover_behavior:
         type: string
@@ -1533,6 +1544,11 @@ definitions:
     type: object
   player.Caps:
     properties:
+      airplay2:
+        description: |-
+          AirPlay2 设备声明了 _airplay._tcp（V2 能力面：配对/加密 RTSP/编组）。
+          缺省 false，旧库行无感。
+        type: boolean
       bit_depth:
         type: integer
       channels:
@@ -1557,6 +1573,15 @@ definitions:
       public_key:
         description: PublicKey RAOP 加密用的 PEM 公钥（TXT pk）。为空表示只能明文。
         type: string
+      requires_pairing:
+        description: RequiresPairing features/StatusFlags 声明需要配对（AirPlay 2）。
+        type: boolean
+      supports_artwork:
+        description: SupportsArtwork features 位（设备能显示封面）。
+        type: boolean
+      supports_bplist_now_playing:
+        description: SupportsBPlistNowPlaying features 位（updateMRPlaybackState）。
+        type: boolean
       supports_seek:
         type: boolean
       supports_volume:
@@ -1656,14 +1681,13 @@ definitions:
     - local
     - raop
     - dlna
-    - local
-    - raop
-    - dlna
+    - raat
     type: string
     x-enum-varnames:
     - KindLocal
     - KindRAOP
     - KindDLNA
+    - KindRAAT
   player.Member:
     properties:
       delay_ms:
@@ -2178,10 +2202,12 @@ definitions:
     enum:
     - 0
     - 1
+    - 2
     type: integer
     x-enum-varnames:
     - SyncExact
     - SyncAligned
+    - SyncPrecise
   source.HealthClass:
     enum:
     - green
@@ -3350,6 +3376,47 @@ paths:
       security:
       - BearerAuth: []
       summary: 向组队列追加歌曲
+      tags:
+      - 播放控制
+    put:
+      consumes:
+      - application/json
+      description: 用给定歌曲序列覆盖队列并定位到 index（不自动播放）。客户端是队列编辑者，服务端只保存区域排了什么；空数组表示清空队列。正在解码且当前曲目被换掉时会停掉解码并落到
+        paused。
+      parameters:
+      - description: 组 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 歌曲序列与当前下标
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.queueReplaceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的状态
+          schema:
+            $ref: '#/definitions/player.Status'
+        "400":
+          description: 请求格式错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 组不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 整体替换组队列
       tags:
       - 播放控制
   /groups/{id}/queue/reorder:
@@ -9509,6 +9576,34 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取视频 HLS 播放列表
+      tags:
+      - 歌曲管理
+  /songs/batch:
+    get:
+      description: 按 ids 顺序返回歌曲完整对象，用于把区域队列的 song_id 还原成可渲染的列表。不存在的 id 直接跳过。
+      parameters:
+      - description: 逗号分隔的歌曲 ID，最多 500 个
+        in: query
+        name: ids
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: songs 为歌曲数组，total 为实际返回数量
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: ids 为空、超限或含非法值
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 批量获取歌曲
       tags:
       - 歌曲管理
   /songs/batch-delete:

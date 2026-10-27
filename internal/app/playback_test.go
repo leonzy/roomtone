@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -63,5 +64,17 @@ func TestPlayerSinkBuilderRAOPNegotiation(t *testing.T) {
 	p := &player.Player{ID: "x", Kind: player.KindRAOP, Caps: player.Caps{AirPlay2: true}}
 	if _, err := b.Build(context.Background(), p); err == nil || !strings.Contains(err.Error(), "地址为空") {
 		t.Fatalf("地址为空应报错: %v", err)
+	}
+}
+
+func TestDeviceControlResolvesInitializedManager(t *testing.T) {
+	a := &App{}
+	b := &playerSinkBuilder{deviceControl: a.deviceControl}
+	if err := b.deviceControl(context.Background(), "missing", "pause", 0); !errors.Is(err, player.ErrPlayerNotFound) {
+		t.Fatalf("before init: %v", err)
+	}
+	a.playerManager = player.NewManager(player.ManagerDeps{})
+	if err := b.deviceControl(context.Background(), "missing", "pause", 0); !errors.Is(err, player.ErrPlayerNotFound) {
+		t.Fatalf("after init: %v", err)
 	}
 }

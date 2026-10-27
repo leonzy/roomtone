@@ -127,6 +127,7 @@ type Engine struct {
 	// sourceFormat 当前曲目的源格式摘要（signal_path 用）；空串表示未知。
 	sourceFormat string
 	cancel       context.CancelFunc
+	runCtx       context.Context
 	running      bool
 	release      func()
 	underruns    int64
@@ -378,6 +379,7 @@ func (e *Engine) Load(ctx context.Context, songIDs []int64, index int, position 
 		index = 0
 	}
 	e.mu.Lock()
+	e.stopLocked()
 	e.queue.Replace(songIDs, index)
 	release, err := e.acquireLocked()
 	if err != nil {
@@ -721,6 +723,7 @@ func (e *Engine) pushMetadata(ctx context.Context) {
 }
 
 func (e *Engine) stopLocked() {
+	e.runCtx = nil
 	if e.cancel != nil {
 		e.cancel()
 		e.cancel = nil
@@ -758,6 +761,7 @@ func (e *Engine) startLocked(parent context.Context, position time.Duration) {
 	}
 	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
 	e.cancel = cancel
+	e.runCtx = ctx
 	e.running = true
 	e.sourceFormat = ""
 	songID, _ := e.queue.CurrentSong()
@@ -775,7 +779,9 @@ func (e *Engine) startLocked(parent context.Context, position time.Duration) {
 func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 	defer func() {
 		e.mu.Lock()
-		e.running = false
+		if e.runCtx == ctx {
+			e.running = false
+		}
 		e.mu.Unlock()
 	}()
 
@@ -804,10 +810,14 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		e.mu.Unlock()
 		track, err := e.resolve(ctx, songID)
 		if err != nil {
-			e.fail(err)
+			e.fail(ctx, err)
 			return
 		}
 		e.mu.Lock()
+		if ctx.Err() != nil {
+			e.mu.Unlock()
+			return
+		}
 		e.sourceFormat = sourceFormatDetail(track)
 		format := e.format
 		timeline := e.timeline
@@ -822,10 +832,15 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 
 		dec, err := e.openDecoder(ctx, track, position, format)
 		if err != nil {
-			e.fail(err)
+			e.fail(ctx, err)
 			return
 		}
 		e.mu.Lock()
+		if ctx.Err() != nil {
+			e.mu.Unlock()
+			_ = dec.Close()
+			return
+		}
 		e.transport.MarkBuffering()
 		e.mu.Unlock()
 		e.emitState()
@@ -840,6 +855,11 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			Latency:  e.deps.Latency,
 		}
 		e.mu.Lock()
+		if ctx.Err() != nil {
+			e.mu.Unlock()
+			_ = dec.Close()
+			return
+		}
 		e.curPlan = plan
 		e.curTrack = track
 		e.planBase = sampleBase
@@ -875,7 +895,7 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			// 反而缩小起播散差。
 			for _, t := range targets {
 				if err := t.Sink.Open(ctx, plan); err != nil {
-					e.fail(fmt.Errorf("open sink %s: %w", t.PlayerID, err))
+					e.fail(ctx, fmt.Errorf("open sink %s: %w", t.PlayerID, err))
 					return
 				}
 			}
@@ -907,7 +927,7 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			}
 			for _, t := range targets {
 				if err := t.Sink.Start(timeline.At(uint64(sampleBase)).Add(t.Delay)); err != nil {
-					e.fail(fmt.Errorf("start sink %s: %w", t.PlayerID, err))
+					e.fail(ctx, fmt.Errorf("start sink %s: %w", t.PlayerID, err))
 					return
 				}
 			}
@@ -919,17 +939,17 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		// 否则浏览器那一端不会出声。它们不接收 PCM，只按指令自己拉流。
 		for _, s := range e.controlSinks() {
 			if err := s.Open(ctx, plan); err != nil {
-				e.fail(fmt.Errorf("open sink %s: %w", s.ID(), err))
+				e.fail(ctx, fmt.Errorf("open sink %s: %w", s.ID(), err))
 				return
 			}
 			if err := s.Start(timeline.At(uint64(sampleBase))); err != nil {
-				e.fail(fmt.Errorf("start sink %s: %w", s.ID(), err))
+				e.fail(ctx, fmt.Errorf("start sink %s: %w", s.ID(), err))
 				return
 			}
 		}
 
 		runner := e.deps.Runners(timeline, e.targets, sampleBase, func(idx int64, at time.Time) {
-			e.onProgress(idx, at, track.Duration, format.SampleRate)
+			e.onProgress(ctx, idx, at, track.Duration, format.SampleRate)
 		})
 		// ReplayGain：分发器每曲新建，增益跟着曲目走，不跨曲残留。
 		e.applyReplayGain(ctx, runner, track.SongID)
@@ -987,11 +1007,11 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			return
 		}
 		if runErr != nil && !errors.Is(runErr, io.EOF) {
-			e.fail(fmt.Errorf("decode song %d: %w", track.SongID, runErr))
+			e.fail(ctx, fmt.Errorf("decode song %d: %w", track.SongID, runErr))
 			return
 		}
 		if derr := dec.Err(); derr != nil {
-			e.fail(derr)
+			e.fail(ctx, derr)
 			return
 		}
 		_ = state
@@ -1047,11 +1067,15 @@ func (e *Engine) runDelegated(ctx context.Context, startAt time.Duration) {
 		}
 		track, err := e.resolve(ctx, songID)
 		if err != nil {
-			e.fail(err)
+			e.fail(ctx, err)
 			return
 		}
 
 		e.mu.Lock()
+		if ctx.Err() != nil {
+			e.mu.Unlock()
+			return
+		}
 		e.sourceFormat = sourceFormatDetail(track)
 		plan := sink.StreamPlan{
 			Format: sink.Format{
@@ -1076,16 +1100,16 @@ func (e *Engine) runDelegated(ctx context.Context, startAt time.Duration) {
 		at := e.deps.Clock()
 		controls := e.controlSinks()
 		if len(controls) == 0 {
-			e.fail(errors.New("区域没有可用设备"))
+			e.fail(ctx, errors.New("区域没有可用设备"))
 			return
 		}
 		for _, s := range controls {
 			if err := s.Open(ctx, plan); err != nil {
-				e.fail(fmt.Errorf("open sink %s: %w", s.ID(), err))
+				e.fail(ctx, fmt.Errorf("open sink %s: %w", s.ID(), err))
 				return
 			}
 			if err := s.Start(at); err != nil {
-				e.fail(fmt.Errorf("start sink %s: %w", s.ID(), err))
+				e.fail(ctx, fmt.Errorf("start sink %s: %w", s.ID(), err))
 				return
 			}
 		}
@@ -1264,9 +1288,16 @@ func (e *Engine) resolve(ctx context.Context, songID int64) (Track, error) {
 }
 
 // onProgress 每帧回调：更新传输水位与位置，跨过水位线时发一次 state 事件。
-func (e *Engine) onProgress(sampleIndex int64, playAt time.Time, duration time.Duration, rate int) {
+func (e *Engine) onProgress(ctx context.Context, sampleIndex int64, playAt time.Time, duration time.Duration, rate int) {
+	if ctx.Err() != nil {
+		return
+	}
 	e.maybePrefetch(sampleIndex, duration, rate)
 	e.mu.Lock()
+	if ctx.Err() != nil {
+		e.mu.Unlock()
+		return
+	}
 	e.cursor = sampleIndex
 	if e.transport.State() == StateBuffering {
 		// 水位 = 已推送但尚未播放的时长。
@@ -1283,9 +1314,15 @@ func (e *Engine) onProgress(sampleIndex int64, playAt time.Time, duration time.D
 	e.mu.Unlock()
 }
 
-func (e *Engine) fail(err error) {
+func (e *Engine) fail(ctx context.Context, err error) {
+	e.mu.Lock()
+	if ctx.Err() != nil || e.runCtx != ctx {
+		e.mu.Unlock()
+		return
+	}
 	e.lastErr = err
 	e.transport.Fail(err)
+	e.mu.Unlock()
 	if e.deps.Bus != nil {
 		e.deps.Bus.Publish(Event{
 			Type:    EventError,

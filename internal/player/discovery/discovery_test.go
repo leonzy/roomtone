@@ -383,7 +383,7 @@ func TestRAOPScannerMergesAirPlay2(t *testing.T) {
 				// 与 V2 的 AABBCCDDEEFF 同一物理设备
 				Name: "AABBCCDDEEFF@Living Room._raop._tcp.local.",
 				Addr: net.ParseIP("10.0.0.5"),
-				Port: 7000,
+				Port: 5000,
 				TXT:  []string{"ch=2", "sr=44100"},
 			}}, nil
 		},
@@ -428,5 +428,15 @@ func TestRAOPScannerMergesAirPlay2(t *testing.T) {
 	// V2-only 设备
 	if v2only.ID != "raop:11:22:33:44:55:66" || !v2only.Caps.AirPlay2 {
 		t.Fatalf("V2-only 设备不符: %+v", v2only)
+	}
+}
+
+func TestMergeAirPlay2TransportIdentity(t *testing.T) {
+	for _, caps := range []player.Caps{{}, {DeviceID: "aabbccddeeff"}} {
+		sp := Speaker{Address: "10.0.0.5:5000", Caps: caps}
+		mergeAirPlay2(&sp, raop2.Device{DeviceID: "aa:bb:cc:dd:ee:ff", Address: "10.0.0.5:7000", Channels: 2, SampleRate: 44100, BitDepth: 16})
+		if sp.Caps.DeviceID != "aa:bb:cc:dd:ee:ff" || sp.Address != "10.0.0.5:7000" || sp.Caps.Channels != 2 || sp.Caps.MaxSampleRate != 44100 || sp.Caps.BitDepth != 16 || !sp.Caps.SupportsVolume || !sp.Caps.SupportsSeek || len(sp.Caps.Codecs) == 0 {
+			t.Fatalf("V2 transport metadata lost: %+v", sp)
+		}
 	}
 }

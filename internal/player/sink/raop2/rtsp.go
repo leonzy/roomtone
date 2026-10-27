@@ -110,6 +110,9 @@ func (c *RTSPClient) Do(ctx context.Context, method, path string, headers map[st
 	for k, v := range headers {
 		requestHeaders[k] = v
 	}
+	if c.authorization != "" {
+		requestHeaders["Authorization"] = c.authorization
+	}
 	wire := body
 	if c.enc != nil && body != nil {
 		wire = c.enc.Encrypt(body)

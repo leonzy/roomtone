@@ -362,3 +362,32 @@ func bytesContainsStr(s, sub string) bool {
 	}
 	return false
 }
+
+func TestDeviceControlCanRequestOnSameConnection(t *testing.T) {
+	d := newFakeRAATDevice(t)
+	done := make(chan error, 1)
+	var s *Sink
+	s = New("dev", Options{Address: d.addr(), OnControl: func(cmd string, v float64) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+		err := s.ctrl.RequestSimple(ctx, "stop", nil, nil)
+		done <- err
+		return err
+	}})
+	if err := s.Open(context.Background(), sink.StreamPlan{Format: sink.Format{SampleRate: 44100, Channels: 2, Bits: 16}}); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	d.mu.Lock()
+	conn := d.ctrlConns()[0]
+	d.mu.Unlock()
+	sendServerNotification(conn, `{"control":{"button":"pause"}}`)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("control blocked its own response reader: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("control did not complete")
+	}
+}
