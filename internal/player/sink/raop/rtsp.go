@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -36,12 +37,13 @@ func (r *Response) HeaderValue(key string) string {
 // 按 Content-Length 读 body。不处理 interleaved 数据帧——音频走独立的
 // UDP 通道，控制连接上不会有 `$` 帧。
 type Client struct {
-	conn    net.Conn
-	br      *bufio.Reader
-	mu      sync.Mutex
-	cseq    int
-	session string
-	timeout time.Duration
+	conn     net.Conn
+	br       *bufio.Reader
+	mu       sync.Mutex
+	cseq     int
+	session  string
+	timeout  time.Duration
+	instance string
 }
 
 // Dial 建立控制连接。
@@ -54,7 +56,7 @@ func Dial(ctx context.Context, addr string, timeout time.Duration) (*Client, err
 	if err != nil {
 		return nil, fmt.Errorf("raop: 连接 %s 失败: %w", addr, err)
 	}
-	return &Client{conn: conn, br: bufio.NewReader(conn), timeout: timeout}, nil
+	return &Client{conn: conn, br: bufio.NewReader(conn), timeout: timeout, instance: fmt.Sprintf("%08X%08X", randomUint32(), randomUint32())}, nil
 }
 
 // Session 返回 RECORD 之后设备给的会话 id。
@@ -70,7 +72,13 @@ func (c *Client) Do(ctx context.Context, method, uri string, headers map[string]
 	defer c.mu.Unlock()
 
 	c.cseq++
-	req := BuildRequest(method, uri, c.cseq, c.session, headers, body)
+	requestHeaders := make(map[string]string, len(headers)+2)
+	requestHeaders["User-Agent"] = "Roomtone/1.0"
+	requestHeaders["Client-Instance"] = c.instance
+	for k, v := range headers {
+		requestHeaders[k] = v
+	}
+	req := BuildRequest(method, uri, c.cseq, c.session, requestHeaders, body)
 	deadline := time.Now().Add(c.timeout)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
@@ -84,6 +92,10 @@ func (c *Client) Do(ctx context.Context, method, uri string, headers map[string]
 	resp, err := ReadResponse(c.br)
 	if err != nil {
 		return nil, fmt.Errorf("raop: 读取 %s 响应失败: %w", method, err)
+	}
+	slog.Debug("AirPlay RTSP response", "method", method, "status", resp.Status, "headers", resp.Header)
+	if resp.HeaderValue("CSeq") != strconv.Itoa(c.cseq) {
+		return nil, fmt.Errorf("raop: %s 响应缺少匹配的 CSeq，设备未确认请求", method)
 	}
 	if s := resp.HeaderValue("Session"); s != "" {
 		// "Session: 1234;timeout=60" 只取 id 部分。

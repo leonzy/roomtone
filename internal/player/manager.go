@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -238,10 +239,11 @@ func (m *Manager) RegisterPlayer(ctx context.Context, p Player) error {
 	}
 	m.mu.Lock()
 	prev, existed := m.players[p.ID]
+	rebuild := !existed || p.Kind == KindLocal || prev.Address != p.Address || !prev.Online || prev.Caps.PublicKey != p.Caps.PublicKey
 	if existed {
 		// 重连：旧 sink 绑的是已经关闭的 WS 连接，继续复用只会得到
 		// "client closed"。丢掉重建，下面的 rebuildSinks 会用新连接重造。
-		if stale, ok := m.sinks[p.ID]; ok {
+		if stale, ok := m.sinks[p.ID]; ok && rebuild {
 			delete(m.sinks, p.ID)
 			_ = stale.Close()
 		}
@@ -252,7 +254,7 @@ func (m *Manager) RegisterPlayer(ctx context.Context, p Player) error {
 		p.MaxVolume = prev.MaxVolume
 		p.EQ = prev.EQ
 		p.Takeover = prev.Takeover
-		if p.Name == "" {
+		if prev.Name != "" {
 			p.Name = prev.Name
 		}
 	} else {
@@ -299,7 +301,7 @@ func (m *Manager) RegisterPlayer(ctx context.Context, p Player) error {
 	// 设备（重新）上线后必须重建所属组的 sink：服务重启时客户端还没连上，
 	// 那时建不出 local sink；不在这里补一次，组里就永远没有控制型成员，
 	// 起播会误报 distributor: no sinks。
-	if gid := m.GroupIDOf(p.ID); gid != "" {
+	if gid := m.GroupIDOf(p.ID); gid != "" && rebuild {
 		m.rebuildSinks(ctx, gid)
 	}
 	return nil
@@ -414,13 +416,21 @@ type PlayerUpdate struct {
 // 音量上限调低时会把当前音量一并钳到新上限，否则 GET /players 会返回
 // 一个超过用户刚设置的上限的值。
 func (m *Manager) UpdatePlayer(ctx context.Context, id string, upd PlayerUpdate) (Player, error) {
+	if upd.Name != nil {
+		name := strings.TrimSpace(*upd.Name)
+		if n := utf8.RuneCountInString(name); n < 1 || n > 40 {
+			return Player{}, invalidArg("音箱名称长度需为 1~40 个字符")
+		}
+		upd.Name = &name
+	}
 	m.mu.Lock()
 	p, ok := m.players[id]
 	if !ok {
 		m.mu.Unlock()
 		return Player{}, ErrPlayerNotFound
 	}
-	if upd.Name != nil && *upd.Name != "" {
+	oldName := p.Name
+	if upd.Name != nil {
 		p.Name = *upd.Name
 	}
 	if upd.Takeover != nil {
@@ -456,6 +466,16 @@ func (m *Manager) UpdatePlayer(ctx context.Context, id string, upd PlayerUpdate)
 	}
 	s := m.sinks[id]
 	out := *p
+	var soloGroup *Group
+	if upd.Name != nil && out.Name != oldName {
+		for _, g := range m.groups {
+			if len(g.Members) == 1 && g.Members[0].PlayerID == id {
+				copy := *g
+				soloGroup = &copy
+				break
+			}
+		}
+	}
 	m.mu.Unlock()
 	if m.deps.Store != nil {
 		_ = m.deps.Store.UpdatePlayerConfig(ctx, out)
@@ -471,6 +491,14 @@ func (m *Manager) UpdatePlayer(ctx context.Context, id string, upd PlayerUpdate)
 		if err := s.SetVolume(v); err != nil {
 			return out, err
 		}
+	}
+	if soloGroup != nil {
+		if _, err := m.RenameGroup(ctx, soloGroup.ID, out.Name, soloGroup.Icon); err != nil {
+			return out, err
+		}
+	}
+	if upd.Name != nil && m.deps.Bus != nil {
+		m.deps.Bus.Publish(Event{Type: EventSpeakerSeen, PlayerID: id, Name: out.Name, Kind: string(out.Kind)})
 	}
 	return out, nil
 }
@@ -769,7 +797,18 @@ func (m *Manager) RenameGroup(ctx context.Context, id, name, icon string) (Group
 	}
 
 	m.mu.RLock()
-	_, ok := m.groups[id]
+	g, ok := m.groups[id]
+	var soloPlayer *Player
+	var oldSoloPlayer *Player
+	if ok && len(g.Members) == 1 {
+		if p := m.players[g.Members[0].PlayerID]; p != nil {
+			copy := *p
+			oldCopy := *p
+			oldSoloPlayer = &oldCopy
+			copy.Name = name
+			soloPlayer = &copy
+		}
+	}
 	m.mu.RUnlock()
 	if !ok {
 		return GroupView{}, ErrGroupNotFound
@@ -777,7 +816,17 @@ func (m *Manager) RenameGroup(ctx context.Context, id, name, icon string) (Group
 
 	// 先落库再改内存：落库失败时不能留下“界面已改名、重启又变回去”的状态。
 	if m.deps.Store != nil {
+		if soloPlayer != nil {
+			if err := m.deps.Store.UpdatePlayerConfig(ctx, *soloPlayer); err != nil {
+				return GroupView{}, err
+			}
+		}
 		if err := m.deps.Store.UpdateGroupIdentity(ctx, id, name, icon); err != nil {
+			if oldSoloPlayer != nil {
+				if rollbackErr := m.deps.Store.UpdatePlayerConfig(ctx, *oldSoloPlayer); rollbackErr != nil {
+					m.deps.Logger.Error("rollback solo player name failed", "player", oldSoloPlayer.ID, "err", rollbackErr)
+				}
+			}
 			return GroupView{}, err
 		}
 	}
@@ -787,10 +836,18 @@ func (m *Manager) RenameGroup(ctx context.Context, id, name, icon string) (Group
 		g.Name = name
 		g.Icon = icon
 	}
+	if soloPlayer != nil {
+		if p := m.players[soloPlayer.ID]; p != nil {
+			p.Name = name
+		}
+	}
 	m.mu.Unlock()
 
 	if m.deps.Bus != nil {
 		m.deps.Bus.Publish(Event{Type: EventGroupChanged, GroupID: id, Action: "renamed", Name: name})
+		if soloPlayer != nil {
+			m.deps.Bus.Publish(Event{Type: EventSpeakerSeen, PlayerID: soloPlayer.ID, Name: name, Kind: string(soloPlayer.Kind)})
+		}
 	}
 	return m.GetGroup(id)
 }
@@ -816,6 +873,19 @@ func (m *Manager) purgeEmptyGroups(ctx context.Context, ids []string) {
 
 // AddMember 把设备加入组，从当前时间点接入。
 func (m *Manager) AddMember(ctx context.Context, groupID, playerID string) (GroupView, error) {
+	// Older clients edited only the solo zone name. Carry that identity into
+	// the device before its solo group disappears during grouping.
+	for _, id := range []string{groupID, m.GroupIDOf(playerID)} {
+		view, err := m.GetGroup(id)
+		if err == nil && len(view.Members) == 1 && strings.TrimSpace(view.Name) != "" {
+			p, err := m.GetPlayer(view.Members[0].PlayerID)
+			if err == nil && p.Name != view.Name {
+				if _, err := m.RenameGroup(ctx, id, view.Name, view.Icon); err != nil {
+					return GroupView{}, err
+				}
+			}
+		}
+	}
 	m.mu.Lock()
 	g, ok := m.groups[groupID]
 	if !ok {
@@ -1394,6 +1464,13 @@ func (m *Manager) sinkFor(ctx context.Context, p *Player) (sink.Sink, bool) {
 		m.deps.Logger.Warn("build sink failed", "player", p.ID, "err", err)
 		return nil, false
 	}
+	if p.Kind == KindRAOP {
+		volume := float64(min(p.Volume, p.MaxVolume)) / 100
+		if p.Muted {
+			volume = 0
+		}
+		_ = built.SetVolume(volume)
+	}
 	m.mu.Lock()
 	m.sinks[p.ID] = built
 	m.mu.Unlock()
@@ -1441,6 +1518,14 @@ func (m *Manager) Restore(ctx context.Context) error {
 		m.mu.Lock()
 		m.groups[g.ID] = &g
 		m.mu.Unlock()
+		if len(g.Members) == 1 && strings.TrimSpace(g.Name) != "" {
+			p, err := m.GetPlayer(g.Members[0].PlayerID)
+			if err == nil && p.Name != g.Name {
+				if _, err := m.RenameGroup(ctx, g.ID, g.Name, g.Icon); err != nil {
+					return err
+				}
+			}
+		}
 		m.ensureEngine(ctx, g)
 		if e := m.engine("group", g.ID); e != nil {
 			if err := e.Restore(ctx); err != nil {
@@ -1525,6 +1610,9 @@ func (m *Manager) HandleSinkNotify(remoteHost, playerID string, body []byte) err
 		return err
 	}
 	host := p.Address
+	if u, err := url.Parse(host); err == nil && u.Hostname() != "" {
+		host = u.Hostname()
+	}
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}

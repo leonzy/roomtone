@@ -67,6 +67,9 @@ func OutboundIP(ctx context.Context, target string, timeout time.Duration) (stri
 		return "", fmt.Errorf("%w: empty target", LANURLError)
 	}
 	host := target
+	if u, err := url.Parse(target); err == nil && u.Hostname() != "" {
+		host = u.Hostname()
+	}
 	if h, _, err := net.SplitHostPort(target); err == nil {
 		host = h
 	}

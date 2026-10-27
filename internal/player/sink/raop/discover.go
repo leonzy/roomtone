@@ -128,9 +128,19 @@ func EntryToFound(e Entry) (Found, bool) {
 		return Found{}, false
 	}
 	txt := ParseTXTFields(e.TXT)
+	model := txt["am"]
+	if model == "" {
+		model = txt["md"]
+	}
 	caps := ParseTXT(e.TXT)
 	caps.DeviceID = deviceID
 	caps.PublicKey = NormalizePublicKey(txt["pk"])
+	for _, encryption := range strings.Split(txt["et"], ",") {
+		if strings.TrimSpace(encryption) == "1" {
+			caps.PublicKey = LegacyPublicKeyPEM()
+			break
+		}
+	}
 	caps.NeedsPassword = txt["pw"] == "true"
 	if name == "" {
 		name = deviceID
@@ -138,7 +148,7 @@ func EntryToFound(e Entry) (Found, bool) {
 	return Found{
 		DeviceID:  deviceID,
 		Name:      name,
-		Model:     txt["md"],
+		Model:     model,
 		Address:   net.JoinHostPort(e.Addr.String(), strconv.Itoa(e.Port)),
 		Caps:      caps,
 		Transport: txt["tp"],
@@ -150,6 +160,7 @@ func EntryToFound(e Entry) (Found, bool) {
 // 返回设备 id（大写、去掉分隔符）与显示名。没有 @ 的条目按
 // "整段都是 id"处理——有些老设备只广播 MAC。
 func SplitServiceName(name string) (deviceID, display string) {
+	name = unescapeDNSName(name)
 	name = strings.TrimSuffix(strings.TrimSpace(name), ".")
 	for _, suffix := range []string{"._raop._tcp.local", "._raop._tcp", "._airplay._tcp.local"} {
 		if strings.HasSuffix(strings.ToLower(name), suffix) {
@@ -163,6 +174,25 @@ func SplitServiceName(name string) (deviceID, display string) {
 		return id, ""
 	}
 	return id, strings.TrimSpace(rest)
+}
+
+// DNS presentation names escape spaces, @ and other label characters.
+func unescapeDNSName(name string) string {
+	var b strings.Builder
+	for i := 0; i < len(name); i++ {
+		if name[i] == '\\' && i+1 < len(name) {
+			if i+3 < len(name) {
+				if n, err := strconv.Atoi(name[i+1 : i+4]); err == nil && n >= 0 && n <= 255 {
+					b.WriteByte(byte(n))
+					i += 3
+					continue
+				}
+			}
+			i++
+		}
+		b.WriteByte(name[i])
+	}
+	return b.String()
 }
 
 func normalizeDeviceID(raw string) string {

@@ -152,3 +152,27 @@ Done right: successful example and evidence; pending if unavailable
 Seen N× (YYYY-MM-DD, YYYY-MM-DD)
 Status: lesson / promotion candidate / promoted (authoritative destination)
 ```
+
+### AIRPLAY-001: A 200 response and playback state do not prove audible output
+
+- Scope: legacy RAOP output, baseline `708ec132` plus uncommitted working tree; no issue.
+- Evidence: on 2026-10-26 EDIFIER 9EC4 advertised et=0,1 without pk. Clear ANNOUNCE returned an empty 200 without CSeq; the UI reported playback while the user repeatedly confirmed silence. Legacy public RSA wrapping of the AES session and unpadded CBC tails produced user-confirmed audible Roomtone playback.
+- Rule: select handshakes from protocol capabilities, not the presence of pk. Validate CSeq and propagate Open/Start failures. Audible acceptance is independent of protocol state. Pausing push output must end its session, and resume timelines must subtract elapsed track time.
+- Validation and limits: [local record](docs/airplay-local-validation-20261026.en.md). Targeted backend regressions passed. Only the stated 9EC4 playback was audibly confirmed; other speakers and multiroom sync remain separate acceptance items.
+- Seen 1x (2026-10-26). Status: local fix, not committed, pushed or released.
+
+### AIRPLAY-002: Decoding and first audible output do not prove stream reliability
+
+- Scope: RAOP framing, retransmission, control sessions and zone-volume state; baseline `708ec132` plus uncommitted tree.
+- Evidence (2026-10-27): the user reported stuttering and missing-device errors after transfer. The old sender split 882 samples into 352/352/178 despite negotiating 352 and had no retransmission handler. An overlay restoring old packetization failed the new regression on short packet 3. UI logs showed PATCH to former 9EC4 after transfer to 9764 (404).
+- Fix: buffer complete 352-sample frames, cache/retransmit original encrypted packets, keep RTSP alive; reset volume state/pending edits on zone/member changes and guard asynchronous generations. A 441-packet encrypted stream passed loopback, decryption and actual FFmpeg decoding with byte-identical PCM.
+- Evidence and limits: [stream validation](docs/en/airplay-stream-validation-20261027.md). The user requested no further playback tests; this turn used offline/fake receivers only. Actual network loss and final audible behavior are unconfirmed. Passing tests must not be reported as fully resolved hardware stuttering.
+- Seen 1x (2026-10-27). Status: local uncommitted fix, not pushed or released.
+
+### AIRPLAY-003: Timing replies must not wait on the RTSP handshake mutex
+
+- Scope: RAOP / Cocoon Portable, baseline `708ec132` plus uncommitted tree.
+- Evidence (2026-10-27): Open held s.mu while the timing reader replied once then blocked on that same mutex. The old-code regression timed out on reply 2. Hardware logs completed SETUP/first timing without audio, followed by 453/OPTIONS timeouts.
+- Fix: independent timing locking with connection identity, teardown of acknowledged owned sessions on failure, and no green success path for failed connections. A fake receiver gates RECORD on four timing exchanges; handshake and failure-cleanup regressions passed 10 repetitions.
+- Hardware evidence: [Cocoon validation](docs/en/cocoon-validation-20261027.md). After authorizing playback, the user confirmed audible continuous sound. Pause/resume reconnected successfully; the test ended paused. Long playback, format matrices and multiroom remain unverified.
+- Seen 1x (2026-10-27). Status: local uncommitted fix, not pushed or released.

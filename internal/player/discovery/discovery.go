@@ -12,6 +12,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -230,6 +232,28 @@ func (d *Discovery) Scan(ctx context.Context) (Result, error) {
 		return res.Speakers[i].Name < res.Speakers[j].Name
 	})
 
+	airplayHosts := make(map[string]bool)
+	for _, sp := range res.Speakers {
+		if sp.Kind == player.KindRAOP && !sp.Caps.NeedsPassword {
+			airplayHosts[speakerHost(sp.Address)] = true
+		}
+	}
+	if registry, ok := d.reg.(interface{ ListPlayers() []player.Player }); ok {
+		for _, p := range registry.ListPlayers() {
+			if p.Kind == player.KindRAOP && p.Online && !p.Caps.NeedsPassword {
+				airplayHosts[speakerHost(p.Address)] = true
+			}
+		}
+	}
+	delete(airplayHosts, "")
+	preferred := res.Speakers[:0]
+	for _, sp := range res.Speakers {
+		if sp.Kind == player.KindDLNA && airplayHosts[speakerHost(sp.Address)] {
+			continue
+		}
+		preferred = append(preferred, sp)
+	}
+	res.Speakers = preferred
 	for _, sp := range res.Speakers {
 		if sp.Caps.NeedsPassword {
 			// 需要密码的设备第一版直接跳过：RAOP 的密码是 FairPlay 认证，
@@ -257,11 +281,35 @@ func (d *Discovery) Scan(ctx context.Context) (Result, error) {
 			res.Added = append(res.Added, sp.ID)
 		}
 	}
+	// Retire persisted protocol duplicates too, so a restart cannot bring back
+	// two controls for the same physical renderer.
+	if registry, ok := d.reg.(interface {
+		ListPlayers() []player.Player
+		UnregisterPlayer(context.Context, string) error
+	}); ok {
+		for _, p := range registry.ListPlayers() {
+			if p.Kind == player.KindDLNA && airplayHosts[speakerHost(p.Address)] {
+				if err := registry.UnregisterPlayer(ctx, p.ID); err != nil {
+					res.Errors = append(res.Errors, err.Error())
+				}
+			}
+		}
+	}
 	d.remember(res)
 	if len(res.Added) > 0 || len(res.Updated) > 0 {
 		d.logger.Info("发现音箱", "added", len(res.Added), "updated", len(res.Updated), "skipped", len(res.Skipped))
 	}
 	return res, nil
+}
+
+func speakerHost(address string) string {
+	if u, err := url.Parse(address); err == nil && u.Hostname() != "" {
+		return strings.ToLower(u.Hostname())
+	}
+	if host, _, err := net.SplitHostPort(address); err == nil {
+		return strings.ToLower(host)
+	}
+	return strings.ToLower(address)
 }
 
 func (d *Discovery) remember(res Result) {

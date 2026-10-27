@@ -8,8 +8,10 @@ import (
 
 // SDP 一次 ANNOUNCE 需要的信息。
 type SDP struct {
+	ALAC bool
 	// Origin 发起端 IP，设备用它判断是否同一网段。
-	Origin string
+	Origin      string
+	Destination string
 	// SessionID 任意 32 位数字，同一会话内保持不变。
 	SessionID  uint32
 	SampleRate int
@@ -42,13 +44,24 @@ func BuildSDP(s SDP) []byte {
 	b.WriteString("v=0\r\n")
 	fmt.Fprintf(&b, "o=iTunes %d 0 IN IP4 %s\r\n", s.SessionID, s.Origin)
 	b.WriteString("s=iTunes\r\n")
-	fmt.Fprintf(&b, "c=IN IP4 %s\r\n", s.Origin)
+	destination := s.Destination
+	if destination == "" {
+		destination = s.Origin
+	}
+	fmt.Fprintf(&b, "c=IN IP4 %s\r\n", destination)
 	b.WriteString("t=0 0\r\n")
 	b.WriteString("m=audio 0 RTP/AVP 96\r\n")
-	fmt.Fprintf(&b, "a=rtpmap:96 L16/%d/%d\r\n", s.SampleRate, s.Channels)
-	fmt.Fprintf(&b, "a=ptime:%d\r\n", s.FrameSamples)
-	fmt.Fprintf(&b, "a=maxptime:%d\r\n", s.FrameSamples)
-	fmt.Fprintf(&b, "a=minptime:%d\r\n", s.FrameSamples)
+	if s.ALAC {
+		b.WriteString("a=rtpmap:96 AppleLossless\r\n")
+		fmt.Fprintf(&b, "a=fmtp:96 %d 0 16 40 10 14 %d 255 0 0 %d\r\n", s.FrameSamples, s.Channels, s.SampleRate)
+	} else {
+		fmt.Fprintf(&b, "a=rtpmap:96 L16/%d/%d\r\n", s.SampleRate, s.Channels)
+	}
+	if !s.ALAC {
+		fmt.Fprintf(&b, "a=ptime:%d\r\n", s.FrameSamples)
+		fmt.Fprintf(&b, "a=maxptime:%d\r\n", s.FrameSamples)
+		fmt.Fprintf(&b, "a=minptime:%d\r\n", s.FrameSamples)
+	}
 	if s.AESKey != "" {
 		fmt.Fprintf(&b, "a=rsaaeskey:%s\r\n", s.AESKey)
 	}
@@ -63,5 +76,5 @@ func EncodeIV(iv []byte) string {
 	if len(iv) == 0 {
 		return ""
 	}
-	return base64.StdEncoding.EncodeToString(iv)
+	return base64.RawStdEncoding.EncodeToString(iv)
 }

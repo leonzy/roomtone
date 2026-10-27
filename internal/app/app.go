@@ -73,6 +73,7 @@ type App struct {
 	alarmRunner        *alarmRunner
 	alarmHandler       *handlers.AlarmHandler
 	lanURL             *services.LANURLResolver
+	dlnaStreams        *dlnaStreams
 	webDist            embed.FS
 	tracelyClient      *tracely.Client
 	logLevelVar        *slog.LevelVar        // 全局 slog 等级动态切换；由 /settings/log-level 即时 Set

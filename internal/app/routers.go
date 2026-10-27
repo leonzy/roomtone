@@ -36,6 +36,7 @@ func (a *App) setupRouter() {
 }
 
 func (a *App) setupAPIV1Router() {
+	chi.RegisterMethod("NOTIFY")
 	authHandler := handlers.NewAuthHandler(a.authService)
 	hlsHandler := handlers.NewHLSHandler(a.songService, a.configService)
 	videoHLSHandler := handlers.NewVideoHLSHandler(a.songService, a.cacheService)
@@ -127,11 +128,14 @@ func (a *App) setupAPIV1Router() {
 
 		// 健康检查
 		r.Get("/health", healthHandler.CheckHealth)
+		r.Get("/playback/dlna/stream/{id}", a.dlnaStreams.protect(songHandler.GetSongPlay))
+		r.Head("/playback/dlna/stream/{id}", a.dlnaStreams.protect(songHandler.GetSongPlay))
 
 		// 下面两个端点不能挂 JWT 中间件：DLNA 设备与浏览器 WS 握手都发不出 Authorization 头。
 		// DLNA 回调靠来源 IP 校验，WS 靠一次性 ticket（hub.ServeHTTP 内部校验）。
 		// 契约见 docs/architecture_playback.md（端点表 / 事件推送）。
 		r.Post("/playback/dlna/notify/{id}", a.playbackHandler.DLNANotify)
+		r.MethodFunc("NOTIFY", "/playback/dlna/notify/{id}", a.playbackHandler.DLNANotify)
 		r.Get("/playback/events", a.playbackHandler.Events)
 
 		// 需要授权的路由组

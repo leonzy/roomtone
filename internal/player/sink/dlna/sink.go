@@ -13,6 +13,7 @@ import (
 
 // Options 建 sink 的参数。
 type Options struct {
+	ResolveStream func(context.Context, sink.StreamPlan) (sink.StreamPlan, error)
 	// CallbackBase 事件回调基地址（局域网可达），空则不做订阅。
 	CallbackBase string
 	// PollInterval 轮询间隔，默认 3s。
@@ -110,6 +111,13 @@ func (s *Sink) StreamURL(plan sink.StreamPlan) (string, error) {
 //
 // 真正 Play 在 Start，这样组内多台设备能对齐起播时刻。
 func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
+	if s.opts.ResolveStream != nil {
+		var err error
+		plan, err = s.opts.ResolveStream(ctx, plan)
+		if err != nil {
+			return err
+		}
+	}
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()

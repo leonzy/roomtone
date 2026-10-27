@@ -39,6 +39,31 @@ var signalStageNames = [...]string{"源", "解码", "DSP", "输出", "设备"}
 // players 是组内已解析的成员；output 是组协商后的 sink 格式；source 是当前
 // 曲目的源格式摘要（未知传空串）；loudness 表示组级响度归一是否开启。
 func buildSignalPath(players []*Player, output Format, source string, loudness bool) SignalPath {
+	allDLNA := len(players) > 0
+	for _, p := range players {
+		if p.Kind != KindDLNA {
+			allDLNA = false
+		}
+	}
+	if allDLNA {
+		codec := "unknown"
+		if fields := strings.Fields(source); len(fields) > 0 {
+			codec = strings.ToLower(fields[0])
+		}
+		decode, kind := "设备解码", SignalKindLossless
+		if codec != "wav" && codec != "flac" && codec != "mp3" && codec != "unknown" {
+			codec, decode = "mp3", "ffmpeg → MP3"
+		}
+		if codec == "mp3" {
+			kind = SignalKindLossy
+		}
+		return SignalPath{Kind: kind, Stages: []SignalStage{
+			{Name: "源", Detail: source}, {Name: "解码", Detail: decode},
+			{Name: "DSP", Detail: "DLNA 直拉（不经过 PCM DSP）"},
+			{Name: "输出", Detail: "DLNA / " + strings.ToUpper(codec)},
+			{Name: "设备", Detail: deviceDetail(players)},
+		}}
+	}
 	kind := SignalKindLossless
 
 	// EQ 是逐成员的：组内任一成员开了非 flat 曲线，整条链路就算经过 DSP。

@@ -3,6 +3,7 @@ package raop
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -86,15 +87,15 @@ func TestEncryptFramesNISTVector(t *testing.T) {
 	}
 }
 
-func TestEncryptFramesPadsTail(t *testing.T) {
+func TestEncryptFramesPreservesClearTail(t *testing.T) {
 	key := make([]byte, 16)
 	iv := make([]byte, 16)
 	out, err := EncryptFrames(key, iv, []byte("abc"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 16 {
-		t.Fatalf("尾部应补零到块大小，实际 %d", len(out))
+	if string(out) != "abc" {
+		t.Fatalf("尾部应保持明文和原始长度，实际 %x", out)
 	}
 }
 
@@ -138,11 +139,12 @@ func TestParseTXT(t *testing.T) {
 
 // fakeRTSP 假设备：记录方法序列，SETUP 返回设备端口。
 type fakeRTSP struct {
-	ln       net.Listener
-	mu       sync.Mutex
-	methods  []string
-	bodies   []string
-	dataPort int
+	ln        net.Listener
+	mu        sync.Mutex
+	methods   []string
+	bodies    []string
+	dataPort  int
+	onRequest func(method string, headers map[string]string) int
 }
 
 func newFakeRTSP(t *testing.T) *fakeRTSP {
@@ -221,7 +223,13 @@ func (f *fakeRTSP) handle(conn net.Conn) {
 		if method != "OPTIONS" {
 			extra += "Session: 11223344\r\n"
 		}
-		fmt.Fprintf(conn, "RTSP/1.0 200 OK\r\nCSeq: 1\r\n%s\r\n", extra)
+		status := 200
+		if f.onRequest != nil {
+			if got := f.onRequest(method, headers); got != 0 {
+				status = got
+			}
+		}
+		fmt.Fprintf(conn, "RTSP/1.0 %d Test\r\nCSeq: %s\r\n%s\r\n", status, headers["cseq"], extra)
 	}
 }
 
@@ -276,8 +284,19 @@ func TestSinkHandshakeAndStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("没收到 RTP 包: %v", err)
 	}
-	if n != 12+3528 {
-		t.Fatalf("RTP 包长度 %d，期望 %d", n, 12+3528)
+	if n != 12+352*4 {
+		t.Fatalf("RTP 包长度 %d，期望 %d", n, 12+352*4)
+	}
+	firstTimestamp := binary.BigEndian.Uint32(buf[4:8])
+	// Keep the last 178 samples buffered for the next distributor frame.
+	for i, samples := range []int{352} {
+		n, _, err = udp.ReadFromUDP(buf)
+		if err != nil || n != 12+samples*4 {
+			t.Fatalf("split packet %d: bytes=%d err=%v", i+1, n, err)
+		}
+		if got := binary.BigEndian.Uint32(buf[4:8]); got != firstTimestamp+uint32((i+1)*352) {
+			t.Fatalf("split timestamp: %d", got)
+		}
 	}
 	if buf[1]&0x7f != PayloadType {
 		t.Fatalf("payload type 错误: %02x", buf[1])
@@ -294,15 +313,15 @@ func TestSinkHandshakeAndStream(t *testing.T) {
 	}
 
 	methods, bodies := f.snapshot()
-	want := []string{"OPTIONS", "ANNOUNCE", "SETUP", "RECORD", "SET_PARAMETER", "TEARDOWN"}
+	want := []string{"OPTIONS", "ANNOUNCE", "SETUP", "RECORD", "SET_PARAMETER", "SET_PARAMETER", "TEARDOWN"}
 	if strings.Join(methods, ",") != strings.Join(want, ",") {
 		t.Fatalf("调用序列错误:\n got=%v\nwant=%v", methods, want)
 	}
 	if !strings.Contains(bodies[1], "m=audio 0 RTP/AVP 96") {
 		t.Fatalf("ANNOUNCE body 不含 SDP: %q", bodies[1])
 	}
-	if !strings.Contains(bodies[4], "volume: -6.02") {
-		t.Fatalf("音量参数错误: %q", bodies[4])
+	if !strings.Contains(bodies[4], "volume: 0.00") || !strings.Contains(bodies[5], "volume: -6.02") {
+		t.Fatalf("音量参数错误: initial=%q updated=%q", bodies[4], bodies[5])
 	}
 }
 

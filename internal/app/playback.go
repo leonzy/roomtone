@@ -78,6 +78,7 @@ func (a *App) initPlayback() {
 		port = p
 	}
 	a.lanURL = services.NewLANURLResolver(port)
+	a.dlnaStreams = newDLNAStreams()
 
 	var output handlers.PlayerOutputSetting
 	if err := a.configService.GetJSON("player_output", &output); err != nil || output.MaxGroups == 0 {
@@ -134,7 +135,7 @@ func (a *App) initPlayback() {
 		Resolver:              resolver,
 		Decoder:               decoder,
 		Runners:               runners,
-		Builder:               &playerSinkBuilder{hub: a.wsHub, lan: a.lanURL},
+		Builder:               &playerSinkBuilder{hub: a.wsHub, lan: a.lanURL, streamPlan: a.dlnaStreamPlan},
 		Logger:                slog.Default(),
 		Latency:               latency,
 		PartyEnabled:          output.PartyEnabled,
@@ -239,8 +240,9 @@ func (a *App) applyPlayerDiscoveryConfig() {
 
 // playerSinkBuilder 按设备类型造 sink。
 type playerSinkBuilder struct {
-	hub *ws.Hub
-	lan *services.LANURLResolver
+	hub        *ws.Hub
+	lan        *services.LANURLResolver
+	streamPlan func(context.Context, string, sink.StreamPlan) (sink.StreamPlan, error)
 }
 
 // Build 实现 player.SinkBuilder。
@@ -263,6 +265,7 @@ func (b *playerSinkBuilder) Build(ctx context.Context, p *player.Player) (sink.S
 		}
 		rate, ch := outputFormat(p.Caps)
 		return raop.New(p.ID, raop.Options{
+			ALAC:        true,
 			Address:     p.Address,
 			DeviceID:    p.Caps.DeviceID,
 			PublicKey:   p.Caps.PublicKey,
@@ -283,7 +286,13 @@ func (b *playerSinkBuilder) Build(ctx context.Context, p *player.Player) (sink.S
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", player.ErrPlayerOffline, err)
 		}
-		return dlna.New(p.ID, dev, cl, dlna.Options{CallbackBase: b.callbackBase(ctx, p.Address)}), nil
+		opts := dlna.Options{CallbackBase: b.callbackBase(ctx, p.Address)}
+		if b.streamPlan != nil {
+			opts.ResolveStream = func(ctx context.Context, plan sink.StreamPlan) (sink.StreamPlan, error) {
+				return b.streamPlan(ctx, p.Address, plan)
+			}
+		}
+		return dlna.New(p.ID, dev, cl, opts), nil
 	}
 	return nil, fmt.Errorf("%w: 暂不支持 %s 设备", player.ErrUnsupported, p.Kind)
 }

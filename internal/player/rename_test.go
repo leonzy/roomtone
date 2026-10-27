@@ -122,3 +122,75 @@ func TestRenameGroupAllowsEmptyIconAndFortyRunes(t *testing.T) {
 		t.Fatalf("返回值 = name %q icon %q", g.Name, g.Icon)
 	}
 }
+
+func TestSpeakerRenameSurvivesDiscoveryAndRestart(t *testing.T) {
+	m, store := newRenameManager(t)
+	ctx := context.Background()
+	name := "  书房  "
+	if _, err := m.UpdatePlayer(ctx, "a", player.PlayerUpdate{Name: &name}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterPlayer(ctx, player.Player{ID: "a", Kind: player.KindRAOP, Name: "EDIFIER advertised name"}); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := m.GetPlayer("a")
+	g, _ := m.GetGroup(m.GroupIDOf("a"))
+	if p.Name != "书房" || g.Name != "书房" {
+		t.Fatalf("rediscovery lost alias: player=%q zone=%q", p.Name, g.Name)
+	}
+	restarted := player.NewManager(player.ManagerDeps{Store: store, Budget: player.NewBudget(4)})
+	if err := restarted.Restore(ctx); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = restarted.GetPlayer("a")
+	g, _ = restarted.GetGroup(restarted.GroupIDOf("a"))
+	if p.Name != "书房" || g.Name != "书房" {
+		t.Fatalf("restart lost alias: player=%q zone=%q", p.Name, g.Name)
+	}
+}
+
+func TestSpeakerAndSoloZoneShareName(t *testing.T) {
+	m, _ := newRenameManager(t)
+	ctx := context.Background()
+	if _, err := m.RenameGroup(ctx, m.GroupIDOf("a"), "听音区", "speaker"); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := m.GetPlayer("a")
+	if p.Name != "听音区" {
+		t.Fatalf("zone rename not visible on speaker: %q", p.Name)
+	}
+	name := "书房音箱"
+	if _, err := m.UpdatePlayer(ctx, "a", player.PlayerUpdate{Name: &name}); err != nil {
+		t.Fatal(err)
+	}
+	g, _ := m.GetGroup(m.GroupIDOf("a"))
+	if g.Name != "书房音箱" {
+		t.Fatalf("speaker rename did not update solo zone: %q", g.Name)
+	}
+	blank := "   "
+	if _, err := m.UpdatePlayer(ctx, "a", player.PlayerUpdate{Name: &blank}); !errors.Is(err, player.ErrInvalidArgument) {
+		t.Fatalf("blank speaker name: %v", err)
+	}
+}
+
+func TestZoneNameSurvivesGrouping(t *testing.T) {
+	m, _ := newRenameManager(t)
+	ctx := context.Background()
+	if err := m.RegisterPlayer(ctx, player.Player{ID: "b", Kind: player.KindRAOP, Name: "Factory B"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.RenameGroup(ctx, m.GroupIDOf("a"), "餐厅", "speaker"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.RenameGroup(ctx, m.GroupIDOf("b"), "卧室", "speaker"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.AddMember(ctx, m.GroupIDOf("a"), "b"); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := m.GetPlayer("a")
+	b, _ := m.GetPlayer("b")
+	if a.Name != "餐厅" || b.Name != "卧室" {
+		t.Fatalf("grouped names: %q %q", a.Name, b.Name)
+	}
+}

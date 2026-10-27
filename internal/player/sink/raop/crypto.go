@@ -11,10 +11,21 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 )
 
 // AESKeySize RAOP 固定 AES-128。
 const AESKeySize = 16
+
+// Legacy RAOP RSA receivers share the AirPort public key. TXT pk belongs to
+// newer pairing protocols and is not required for et=1 RSA key exchange.
+// Public modulus used by RAOP-Player and other interoperable RAOP senders.
+func LegacyPublicKeyPEM() string {
+	const modulus = "59dE8qLieItsH1WgjrcFRKj6eUWqi+bGLOX1HL3U3GhC/j0Qg90u3sG/1CUtwC5vOYvfDmFI6oSFXi5ELabWJmT2dKHzBJKa3k9ok+8t9ucRqMd6DZHJ2YCCLlDRKSKv6kDqnw4UwPdpOMXziC/AMj3Z/lUVX1G7WSHCAWKf1zNS1eLvqr+boEjXuBOitnZ/bDzPHrTOZz0Dew0uowxf/+sG+NCK3eQJVxqcaJ/vEHKIVd2M+5qL71yJQ+87X6oV3eaYvt3zWZYD6z5vYTcrtij2VZ9Zmni/UAaHqn9JdsBWLUEpVviYnhimNVvYFZeCXg/IdTQ+x4IRdiXNv5hEew=="
+	n, _ := base64.StdEncoding.DecodeString(modulus)
+	key := &rsa.PublicKey{N: new(big.Int).SetBytes(n), E: 65537}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "RSA PUBLIC KEY", Bytes: x509.MarshalPKCS1PublicKey(key)}))
+}
 
 // EncryptAESKey 用设备的 RSA 公钥封装 AES key（RSA-OAEP + SHA1）。
 //
@@ -31,7 +42,7 @@ func EncryptAESKey(pub *rsa.PublicKey, key []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("raop: RSA 封装失败: %w", err)
 	}
-	return base64.StdEncoding.EncodeToString(enc), nil
+	return base64.RawStdEncoding.EncodeToString(enc), nil
 }
 
 // ParsePublicKey 解析设备 TXT 记录里的 pk（PEM 编码公钥）。
@@ -68,8 +79,7 @@ func NewAESKey() (key, iv []byte, err error) {
 
 // EncryptFrames 用 AES-128-CBC 加密一整帧 PCM。
 //
-// RAOP 每帧独立 CBC：IV 固定，长度必须是 16 的整数倍（20ms 立体声 16bit
-// 恰好 3528 字节，可整除）。不足一帧的尾巴补零，调用方按原长度发。
+// RAOP 每包独立 CBC，IV 固定。只加密完整块，尾部保持明文；不得补零改变包长。
 func EncryptFrames(key, iv, plain []byte) ([]byte, error) {
 	if len(key) != AESKeySize {
 		return nil, fmt.Errorf("raop: AES key 长度必须是 %d", AESKeySize)
@@ -81,26 +91,23 @@ func EncryptFrames(key, iv, plain []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	padded := plain
-	if r := len(plain) % aes.BlockSize; r != 0 {
-		padded = make([]byte, len(plain)+aes.BlockSize-r)
-		copy(padded, plain)
-	}
-	out := make([]byte, len(padded))
-	cipher.NewCBCEncrypter(block, iv).CryptBlocks(out, padded)
+	out := append([]byte(nil), plain...)
+	n := len(plain) / aes.BlockSize * aes.BlockSize
+	cipher.NewCBCEncrypter(block, iv).CryptBlocks(out[:n], plain[:n])
 	return out, nil
 }
 
 // DecryptFrames EncryptFrames 的逆运算，测试与排障用。
 func DecryptFrames(key, iv, cipherText []byte) ([]byte, error) {
-	if len(cipherText)%aes.BlockSize != 0 {
-		return nil, errors.New("raop: 密文长度不是块大小的整数倍")
+	if len(iv) != aes.BlockSize {
+		return nil, errors.New("raop: IV 长度错误")
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]byte, len(cipherText))
-	cipher.NewCBCDecrypter(block, iv).CryptBlocks(out, cipherText)
+	out := append([]byte(nil), cipherText...)
+	n := len(cipherText) / aes.BlockSize * aes.BlockSize
+	cipher.NewCBCDecrypter(block, iv).CryptBlocks(out[:n], cipherText[:n])
 	return out, nil
 }

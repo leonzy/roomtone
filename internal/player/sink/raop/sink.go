@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 
 // Options 建 sink 的参数。
 type Options struct {
+	ALAC bool
 	// Address 设备 RTSP 地址 host:port。
 	Address string
 	// DeviceID 设备 MAC（mDNS 服务名里的那串），用于拼 RTSP URI。
@@ -42,25 +44,35 @@ type Sink struct {
 	caps   sink.Caps
 	events chan sink.Event
 
-	mu        sync.Mutex
-	rtsp      *Client
-	audio     *net.UDPConn
-	control   *net.UDPConn
-	timing    *net.UDPConn
-	pkt       Packetizer
-	anchor    int64
-	rtpBase   uint32
-	rtpAtPlay uint32
-	started   bool
-	startAt   time.Time
-	closed    bool
-	volume    float64
-	sent      int64 // 已发送采样数，进度上报用
-	lastSync  time.Time
+	mu          sync.Mutex
+	rtsp        *Client
+	audio       *net.UDPConn
+	control     *net.UDPConn
+	timing      *net.UDPConn
+	pkt         Packetizer
+	anchor      int64
+	rtpBase     uint32
+	sessionID   uint32
+	rtpAtPlay   uint32
+	started     bool
+	startAt     time.Time
+	closed      bool
+	volume      float64
+	sent        int64 // 已发送采样数，进度上报用
+	lastSync    time.Time
+	sessionDone chan struct{}
+	// PCM frames from the distributor are not aligned to RAOP packet boundaries.
+	pendingPCM   []byte
+	pendingAt    int64
+	backlog      [packetBacklogSize]cachedPacket
+	resent       uint64
+	resendMisses uint64
 	// 设备时钟偏移（设备时间 - 本机时间），由 timing 端口实测；用于同步校正环。
 	clockOff  time.Duration
 	clockAt   time.Time
 	clockSeen bool
+	clockMu   sync.Mutex
+	clockConn *net.UDPConn
 
 	aesKey []byte
 	aesIV  []byte
@@ -126,7 +138,13 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 		s.opts.Channels = plan.Format.Channels
 	}
 	s.anchor = plan.Position.Milliseconds() * int64(s.opts.SampleRate) / 1000
+	s.sent = 0
+	s.pendingPCM = nil
+	s.backlog = [packetBacklogSize]cachedPacket{}
+	s.resent, s.resendMisses = 0, 0
+	s.lastSync = time.Time{}
 	s.rtpBase = randomUint32()
+	s.sessionID = randomUint32()
 	s.pkt.SSRC = randomUint32()
 
 	// 加密只在设备给了公钥时启用。
@@ -158,62 +176,81 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 		return err
 	}
 	s.rtsp = cl
+	s.sessionDone = make(chan struct{})
 	uri := s.uri()
 
 	if resp, err := cl.Do(ctx, "OPTIONS", "*", nil, nil); err != nil {
-		s.closeConnsLocked()
+		s.abortSessionLocked()
 		return err
 	} else if resp.Status != 200 {
-		s.closeConnsLocked()
-		return fmt.Errorf("raop: OPTIONS 返回 %d", resp.Status)
+		s.abortSessionLocked()
+		return statusError("OPTIONS", resp.Status)
 	}
 
 	sdp := BuildSDP(SDP{
-		Origin:     hostOf(addr),
-		SessionID:  randomUint32(),
-		SampleRate: s.opts.SampleRate,
-		Channels:   s.opts.Channels,
-		AESKey:     s.pendingAESKey,
-		AESIV:      EncodeIV(s.aesIV),
+		Origin:      hostOf(cl.conn.LocalAddr().String()),
+		Destination: hostOf(addr),
+		ALAC:        s.opts.ALAC,
+		SessionID:   s.sessionID,
+		SampleRate:  s.opts.SampleRate,
+		Channels:    s.opts.Channels,
+		AESKey:      s.pendingAESKey,
+		AESIV:       EncodeIV(s.aesIV),
 	})
 	if resp, err := cl.Do(ctx, "ANNOUNCE", uri, map[string]string{
 		"Content-Type": "application/sdp",
 	}, sdp); err != nil {
-		s.closeConnsLocked()
+		s.abortSessionLocked()
 		return err
 	} else if resp.Status != 200 {
-		s.closeConnsLocked()
-		return fmt.Errorf("raop: ANNOUNCE 返回 %d", resp.Status)
+		s.abortSessionLocked()
+		return statusError("ANNOUNCE", resp.Status)
 	}
 
-	audio, control, timing, err := listenUDPs()
+	audio, control, timing, err := listenUDPs(net.ParseIP(hostOf(cl.conn.LocalAddr().String())))
 	if err != nil {
-		s.closeConnsLocked()
+		s.abortSessionLocked()
 		return err
 	}
 	s.audio, s.control, s.timing = audio, control, timing
+	s.startTimingReader(timing)
 	transport := fmt.Sprintf("RTP/AVP/UDP;unicast;interleaved=0-1;mode=record;control_port=%d;timing_port=%d",
 		localPort(control), localPort(timing))
 	resp, err := cl.Do(ctx, "SETUP", uri, map[string]string{"Transport": transport}, nil)
 	if err != nil {
-		s.closeConnsLocked()
+		s.abortSessionLocked()
 		return err
 	}
 	if resp.Status != 200 {
-		s.closeConnsLocked()
-		return fmt.Errorf("raop: SETUP 返回 %d", resp.Status)
+		s.abortSessionLocked()
+		return statusError("SETUP", resp.Status)
 	}
 	// 设备在 SETUP 响应里告诉自己收流的端口；缺省按协议默认 6000/6001。
 	serverPort, controlPort := ParseTransportPorts(resp.HeaderValue("Transport"))
+	slog.Info("AirPlay transport negotiated", "device", s.id, "transport", resp.HeaderValue("Transport"), "local", cl.conn.LocalAddr().String())
 	ip := net.ParseIP(hostOf(addr))
 	s.dataAddr = &net.UDPAddr{IP: ip, Port: serverPort}
 	s.ctrlAddr = &net.UDPAddr{IP: ip, Port: controlPort}
+	s.startControlReader(control, ip)
 
 	if err := s.recordLocked(ctx); err != nil {
-		s.closeConnsLocked()
+		s.abortSessionLocked()
 		return err
 	}
-	s.startTimingReader(timing)
+	db := -144.0
+	if s.volume > 0 {
+		db = 20 * math.Log10(s.volume)
+	}
+	resp, err = cl.Do(ctx, "SET_PARAMETER", uri, map[string]string{"Content-Type": "text/parameters"}, []byte(fmt.Sprintf("volume: %.2f\r\n", db)))
+	if err != nil {
+		s.abortSessionLocked()
+		return fmt.Errorf("raop: initial volume failed: %w", err)
+	}
+	if resp.Status != 200 {
+		s.abortSessionLocked()
+		return statusError("SET_PARAMETER", resp.Status)
+	}
+	s.startKeepAlive(cl, s.sessionDone, 15*time.Second)
 	return nil
 }
 
@@ -234,37 +271,47 @@ func (s *Sink) Start(at time.Time) error {
 	return nil
 }
 
-// startTimingReader 读设备发来的 timing 包，估计设备时钟相对本机的偏移。
-//
-// RAOP 设备会周期性向我们的 timing_port 发 NTP 请求（origin=它的发送时刻），
-// 收到时刻与本机时钟之差就是偏移的粗估（含单向网络时延，局域网内 <1ms）。
-// 没有这个通道就只能假设设备时钟与本机一致，同步校正环也就无从判断漂移。
+// Reply to all timing requests independently of the RTSP/Open mutex: receivers
+// may wait for several timing exchanges before returning SETUP/RECORD.
 func (s *Sink) startTimingReader(conn *net.UDPConn) {
 	if conn == nil {
 		return
 	}
+	s.clockMu.Lock()
+	s.clockConn, s.clockSeen = conn, false
+	s.clockMu.Unlock()
 	go func() {
 		buf := make([]byte, 256)
+		first := true
 		for {
-			n, _, err := conn.ReadFromUDP(buf)
+			n, peer, err := conn.ReadFromUDP(buf)
 			if err != nil {
 				return // 连接已关闭
 			}
-			if n < 12 || buf[1] != ControlTiming {
+			if first && n >= 2 {
+				slog.Info("AirPlay timing received", "device", s.id, "bytes", n, "type", buf[1])
+				first = false
+			}
+			if n < 32 || buf[1] != 0xd2 {
 				continue
 			}
 			recv := time.Now()
-			sec := binary.BigEndian.Uint32(buf[4:8])
-			frac := binary.BigEndian.Uint32(buf[8:12])
-			origin := time.Unix(int64(sec)-NTPEpochOffset, int64(float64(frac)/4294967296.0*1e9))
-			off := origin.Sub(recv)
-			s.mu.Lock()
-			if !s.closed {
-				s.clockOff = off
+			response := make([]byte, 32)
+			response[0], response[1] = 0x80, 0xd3
+			copy(response[2:4], buf[2:4])
+			copy(response[8:16], buf[24:32])
+			for i, stamp := range []NTPTime{ToNTP(recv), ToNTP(time.Now())} {
+				binary.BigEndian.PutUint32(response[16+i*8:], stamp.Sec)
+				binary.BigEndian.PutUint32(response[20+i*8:], stamp.Frac)
+			}
+			_, _ = conn.WriteToUDP(response, peer)
+			s.clockMu.Lock()
+			if s.clockConn == conn {
+				s.clockOff = 0
 				s.clockAt = recv
 				s.clockSeen = true
 			}
-			s.mu.Unlock()
+			s.clockMu.Unlock()
 		}
 	}()
 }
@@ -276,6 +323,8 @@ func (s *Sink) startTimingReader(conn *net.UDPConn) {
 func (s *Sink) PlaybackPosition() (time.Duration, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.clockMu.Lock()
+	defer s.clockMu.Unlock()
 	if !s.started || !s.clockSeen || s.startAt.IsZero() {
 		return 0, false
 	}
@@ -298,10 +347,38 @@ func (s *Sink) WriteFrame(f sink.Frame) error {
 	if s.audio == nil {
 		return errors.New("raop: 未 Open")
 	}
+	stride := s.opts.Channels * 2
+	if len(f.Data)%stride != 0 {
+		return errors.New("raop: PCM 帧未对齐采样")
+	}
+	if len(s.pendingPCM) == 0 || f.SampleIndex != s.pendingAt+int64(len(s.pendingPCM)/stride) {
+		// A deliberate seek/skip is a new sample position, not contiguous PCM.
+		s.pendingPCM = s.pendingPCM[:0]
+		s.pendingAt = f.SampleIndex
+	}
+	s.pendingPCM = append(s.pendingPCM, f.Data...)
+	packetBytes := frameSamples * stride
+	for len(s.pendingPCM) >= packetBytes {
+		if err := s.writeChunkLocked(sink.Frame{Data: s.pendingPCM[:packetBytes], SampleIndex: s.pendingAt}); err != nil {
+			return err
+		}
+		s.pendingAt += frameSamples
+		s.pendingPCM = s.pendingPCM[packetBytes:]
+	}
+	return nil
+}
+
+func (s *Sink) writeChunkLocked(f sink.Frame) error {
+	if s.audio == nil {
+		return errors.New("raop: 未 Open")
+	}
 	payload := f.Data
+	if s.opts.ALAC {
+		payload = encodeALAC(f.Data, s.opts.Channels)
+	}
 	if s.enc {
 		var err error
-		payload, err = EncryptFrames(s.aesKey, s.aesIV, f.Data)
+		payload, err = EncryptFrames(s.aesKey, s.aesIV, payload)
 		if err != nil {
 			return err
 		}
@@ -310,9 +387,20 @@ func (s *Sink) WriteFrame(f sink.Frame) error {
 	frameBytes := s.opts.Channels * 2
 	samples := len(f.Data) / frameBytes
 	marker := s.sent == 0
-	if _, err := s.audio.WriteToUDP(BuildRTPPacket(s.pkt.Seq, ts, s.pkt.SSRC, marker, payload), s.dataAddr); err != nil {
+	if marker {
+		nonzero := 0
+		for _, b := range f.Data {
+			if b != 0 {
+				nonzero++
+			}
+		}
+		slog.Info("AirPlay first audio packet", "device", s.id, "alac", s.opts.ALAC, "samples", samples, "nonzero_bytes", nonzero, "target", s.dataAddr.String())
+	}
+	packet := BuildRTPPacket(s.pkt.Seq, ts, s.pkt.SSRC, marker, payload)
+	if _, err := s.audio.WriteToUDP(packet, s.dataAddr); err != nil {
 		return fmt.Errorf("raop: 发送音频包失败: %w", err)
 	}
+	s.backlog[int(s.pkt.Seq)%packetBacklogSize] = cachedPacket{seq: s.pkt.Seq, data: packet}
 	s.pkt.Seq++
 	s.sent += int64(samples)
 	if s.lastSync.IsZero() || time.Since(s.lastSync) >= time.Second {
@@ -339,6 +427,8 @@ func (s *Sink) Seek(sample uint64) error {
 		return err
 	}
 	s.anchor = int64(sample)
+	s.pendingPCM = nil
+	s.backlog = [packetBacklogSize]cachedPacket{}
 	s.rtpBase = randomUint32()
 	s.sent = 0
 	s.rtpAtPlay = s.tsLocked(s.anchor)
@@ -391,6 +481,8 @@ func (s *Sink) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := s.rtsp.Do(ctx, "TEARDOWN", s.uri(), nil, nil)
+	slog.Info("AirPlay session stopped", "device", s.id, "samples", s.sent, "retransmitted", s.resent, "resend_misses", s.resendMisses)
+	s.closeConnsLocked()
 	s.started = false
 	s.emit(sink.Event{Type: sink.EventStopped})
 	return err
@@ -431,14 +523,39 @@ func (s *Sink) Close() error {
 		return nil
 	}
 	s.closed = true
-	s.closeConnsLocked()
+	s.abortSessionLocked()
 	close(s.events)
 	return nil
 }
 
 // --- 内部 ---
 
+func statusError(method string, status int) error {
+	if status == 453 {
+		return fmt.Errorf("raop: %s 返回 453（音箱拒绝新会话，可能仍有上一连接未释放或被其他播放占用）", method)
+	}
+	return fmt.Errorf("raop: %s 返回 %d", method, status)
+}
+
+// Release only the session acknowledged on our own RTSP connection. A failed
+// OPTIONS without a session must never tear down another sender's playback.
+func (s *Sink) abortSessionLocked() {
+	if s.rtsp != nil && s.rtsp.Session() != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		_, _ = s.rtsp.Do(ctx, "TEARDOWN", s.uri(), nil, nil)
+		cancel()
+	}
+	s.closeConnsLocked()
+}
+
 func (s *Sink) closeConnsLocked() {
+	s.clockMu.Lock()
+	s.clockConn, s.clockSeen = nil, false
+	s.clockMu.Unlock()
+	if s.sessionDone != nil {
+		close(s.sessionDone)
+		s.sessionDone = nil
+	}
 	if s.rtsp != nil {
 		_ = s.rtsp.Close()
 		s.rtsp = nil
@@ -449,6 +566,32 @@ func (s *Sink) closeConnsLocked() {
 		}
 	}
 	s.audio, s.control, s.timing = nil, nil, nil
+	s.pendingPCM = nil
+	s.backlog = [packetBacklogSize]cachedPacket{}
+}
+
+// Keep the RTSP session alive without holding the PCM writer's mutex while
+// waiting for a control response. Some receivers expire an otherwise active
+// UDP stream when no RTSP requests arrive for 30 seconds.
+func (s *Sink) startKeepAlive(cl *Client, done <-chan struct{}, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				resp, err := cl.Do(ctx, "OPTIONS", "*", nil, nil)
+				cancel()
+				if err != nil || resp.Status != 200 {
+					slog.Warn("AirPlay keepalive failed", "device", s.id, "err", err)
+					return
+				}
+			}
+		}
+	}()
 }
 
 func (s *Sink) recordLocked(ctx context.Context) error {
@@ -460,7 +603,7 @@ func (s *Sink) recordLocked(ctx context.Context) error {
 		return err
 	}
 	if resp.Status != 200 {
-		return fmt.Errorf("raop: RECORD 返回 %d", resp.Status)
+		return statusError("RECORD", resp.Status)
 	}
 	return nil
 }
@@ -469,7 +612,13 @@ func (s *Sink) sendSyncLocked() error {
 	if s.control == nil {
 		return nil
 	}
-	pkt := BuildSyncPacket(s.tsLocked(s.anchor)+uint32(s.sent), s.rtpAtPlay, ToNTP(time.Now()))
+	now := time.Now()
+	playing := s.rtpAtPlay + uint32(int64(now.Sub(s.startAt).Seconds()*float64(s.opts.SampleRate)))
+	buffered := playing + uint32(s.opts.Latency.Seconds()*float64(s.opts.SampleRate))
+	pkt := BuildSyncPacket(playing, buffered, ToNTP(now))
+	if s.sent == 0 {
+		pkt[0] = 0x90
+	}
 	if s.ctrlAddr == nil {
 		return nil
 	}
@@ -483,11 +632,12 @@ func (s *Sink) tsLocked(sample int64) uint32 {
 }
 
 func (s *Sink) uri() string {
-	id := s.opts.DeviceID
-	if id == "" {
-		id = "0"
+	id := strconv.FormatUint(uint64(s.sessionID), 10)
+	host := s.opts.Address
+	if s.rtsp != nil {
+		host = hostOf(s.rtsp.conn.LocalAddr().String())
 	}
-	return fmt.Sprintf("rtsp://%s/%s", s.opts.Address, id)
+	return fmt.Sprintf("rtsp://%s/%s", host, id)
 }
 
 func (s *Sink) emit(ev sink.Event) {
@@ -497,15 +647,15 @@ func (s *Sink) emit(ev sink.Event) {
 	}
 }
 
-func listenUDPs() (audio, control, timing *net.UDPConn, err error) {
-	if audio, err = net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero}); err != nil {
+func listenUDPs(localIP net.IP) (audio, control, timing *net.UDPConn, err error) {
+	if audio, err = net.ListenUDP("udp4", &net.UDPAddr{IP: localIP}); err != nil {
 		return nil, nil, nil, err
 	}
-	if control, err = net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero}); err != nil {
+	if control, err = net.ListenUDP("udp4", &net.UDPAddr{IP: localIP}); err != nil {
 		audio.Close()
 		return nil, nil, nil, err
 	}
-	if timing, err = net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero}); err != nil {
+	if timing, err = net.ListenUDP("udp4", &net.UDPAddr{IP: localIP}); err != nil {
 		audio.Close()
 		control.Close()
 		return nil, nil, nil, err
@@ -564,7 +714,7 @@ func randomUint32() uint32 {
 //
 // 返回值给发现逻辑用：pw=true 的设备第一版直接跳过；pk 是加密公钥。
 func ParseTXT(txt []string) sink.Caps {
-	caps := sink.Caps{Codecs: []sink.Codec{sink.CodecL16}, Channels: 2, BitDepth: 16, SyncTier: sink.SyncExact, LatencyMs: 2000}
+	caps := sink.Caps{Codecs: []sink.Codec{sink.CodecL16}, Channels: 2, BitDepth: 16, SyncTier: sink.SyncExact, LatencyMs: 2000, SupportsVolume: true, SupportsSeek: true}
 	for _, kv := range txt {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok {
@@ -585,10 +735,6 @@ func ParseTXT(txt []string) sink.Caps {
 			}
 		case "pw":
 			caps.NeedsPassword = v == "true"
-		case "sf", "md":
-			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				caps.BitDepth = n
-			}
 		}
 	}
 	return caps

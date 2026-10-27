@@ -655,6 +655,14 @@ func (e *Engine) stopLocked() {
 	}
 	e.running = false
 	e.sinksOpen = false
+	// Push sinks own an independent transport session. Stopping decoding alone
+	// leaves that session open and makes the next Open (resume/seek) fail.
+	targets, _ := e.targets.Snapshot()
+	for _, target := range targets {
+		if err := target.Sink.Stop(); err != nil {
+			e.deps.Logger.Warn("stop push sink failed", "player_id", target.PlayerID, "err", err)
+		}
+	}
 	if e.preload != nil {
 		_ = e.preload.Close()
 		e.preload = nil
@@ -682,7 +690,9 @@ func (e *Engine) startLocked(parent context.Context, position time.Duration) {
 	e.sourceFormat = ""
 	songID, _ := e.queue.CurrentSong()
 	e.transport.Load(songID, position)
-	e.timeline = NewTimeline(e.deps.Clock(), e.format.SampleRate, e.deps.Latency)
+	// Sample indices begin at the resumed position, not zero. Keep the first
+	// resumed sample at now+latency instead of waiting the elapsed track time.
+	e.timeline = NewTimeline(e.deps.Clock().Add(-position), e.format.SampleRate, e.deps.Latency)
 	go e.run(ctx, position)
 }
 
@@ -785,8 +795,14 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 					"owner", e.ownerKind+":"+e.ownerID)
 			}
 			for _, t := range targets {
-				_ = t.Sink.Open(ctx, plan)
-				_ = t.Sink.Start(timeline.At(uint64(sampleBase)).Add(t.Delay))
+				if err := t.Sink.Open(ctx, plan); err != nil {
+					e.fail(fmt.Errorf("open sink %s: %w", t.PlayerID, err))
+					return
+				}
+				if err := t.Sink.Start(timeline.At(uint64(sampleBase)).Add(t.Delay)); err != nil {
+					e.fail(fmt.Errorf("start sink %s: %w", t.PlayerID, err))
+					return
+				}
 			}
 			e.mu.Lock()
 			e.sinksOpen = true
@@ -795,8 +811,14 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		// 控制型成员（本机客户端自拉流）与推送成员同组时也要收到 load/play，
 		// 否则浏览器那一端不会出声。它们不接收 PCM，只按指令自己拉流。
 		for _, s := range e.controlSinks() {
-			_ = s.Open(ctx, plan)
-			_ = s.Start(timeline.At(uint64(sampleBase)))
+			if err := s.Open(ctx, plan); err != nil {
+				e.fail(fmt.Errorf("open sink %s: %w", s.ID(), err))
+				return
+			}
+			if err := s.Start(timeline.At(uint64(sampleBase))); err != nil {
+				e.fail(fmt.Errorf("start sink %s: %w", s.ID(), err))
+				return
+			}
 		}
 
 		runner := e.deps.Runners(timeline, e.targets, sampleBase, func(idx int64, at time.Time) {
