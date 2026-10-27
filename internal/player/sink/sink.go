@@ -226,3 +226,19 @@ type PullSink interface {
 	Sink
 	StreamURL(plan StreamPlan) (string, error)
 }
+
+// NowPlaying 设备屏显元数据（RAOP DMAP / RAAT update_transport 共用）。
+type NowPlaying struct {
+	Title, Artist, Album string
+}
+
+// MetadataSink 支持向设备屏显推送曲目元数据。
+type MetadataSink interface{ UpdateMetadata(NowPlaying) error }
+
+// ProgressSink 支持向设备屏显推送播放进度。
+type ProgressSink interface {
+	UpdateProgress(position, total time.Duration) error
+}
+
+// ArtworkSink 支持向设备屏显推送封面（path 为本地图片路径，空串表示清除）。
+type ArtworkSink interface{ UpdateArtwork(path string) error }

@@ -25,6 +25,11 @@ type Track struct {
 	Format     string
 	SampleRate int
 	BitRate    int
+	// Artist / Album / ArtworkPath 设备屏显元数据（RAOP DMAP / RAAT
+	// update_transport）。仅元数据推送用，不参与解码与协商。
+	Artist      string
+	Album       string
+	ArtworkPath string
 }
 
 // Decoder 一条连续吐 s16le PCM 的解码流。
@@ -135,6 +140,9 @@ type Engine struct {
 	curPlan  sink.StreamPlan
 	planBase int64
 	cursor   int64
+	// curTrack 当前曲目的完整解析结果（含 Artist/Album/ArtworkPath），
+	// 供 pushMetadata 推送设备屏显。
+	curTrack Track
 	// controls 控制型 sink（本机客户端自拉流）：服务端不下发 PCM，只发指令。
 	//
 	// 与 targets 分开存：sink.Set 的元素类型是 PushSink，控制型 sink 进不去。
@@ -648,6 +656,62 @@ func (e *Engine) eqActiveLocked() bool {
 }
 
 // stopLocked 停掉当前解码协程。
+// pushMetadata 设备屏显推送循环（A1）：进度 1s 一推，曲目变化时推元数据与封面。
+//
+// 只对实现对应接口的 sink 生效（RAOP DMAP / RAAT update_transport），
+// 其余成员静默跳过；推送失败只记日志，不影响播放主路径。
+func (e *Engine) pushMetadata(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	lastSong := int64(-1)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		e.mu.Lock()
+		track := e.curTrack
+		e.mu.Unlock()
+		if track.SongID == 0 {
+			continue
+		}
+		// targets（推帧设备）+ controls（自拉流客户端）里实现对应接口的成员。
+		members := make([]sink.Sink, 0)
+		targets, _ := e.targets.Snapshot()
+		for _, t := range targets {
+			members = append(members, t.Sink)
+		}
+		members = append(members, e.controlSinks()...)
+
+		if track.SongID != lastSong {
+			lastSong = track.SongID
+			np := sink.NowPlaying{Title: track.Title, Artist: track.Artist, Album: track.Album}
+			for _, s := range members {
+				if m, ok := s.(sink.MetadataSink); ok {
+					if err := m.UpdateMetadata(np); err != nil {
+						e.deps.Logger.Warn("metadata push failed", "player_id", s.ID(), "err", err)
+					}
+				}
+				if a, ok := s.(sink.ArtworkSink); ok {
+					// 空串表示清除：没有封面也推，设备端据此清屏。
+					if err := a.UpdateArtwork(track.ArtworkPath); err != nil {
+						e.deps.Logger.Warn("artwork push failed", "player_id", s.ID(), "err", err)
+					}
+				}
+			}
+		}
+		pos := e.transport.Position()
+		for _, s := range members {
+			if p, ok := s.(sink.ProgressSink); ok {
+				if err := p.UpdateProgress(pos, track.Duration); err != nil {
+					e.deps.Logger.Warn("progress push failed", "player_id", s.ID(), "err", err)
+				}
+			}
+		}
+	}
+}
+
 func (e *Engine) stopLocked() {
 	if e.cancel != nil {
 		e.cancel()
@@ -694,6 +758,7 @@ func (e *Engine) startLocked(parent context.Context, position time.Duration) {
 	// resumed sample at now+latency instead of waiting the elapsed track time.
 	e.timeline = NewTimeline(e.deps.Clock().Add(-position), e.format.SampleRate, e.deps.Latency)
 	go e.run(ctx, position)
+	go e.pushMetadata(ctx)
 }
 
 // run 解码 → 分发 → 自动续播的主循环。
@@ -768,6 +833,7 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		}
 		e.mu.Lock()
 		e.curPlan = plan
+		e.curTrack = track
 		e.planBase = sampleBase
 		e.cursor = sampleBase
 		e.mu.Unlock()
@@ -960,6 +1026,7 @@ func (e *Engine) runDelegated(ctx context.Context, startAt time.Duration) {
 			Latency:  e.deps.Latency,
 		}
 		e.curPlan = plan
+		e.curTrack = track
 		e.planBase = 0
 		e.cursor = 0
 		e.mu.Unlock()

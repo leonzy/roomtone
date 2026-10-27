@@ -102,6 +102,11 @@ func (a *App) initPlayback() {
 			Format:     song.Format,
 			SampleRate: song.SampleRate,
 			BitRate:    song.BitRate,
+			// 屏显元数据：扫描期已解析（内嵌标签优先，外部封面文件兑底），
+			// 取不到就是空串，设备端据此清屏。
+			Artist:      song.Artist,
+			Album:       song.Album,
+			ArtworkPath: song.CoverPath,
 		}, nil
 	}}
 

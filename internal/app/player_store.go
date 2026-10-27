@@ -228,6 +228,11 @@ type songTrackInfo struct {
 	Format     string
 	SampleRate int
 	BitRate    int
+	// Artist / Album / ArtworkPath 设备屏显元数据（RAOP DMAP / RAAT
+	// update_transport），不参与解码与协商。
+	Artist      string
+	Album       string
+	ArtworkPath string
 }
 
 // songTrackResolver 用 SongService 解析。单独定义成函数类型，
@@ -242,13 +247,16 @@ func (r songTrackResolver) ResolveTrack(ctx context.Context, songID int64) (play
 		return player.Track{}, fmt.Errorf("resolve song %d: %w", songID, err)
 	}
 	t := player.Track{
-		SongID:     songID,
-		Title:      info.Title,
-		Path:       info.Path,
-		Duration:   time.Duration(info.Duration * float64(time.Second)),
-		Format:     info.Format,
-		SampleRate: info.SampleRate,
-		BitRate:    info.BitRate,
+		SongID:      songID,
+		Title:       info.Title,
+		Path:        info.Path,
+		Duration:    time.Duration(info.Duration * float64(time.Second)),
+		Format:      info.Format,
+		SampleRate:  info.SampleRate,
+		BitRate:     info.BitRate,
+		Artist:      info.Artist,
+		Album:       info.Album,
+		ArtworkPath: info.ArtworkPath,
 	}
 	if strings.HasPrefix(info.URL, "http://") || strings.HasPrefix(info.URL, "https://") {
 		t.RemoteURL = info.URL
