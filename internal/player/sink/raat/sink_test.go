@@ -31,6 +31,10 @@ type fakeRAATDevice struct {
 	haveStream bool
 	// 音频通道收到的帧序列（命令前缀 + 载荷）
 	audioFrames []audioFrame
+	// 控制通道 type=3 裸帧（封面）
+	rawFrames [][]byte
+	// 控制连接（服务器通知用）
+	conns []net.Conn
 	// setup 响应（可定制：NotSupported 错误路径）
 	setupResp string
 	// 关闭控制连接（错误路径）
@@ -101,6 +105,9 @@ func (d *fakeRAATDevice) serveCtrl() {
 
 func (d *fakeRAATDevice) handleCtrl(conn net.Conn) {
 	defer conn.Close()
+	d.mu.Lock()
+	d.conns = append(d.conns, conn)
+	d.mu.Unlock()
 	br := bufio.NewReader(conn)
 	for {
 		head := make([]byte, 8)
@@ -131,6 +138,11 @@ func (d *fakeRAATDevice) handleCtrl(conn net.Conn) {
 			d.respondCtrl(conn, rid, req.Request, setupResp)
 		case msgKeepalive:
 			// 忽略
+		case 3:
+			// type=3 裸二进制帧（封面）：带类型前缀存储（测试断言用）
+			d.mu.Lock()
+			d.rawFrames = append(d.rawFrames, append([]byte{3}, body...))
+			d.mu.Unlock()
 		}
 	}
 }

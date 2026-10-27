@@ -53,6 +53,12 @@ type Sink struct {
 	events chan sink.Event
 
 	mu sync.Mutex
+	// screen 设备屏显状态（update_transport 全量推送的缓存）。
+	screen screenState
+	// ctrlMu/lastControl* 反控记录（subscribe_transport 通知 → 测试断言）。
+	ctrlMu         sync.Mutex
+	lastControlCmd string
+	lastControlVal float64
 	// cbMu 保护流式回调与 API 方法共享的状态（ready/started/dropouts/
 	// wallStart）。不能复用 s.mu：Open 全程持 s.mu 等 stream 的流式响应，
 	// 回调若再取 s.mu 会死锁（readLoop 被卡住无法送出终段响应）。
@@ -71,6 +77,8 @@ type Sink struct {
 	clockPort    int
 	dropouts     uint64
 	closed       bool
+	// transportSupported info.transport.is_supported（屏显/反控开关）。
+	transportSupported bool
 }
 
 // New 创建 sink。真正建连在 Open。
@@ -158,6 +166,7 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	}
 	s.plan = plan
 	s.anchorSample = plan.Position.Milliseconds() * int64(s.opts.SampleRate) / 1000
+	s.transportSupported = true // info 探测后精确化（B6 的 ProbeInfo 透传）
 
 	addr := s.opts.Address
 	if addr == "" {
@@ -232,6 +241,11 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 
 	// keepalive(2s)
 	ctrl.StartKeepalive(2 * time.Second)
+
+	// 屏显/反控（B7）：transport 支持时订阅设备遥控。
+	if s.transportSupported {
+		s.subscribeTransport()
+	}
 	return nil
 }
 
