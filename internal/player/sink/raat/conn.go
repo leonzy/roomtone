@@ -48,9 +48,39 @@ type Conn struct {
 
 type call struct {
 	onReply func(raw json.RawMessage, final bool) error
-	done    chan struct{}
-	err     error
-	last    json.RawMessage
+	// first 首段响应即关闭：Request 阻塞到首个 onReply（计划 B3 规格），
+	// 流式后续段继续经 onReply 回调，pending 保留到终段/断连。
+	first    chan struct{}
+	firstOne sync.Once
+	done     chan struct{}
+	doneOnce sync.Once
+	// mu 保护 last/err（readLoop 写、Request 读，跨协程）。
+	mu   sync.Mutex
+	err  error
+	last json.RawMessage
+}
+
+// closeFirst / closeDone 幂等关闭（dispatch 与 failAll 可能竞争）。
+func (c *call) closeFirst() { c.firstOne.Do(func() { close(c.first) }) }
+func (c *call) closeDone()  { c.doneOnce.Do(func() { close(c.done) }) }
+
+func (c *call) setReply(raw json.RawMessage, err error) {
+	c.mu.Lock()
+	c.last, c.err = raw, err
+	c.mu.Unlock()
+}
+
+func (c *call) result() (json.RawMessage, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.last, c.err
+}
+
+// setErr 只更新 err（保留 last），加锁。
+func (c *call) setErr(err error) {
+	c.mu.Lock()
+	c.err = err
+	c.mu.Unlock()
 }
 
 // ErrClosed 连接已关闭。
@@ -82,12 +112,9 @@ func (c *Conn) Close() error {
 	// 唤醒所有等待中的调用
 	c.pending.Range(func(_, v any) bool {
 		cl := v.(*call)
-		select {
-		case <-cl.done:
-		default:
-			cl.err = ErrClosed
-			close(cl.done)
-		}
+		cl.setErr(ErrClosed)
+		cl.closeFirst()
+		cl.closeDone()
 		return true
 	})
 	return err
@@ -105,8 +132,10 @@ func (c *Conn) writeFrame(t uint32, body []byte) error {
 }
 
 // Request 发起请求。args 为请求参数（不含 "request" 键）；onReply 收到
-// 每段响应（流式响应多次回调，final 标记末段）；onReply 为 nil 时只等
-// 首段。返回值：onReply 为 nil 时返回首段 raw；否则返回末段后 nil。
+// 每段响应（流式响应多次回调，final 标记末段）。**阻塞到首个 onReply**
+// （计划 B3 规格：stream 的后续段——Playing/Ended/Dropout——在 start 之后
+// 才到达，若阻塞到终段 Open 将永远等不到）；onReply 为 nil 时等首段后
+// 注销 pending。返回首段 raw。
 func (c *Conn) Request(ctx context.Context, name string, args map[string]any, onReply func(raw json.RawMessage, final bool) error) (json.RawMessage, error) {
 	if args == nil {
 		args = map[string]any{}
@@ -125,22 +154,35 @@ func (c *Conn) Request(ctx context.Context, name string, args map[string]any, on
 	binary.BigEndian.PutUint32(body[0:4], rid)
 	copy(body[4:], payload)
 
-	cl := &call{onReply: onReply, done: make(chan struct{})}
+	cl := &call{onReply: onReply, first: make(chan struct{}), done: make(chan struct{})}
 	c.pending.Store(rid, cl)
-	defer c.pending.Delete(rid)
+	// 无回调：首段后注销；有回调：终段后注销（流式）
+	defer func() {
+		if onReply == nil {
+			c.pending.Delete(rid)
+		}
+	}()
+	go func() {
+		// 终段/错误后注销（流式回调路径）
+		<-cl.done
+		c.pending.Delete(rid)
+	}()
 
 	if err := c.writeFrame(msgRequest, body); err != nil {
+		cl.closeDone()
 		return nil, fmt.Errorf("raat: 发送 %s 失败: %w", name, err)
 	}
 
-	// 等待：末段响应 / ctx 结束 / 连接关闭
+	// 等待：首段响应 / ctx 结束 / 连接关闭
 	select {
-	case <-cl.done:
-		if cl.err != nil {
-			return nil, fmt.Errorf("raat: %s: %w", name, cl.err)
+	case <-cl.first:
+		last, err := cl.result()
+		if err != nil {
+			return nil, fmt.Errorf("raat: %s: %w", name, err)
 		}
-		return cl.last, nil
+		return last, nil
 	case <-ctx.Done():
+		cl.closeDone()
 		return nil, fmt.Errorf("raat: %s: %w", name, ctx.Err())
 	case <-c.closed:
 		return nil, fmt.Errorf("raat: %s: %w", name, ErrClosed)
@@ -247,17 +289,18 @@ func (c *Conn) dispatch(typ uint32, body []byte) {
 		if cl, ok := c.pending.Load(rid); ok {
 			cc := cl.(*call)
 			if cc.onReply != nil {
-				if err := cc.onReply(raw, final); err != nil {
-					cc.err = err
-				}
-				cc.last = raw
+				err := cc.onReply(raw, final)
+				cc.setReply(raw, err)
+				// 首段即唤醒 Request（若仍在等待）
+				cc.closeFirst()
 				if final {
-					close(cc.done)
+					cc.closeDone()
 				}
 			} else {
 				// 无回调：首段即完成
-				cc.last = raw
-				close(cc.done)
+				cc.setReply(raw, nil)
+				cc.closeFirst()
+				cc.closeDone()
 			}
 		}
 	case msgServerReq:
@@ -279,12 +322,9 @@ func (c *Conn) failAll(err error) {
 	c.once.Do(func() { close(c.closed) })
 	c.pending.Range(func(_, v any) bool {
 		cl := v.(*call)
-		select {
-		case <-cl.done:
-		default:
-			cl.err = err
-			close(cl.done)
-		}
+		cl.setErr(err)
+		cl.closeFirst()
+		cl.closeDone()
 		return true
 	})
 }
