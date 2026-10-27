@@ -104,6 +104,15 @@ type Caps struct {
 	DeviceID string `json:"device_id,omitempty"`
 	// PublicKey RAOP 加密用的 PEM 公钥（TXT pk）。为空表示只能明文。
 	PublicKey string `json:"public_key,omitempty"`
+	// AirPlay2 设备声明了 _airplay._tcp（V2 能力面：配对/加密 RTSP/编组）。
+	// 缺省 false，旧库行无感。
+	AirPlay2 bool `json:"airplay2,omitempty"`
+	// RequiresPairing features/StatusFlags 声明需要配对（AirPlay 2）。
+	RequiresPairing bool `json:"requires_pairing,omitempty"`
+	// SupportsArtwork features 位（设备能显示封面）。
+	SupportsArtwork bool `json:"supports_artwork,omitempty"`
+	// SupportsBPlistNowPlaying features 位（updateMRPlaybackState）。
+	SupportsBPlistNowPlaying bool `json:"supports_bplist_now_playing,omitempty"`
 }
 
 // Format 组内统一后的输出格式（协商结果）。

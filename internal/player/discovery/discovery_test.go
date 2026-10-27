@@ -12,6 +12,7 @@ import (
 	"songloft/internal/player"
 	"songloft/internal/player/sink/dlna"
 	"songloft/internal/player/sink/raop"
+	"songloft/internal/player/sink/raop2"
 )
 
 type fakeRegistry struct {
@@ -217,6 +218,8 @@ func TestRAOPScannerMapsIDs(t *testing.T) {
 			Port: 7000,
 			TXT:  []string{"ch=2", "sr=44100"},
 		}}, nil
+	}, QueryAirPlay: func(context.Context, string, time.Duration) ([]raop2.Entry, error) {
+		return nil, nil // 测试注入：不走真实 mDNS
 	}}
 	list, err := s.Scan(context.Background())
 	if err != nil {
@@ -366,4 +369,64 @@ func TestApplyConfigWakesLoop(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("ApplyConfig 打开后应立即扫描")
+}
+
+// TestRAOPScannerMergesAirPlay2 A2P-6：`_raop._tcp` 与 `_airplay._tcp`
+// 按 DeviceID 关联合并——同一物理设备的两个服务合并为一台 Speaker
+// （Caps.AirPlay2/features 位/密码）；V2-only 设备独立成台；同 psgid
+// 多设备由 raop2.MergeGroups 合并（组长为代表）。
+func TestRAOPScannerMergesAirPlay2(t *testing.T) {
+	s := &RAOPScanner{
+		Timeout: time.Second,
+		Query: func(context.Context, string, time.Duration) ([]raop.Entry, error) {
+			return []raop.Entry{{
+				// 与 V2 的 AABBCCDDEEFF 同一物理设备
+				Name: "AABBCCDDEEFF@Living Room._raop._tcp.local.",
+				Addr: net.ParseIP("10.0.0.5"),
+				Port: 7000,
+				TXT:  []string{"ch=2", "sr=44100"},
+			}}, nil
+		},
+		QueryAirPlay: func(context.Context, string, time.Duration) ([]raop2.Entry, error) {
+			return []raop2.Entry{
+				{Name: "AABBCCDDEEFF@Living Room._airplay._tcp.local.", Host: "10.0.0.5", Port: 7000,
+					TXT: []string{"ft=0x200,0x1", "pw=true", "model=AudioAccessory1,1"}},
+				// V2-only 设备（无 _raop._tcp）
+				{Name: "112233445566@HomePod._airplay._tcp.local.", Host: "10.0.0.6", Port: 7000,
+					TXT: []string{"ft=0x200,0x1", "psgid=g1", "igl=1", "model=AudioAccessory1,1"}},
+			}, nil
+		},
+	}
+	list, err := s.Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("应得 2 台（合并 + V2-only），实际 %d: %+v", len(list), list)
+	}
+	var merged, v2only *Speaker
+	for i := range list {
+		if list[i].Caps.AirPlay2 && list[i].Address == "10.0.0.5:7000" {
+			merged = &list[i]
+		} else {
+			v2only = &list[i]
+		}
+	}
+	if merged == nil || v2only == nil {
+		t.Fatalf("合并/V2-only 设备缺失: %+v", list)
+	}
+	// 合并设备：V1 基础 + V2 能力
+	if merged.ID != "raop:aa:bb:cc:dd:ee:ff" || !merged.Caps.AirPlay2 {
+		t.Fatalf("合并设备不符: %+v", merged)
+	}
+	if !merged.Caps.NeedsPassword {
+		t.Fatal("V2 的 pw=true 应合并进 Caps.NeedsPassword")
+	}
+	if merged.Model != "AudioAccessory1,1" {
+		t.Fatalf("V2 的 model 应覆盖: %q", merged.Model)
+	}
+	// V2-only 设备
+	if v2only.ID != "raop:11:22:33:44:55:66" || !v2only.Caps.AirPlay2 {
+		t.Fatalf("V2-only 设备不符: %+v", v2only)
+	}
 }
