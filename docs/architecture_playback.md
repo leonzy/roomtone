@@ -737,10 +737,10 @@ SSDP（239.255.255.250:1900）与 mDNS（224.0.0.251:5353）在 Docker bridge �
 
 | # | 能力 | Roon | 本项目 | 差距性质 |
 |---|---|---|---|---|
-| H1 | **同步精度** | RAAT 端到端 ~1ms（共享时钟 + 设备侧缓冲反馈） | RAOP 目标 ±20ms；DLNA 只能起播对齐（200~500ms 且持续漂移） | **协议天花板**：RAOP 无共享时钟，只能靠校正环事后拉回；同房间双音箱会有梳状滤波 |
+| H1 | **同步精度** | RAAT 端到端 ~1ms（共享时钟 + 设备侧缓冲反馈） | **RAAT 端点已达 ±1ms**（`SyncPrecise`，时钟主选举 + RAATCLK 探测对，见 `raat/clock.go`）；RAOP 仍 ±20ms；DLNA 只能起播对齐（200~500ms 且持续漂移） | **部分消除**：RAAT 端点经共享时钟达到 ±1ms；RAOP 无共享时钟只能靠校正环事后拉回（同房间双 RAOP 音箱仍有梳状滤波）；DLNA 不变 |
 | H2 | **本地输出音质** | macOS hog mode / WASAPI exclusive，bit-perfect，DSD native | 客户端 `just_audio` → OS 混音器，被系统重采样，DSD 必须转 PCM | **客户端音频栈**：要 bit-perfect 得接 CoreAudio/AAudio 独占接口，不是改服务端能解决的 |
 | H3 | **DSP 深度** | 参数 EQ、卷积（房间校正）、升频、crossfeed、headroom | 10 段图示 EQ + 响度归一 | **实现量**：卷积与升频是另一个量级的工程 |
-| H4 | **设备覆盖** | Roon Ready / RAAT 设备（数百款） | AirPlay 1 + DLNA + 本机 | **生态**：RAAT 是私有协议，接不进来 |
+| H4 | **设备覆盖** | Roon Ready / RAAT 设备（数百款） | AirPlay 1 + **AirPlay 2**（配对/加密 RTSP/编组，`raop2/`）+ **RAAT**（Roon Ready 设备生态，SOOD 发现，`raat/`）+ DLNA + 本机 | **部分消除**：RAAT 协议已逆向实现（RAATServer 联调验证）；AirPlay 2 发送端能力面完整（音频，不含屏幕镜像）。独立 Roon Ready 音箱覆盖面待实测 |
 | H5 | **并发区域数** | 按 CPU 扩展，几十个 zone 同时放不同内容 | 默认 4 个并发解码组，第 5 个 503（`budget.go`） | **资源模型**：可调高，但受 CPU 与单机解码能力约束 |
 
 ### 11.2 可补但未补（设计层）
