@@ -1,4 +1,4 @@
-package raop
+package airplay
 
 import (
 	"encoding/binary"

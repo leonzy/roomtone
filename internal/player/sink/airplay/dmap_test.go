@@ -1,4 +1,4 @@
-package raop
+package airplay
 
 import (
 	"encoding/hex"
@@ -9,7 +9,7 @@ import (
 // 容器 = 4B tag + 4B BE 长度回填；string = 4B tag + 4B BE 长度 + UTF-8；
 // byte = 4B tag + 4B BE(1) + 1 字节。
 func TestDMAPEncoderGolden(t *testing.T) {
-	var e dmapEncoder
+	var e DMAPEncoder
 	e.Begin("mlit")
 	e.WriteU8("mikd", 2)
 	e.WriteString("asal", "Album")
@@ -32,7 +32,7 @@ func TestDMAPEncoderGolden(t *testing.T) {
 
 // 嵌套容器：内层长度先回填，外层长度包含内层全部字节。
 func TestDMAPEncoderNested(t *testing.T) {
-	var e dmapEncoder
+	var e DMAPEncoder
 	e.Begin("adbm")
 	e.Begin("mlit")
 	e.WriteString("minm", "x")
@@ -50,7 +50,7 @@ func TestDMAPEncoderNested(t *testing.T) {
 
 // UTF-8 多字节字符串按字节计长。
 func TestDMAPEncoderUTF8(t *testing.T) {
-	var e dmapEncoder
+	var e DMAPEncoder
 	e.Begin("mlit")
 	e.WriteString("minm", "夜曲") // 6 字节
 	e.End("mlit")
@@ -64,7 +64,7 @@ func TestDMAPEncoderUTF8(t *testing.T) {
 
 func TestDMAPEncoderErrors(t *testing.T) {
 	// tag 必须恰好 4 字节
-	var e dmapEncoder
+	var e DMAPEncoder
 	e.Begin("mlit")
 	if err := e.End("mikd"); err == nil {
 		t.Fatal("End 不匹配应当报错")
@@ -85,11 +85,11 @@ func TestDMAPEncoderErrors(t *testing.T) {
 	}
 }
 
-func mustDMAPBytes(t *testing.T, e *dmapEncoder) []byte {
+func mustDMAPBytes(t *testing.T, e *DMAPEncoder) []byte {
 	t.Helper()
 	b, err := e.Bytes()
 	if err != nil {
-		t.Fatalf("dmapEncoder.Bytes: %v", err)
+		t.Fatalf("DMAPEncoder.Bytes: %v", err)
 	}
 	return b
 }

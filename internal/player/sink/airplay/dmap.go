@@ -1,4 +1,4 @@
-package raop
+package airplay
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 	"strconv"
 )
 
-// dmapEncoder DMAP 报文编码器，逐字移植 Roon 的 DMAPEncoder.cs：
+// DMAPEncoder DMAP 报文编码器，逐字移植 Roon 的 DMAPEncoder.cs：
 //
 //   - 容器：Begin 写 4B tag + 占位 4B BE 长度，End 回填实际内容长度
 //     （总长 - off - 4），支持嵌套；
@@ -15,7 +15,7 @@ import (
 //   - 单字节：4B tag + 4B BE(1) + 1 字节值。
 //
 // AirPlay 元数据推送（SET_PARAMETER application/x-dmap-tagged）使用。
-type dmapEncoder struct {
+type DMAPEncoder struct {
 	buf       bytes.Buffer
 	backpatch []struct {
 		off int
@@ -23,7 +23,7 @@ type dmapEncoder struct {
 	}
 }
 
-func (e *dmapEncoder) Begin(tag string) error {
+func (e *DMAPEncoder) Begin(tag string) error {
 	if len(tag) != 4 {
 		return fmt.Errorf("dmap: tag %q 不是 4 字节", tag)
 	}
@@ -35,7 +35,7 @@ func (e *dmapEncoder) Begin(tag string) error {
 	return e.writeInt32(0)
 }
 
-func (e *dmapEncoder) WriteString(tag, value string) error {
+func (e *DMAPEncoder) WriteString(tag, value string) error {
 	if len(tag) != 4 {
 		return fmt.Errorf("dmap: tag %q 不是 4 字节", tag)
 	}
@@ -48,7 +48,7 @@ func (e *dmapEncoder) WriteString(tag, value string) error {
 	return nil
 }
 
-func (e *dmapEncoder) WriteU8(tag string, value byte) error {
+func (e *DMAPEncoder) WriteU8(tag string, value byte) error {
 	if len(tag) != 4 {
 		return fmt.Errorf("dmap: tag %q 不是 4 字节", tag)
 	}
@@ -59,7 +59,7 @@ func (e *dmapEncoder) WriteU8(tag string, value byte) error {
 	return e.buf.WriteByte(value)
 }
 
-func (e *dmapEncoder) End(tag string) error {
+func (e *DMAPEncoder) End(tag string) error {
 	if len(e.backpatch) == 0 {
 		return fmt.Errorf("dmap: End(%q) 没有对应的 Begin", tag)
 	}
@@ -78,14 +78,14 @@ func (e *dmapEncoder) End(tag string) error {
 }
 
 // Bytes 返回编码结果；存在未闭合的容器时报错（对齐 ToArray 的行为）。
-func (e *dmapEncoder) Bytes() ([]byte, error) {
+func (e *DMAPEncoder) Bytes() ([]byte, error) {
 	if len(e.backpatch) != 0 {
 		return nil, fmt.Errorf("dmap: 还有 %d 个未闭合的容器", len(e.backpatch))
 	}
 	return e.buf.Bytes(), nil
 }
 
-func (e *dmapEncoder) writeInt32(i int) error {
+func (e *DMAPEncoder) writeInt32(i int) error {
 	if i < 0 || i > 0x7fffffff {
 		return fmt.Errorf("dmap: 长度越界 %s", strconv.Itoa(i))
 	}

@@ -1,11 +1,11 @@
-package raop
+package airplay
 
 import "encoding/binary"
 
-// encodeALAC packs signed little-endian stereo PCM into an uncompressed ALAC
+// EncodeALAC packs signed little-endian stereo PCM into an uncompressed ALAC
 // element. AirPlay receivers advertising cn=1 require ALAC framing even when
 // the samples themselves are uncompressed (FFmpeg libavcodec/alac.c).
-func encodeALAC(pcm []byte, channels int) []byte {
+func EncodeALAC(pcm []byte, channels int) []byte {
 	out := make([]byte, (55+len(pcm)*8+3+7)/8)
 	bit := 0
 	put := func(value uint32, count int) {

@@ -395,7 +395,7 @@ func (s *Sink) writeChunkLocked(f sink.Frame) error {
 	}
 	payload := f.Data
 	if s.opts.ALAC {
-		payload = encodeALAC(f.Data, s.opts.Channels)
+		payload = EncodeALAC(f.Data, s.opts.Channels)
 	}
 	if s.enc {
 		var err error

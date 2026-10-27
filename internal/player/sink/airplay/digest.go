@@ -1,4 +1,4 @@
-package raop
+package airplay
 
 import (
 	"crypto/md5"
@@ -20,9 +20,9 @@ import (
 //  2. 授权头里 uri="..." 与 response="..." 之间**没有逗号**（String.Format
 //     模板如此），标准 Digest 头的逗号在这里会不被设备接受。
 
-// computeDigest RFC 2069 摘要（无 qop）：HA1=MD5(user:realm:pw)、
+// ComputeDigest RFC 2069 摘要（无 qop）：HA1=MD5(user:realm:pw)、
 // HA2=MD5(method:uri)、response=MD5(HA1:nonce:HA2)，hex 小写、ASCII 输入。
-func computeDigest(realm, password, method, uri, nonce string) string {
+func ComputeDigest(realm, password, method, uri, nonce string) string {
 	md5hex := func(s string) string {
 		sum := md5.Sum([]byte(s)) //nolint:gosec // RFC 2069 指定 MD5
 		return hex.EncodeToString(sum[:])
@@ -32,8 +32,8 @@ func computeDigest(realm, password, method, uri, nonce string) string {
 	return md5hex(ha1 + ":" + nonce + ":" + ha2)
 }
 
-// authorizationHeader Roon 怪格式：uri 与 response 之间无逗号。
-func authorizationHeader(realm, nonce, uri, response string) string {
+// AuthorizationHeader Roon 怪格式：uri 与 response 之间无逗号。
+func AuthorizationHeader(realm, nonce, uri, response string) string {
 	return fmt.Sprintf(`Digest username="iTunes", realm="%s", nonce="%s", uri="%s" response="%s"`,
 		realm, nonce, uri, response)
 }
@@ -43,9 +43,9 @@ var (
 	nonceRe = regexp.MustCompile(`nonce="([^"]+)"`)
 )
 
-// parseWWWAuthenticate 从 WWW-Authenticate 头取 realm 与 nonce
+// ParseWWWAuthenticate 从 WWW-Authenticate 头取 realm 与 nonce
 // （两个独立正则，对齐 AirPlayClientV1.cs:1328-1339）。
-func parseWWWAuthenticate(h string) (realm, nonce string, ok bool) {
+func ParseWWWAuthenticate(h string) (realm, nonce string, ok bool) {
 	if m := realmRe.FindStringSubmatch(h); m != nil {
 		realm = m[1]
 	} else {

@@ -1,4 +1,4 @@
-package raop
+package airplay
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ func TestALACRoundTripFFmpeg(t *testing.T) {
 	for i := 0; i < len(pcm)/2; i++ {
 		binary.LittleEndian.PutUint16(pcm[i*2:], uint16(int16(i*89-28000)))
 	}
-	payload := encodeALAC(pcm, 2)
+	payload := EncodeALAC(pcm, 2)
 	assertDecodedALAC(t, [][]byte{payload}, pcm)
 }
 
