@@ -22,10 +22,12 @@ type (
 const (
 	KindLocal = sink.KindLocal
 	KindRAOP  = sink.KindRAOP
+	KindRAAT  = sink.KindRAAT
 	KindDLNA  = sink.KindDLNA
 
 	SyncExact   = sink.SyncExact
 	SyncAligned = sink.SyncAligned
+	SyncPrecise = sink.SyncPrecise
 
 	CodecL16  = sink.CodecL16
 	CodecWAV  = sink.CodecWAV
@@ -220,12 +222,15 @@ func NegotiateFormat(players []*Player) (Format, error) {
 	return Format{Codec: bestCodec, SampleRate: rate, Channels: 2, Bits: 16}, nil
 }
 
-// GroupSyncTier 组同步等级：取最差成员。含任一 DLNA 即整组降级。
+// GroupSyncTier 组同步等级：取最差成员（tierRank 最大）。含任一 DLNA
+// 即整组降级；precise（rank 0）不会抬升含 exact/aligned 的组。
 func GroupSyncTier(players []*Player) SyncTier {
 	tier := SyncExact
+	first := true
 	for _, p := range players {
-		if p.Caps.SyncTier > tier {
+		if first || tierRank(p.Caps.SyncTier) > tierRank(tier) {
 			tier = p.Caps.SyncTier
+			first = false
 		}
 	}
 	return tier

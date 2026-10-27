@@ -1011,12 +1011,34 @@ func (m *Manager) ReorderMembers(ctx context.Context, groupID string, playerIDs 
 	return m.GetGroup(groupID)
 }
 
-// groupTierLocked 组当前同步等级（调用方持锁）。
+// tierRank 档位序（越小越好）：precise=0 < exact=1 < aligned=2。
+// 组档位取 rank 最大（最差）成员——"任一成员不是 exact 整组就降档"的
+// 既有语义在 precise 加入后仍成立，且兼容历史数字 0/1。
+func tierRank(t SyncTier) int {
+	switch t {
+	case SyncPrecise:
+		return 0
+	case SyncExact:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// groupTierLocked 组当前同步等级（调用方持锁）：取最差成员（rank 最大）。
+// 首成员初始化——若以 exact 起步，全 precise 组将永远无法表达
+// （precise 的 rank 更优，永不覆盖）。
 func (m *Manager) groupTierLocked(g *Group) SyncTier {
 	tier := SyncExact
+	first := true
 	for _, mem := range g.Members {
-		if p, ok := m.players[mem.PlayerID]; ok && p.Caps.SyncTier > tier {
+		p, ok := m.players[mem.PlayerID]
+		if !ok {
+			continue
+		}
+		if first || tierRank(p.Caps.SyncTier) > tierRank(tier) {
 			tier = p.Caps.SyncTier
+			first = false
 		}
 	}
 	return tier

@@ -23,6 +23,7 @@ const (
 	KindLocal Kind = "local"
 	KindRAOP  Kind = "raop"
 	KindDLNA  Kind = "dlna"
+	KindRAAT  Kind = "raat"
 )
 
 // Codec 编码格式。l16 是裸 PCM（RAOP 首选），wav 给 DLNA。
@@ -44,13 +45,21 @@ const (
 	SyncExact SyncTier = iota
 	// SyncAligned DLNA：只能对齐起播，之后会漂移。
 	SyncAligned
+	// SyncPrecise RAAT 时钟同步后：±1ms 量级（共享时钟 + 设备缓冲反馈）。
+	// 显式取值 2：历史数字 0=exact / 1=aligned 落库语义不变（Caps 整段
+	// JSON 落库 players.capabilities，历史行有数字值，绝不能重排枚举）。
+	SyncPrecise
 )
 
 func (t SyncTier) String() string {
-	if t == SyncExact {
+	switch t {
+	case SyncAligned:
+		return "aligned"
+	case SyncPrecise:
+		return "precise"
+	default:
 		return "exact"
 	}
-	return "aligned"
 }
 
 // MarshalJSON 输出字符串枚举，与 GroupView / MemberCaps 的 sync_tier 一致。
@@ -73,6 +82,8 @@ func (t *SyncTier) UnmarshalJSON(data []byte) error {
 			*t = SyncExact
 		case "aligned":
 			*t = SyncAligned
+		case "precise":
+			*t = SyncPrecise
 		default:
 			return fmt.Errorf("invalid sync_tier %q", s)
 		}
@@ -234,6 +245,17 @@ type PowerSink interface {
 type PullSink interface {
 	Sink
 	StreamURL(plan StreamPlan) (string, error)
+}
+
+// ClockParticipant 支持组内时钟主同步的 sink（RAAT）。
+//
+// 引擎在所有成员 Open 之后、Start 之前协调：≥2 个参与者时选出
+// 时钟主（PlayerID 字典序最小），其余 SyncToClock 跟随。
+type ClockParticipant interface {
+	// ClockEndpoint 本设备时钟端点（Open 后有效）。
+	ClockEndpoint() (host string, port int)
+	// SyncToClock 跟随组内时钟主（设备侧 sync 请求 + 本地时钟源对齐）。
+	SyncToClock(host string, port int) error
 }
 
 // NowPlaying 设备屏显元数据（RAOP DMAP / RAAT update_transport 共用）。
