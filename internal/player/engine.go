@@ -868,11 +868,44 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 				e.deps.Logger.Info("gapless unavailable, falling back to reopen",
 					"owner", e.ownerKind+":"+e.ownerID)
 			}
+			// 三段式起播（B8）：① Open 全部（失败即 fail）→ ② 时钟协调
+			//（targets 中 ClockParticipant ≥2 时 master=PlayerID 字典序最小，
+			// 其余 SyncToClock 跟随；单参与者跳过）→ ③ Start 全部。
+			// 对现有 sink 无行为影响——RAOP 的 Open 重/Start 轻，先全 Open
+			// 反而缩小起播散差。
 			for _, t := range targets {
 				if err := t.Sink.Open(ctx, plan); err != nil {
 					e.fail(fmt.Errorf("open sink %s: %w", t.PlayerID, err))
 					return
 				}
+			}
+			var clocks []sink.ClockParticipant
+			for _, t := range targets {
+				if cp, ok := t.Sink.(sink.ClockParticipant); ok {
+					clocks = append(clocks, cp)
+				}
+			}
+
+			if len(clocks) >= 2 {
+				// master = PlayerID 字典序最小（稳定选举，无需通信）
+				master := clocks[0]
+				for _, cp := range clocks[1:] {
+					if clockParticipantID(cp) < clockParticipantID(master) {
+						master = cp
+					}
+				}
+				mh, mp := master.ClockEndpoint()
+				for _, cp := range clocks {
+					if cp == master {
+						continue
+					}
+					if err := cp.SyncToClock(mh, mp); err != nil {
+						e.deps.Logger.Warn("clock sync failed",
+							"owner", e.ownerKind+":"+e.ownerID, "err", err)
+					}
+				}
+			}
+			for _, t := range targets {
 				if err := t.Sink.Start(timeline.At(uint64(sampleBase)).Add(t.Delay)); err != nil {
 					e.fail(fmt.Errorf("start sink %s: %w", t.PlayerID, err))
 					return
@@ -1360,3 +1393,11 @@ func (e *Engine) Restore(ctx context.Context) error {
 
 // ErrNoState 没有可恢复的状态。
 var ErrNoState = errors.New("no saved playback state")
+
+// clockParticipantID 取 ClockParticipant 的 sink ID（master 选举用）。
+func clockParticipantID(cp sink.ClockParticipant) string {
+	if s, ok := cp.(sink.Sink); ok {
+		return s.ID()
+	}
+	return ""
+}

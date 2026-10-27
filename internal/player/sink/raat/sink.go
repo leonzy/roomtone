@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -79,6 +80,9 @@ type Sink struct {
 	closed       bool
 	// transportSupported info.transport.is_supported（屏显/反控开关）。
 	transportSupported bool
+	// clock 时钟源（SyncToClock 后非 nil）；precise 时钟同步成功标记。
+	clock   *ClockSource
+	precise bool
 }
 
 // New 创建 sink。真正建连在 Open。
@@ -318,9 +322,14 @@ func (s *Sink) sendStart(ctx context.Context) error {
 		Status string `json:"status"`
 		Time   int64  `json:"time"`
 	}
-	if err := s.ctrl.RequestSimple(ctx, "start", map[string]any{
+	args := map[string]any{
 		"min_offset": 200 * time.Millisecond, // JSON 序列化为 200000000ns
-	}, &resp); err != nil {
+	}
+	if s.precise && s.clock != nil && s.clock.OK() {
+		// 时钟主时间轴：start 带绝对 time（master 设备时间轴上的起播时刻）
+		args["time"] = s.clock.DeviceTime(s.startAt)
+	}
+	if err := s.ctrl.RequestSimple(ctx, "start", args, &resp); err != nil {
 		return err
 	}
 	// P0：wallStart 已在 Start(at) 锚定为 at（预定发声时刻）。
@@ -428,6 +437,49 @@ func (s *Sink) Continue(plan sink.StreamPlan) error {
 	return nil
 }
 
+// ClockEndpoint 实现 sink.ClockParticipant：本设备时钟端点（Open 后有效）。
+func (s *Sink) ClockEndpoint() (string, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return hostOfAddr(s.opts.Address), s.clockPort
+}
+
+// SyncToClock 实现 sink.ClockParticipant：跟随组内时钟主——
+// 设备侧 sync{host,port,new_source:true,quiet:true} + 本地 ClockSource
+// 对齐 master。时钟源同步成功后 start 改带 time（master 时间轴换算）、
+// Caps 升 SyncPrecise、PlaybackPosition 精确化。
+func (s *Sink) SyncToClock(host string, port int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ctrl == nil {
+		return errors.New("raat: 会话未建立")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	// 设备侧 sync：指向时钟主的 clock_port
+	if err := s.ctrl.RequestSimple(ctx, "sync", map[string]any{
+		"host":       host,
+		"port":       port,
+		"new_source": true,
+		"quiet":      true,
+	}, nil); err != nil {
+		return err
+	}
+	// 本地时钟源跟随 master
+	if s.clock == nil {
+		s.clock = NewClockSource()
+	}
+	if err := s.clock.Sync(ctx, net.JoinHostPort(host, fmt.Sprint(port))); err != nil {
+		// 时钟源同步失败：保留 P0 min_offset 模式（SyncExact），如实标注
+		slog.Warn("raat: 时钟源同步失败，保留 P0 模式", "device", s.id, "err", err)
+		return nil
+	}
+	// 成功：升 SyncPrecise；sendStart 改带 time；PlaybackPosition 精确化
+	s.caps.SyncTier = sink.SyncPrecise
+	s.precise = true
+	return nil
+}
+
 // Standby 停流（request_standby，transport 支持时）。
 func (s *Sink) Standby(ctx context.Context) error {
 	s.mu.Lock()
@@ -460,6 +512,10 @@ func (s *Sink) Close() error {
 }
 
 func (s *Sink) closeLocked() {
+	if s.clock != nil {
+		s.clock.Close() //nolint:errcheck // 关闭失败无需处理
+		s.clock = nil
+	}
 	if s.audio != nil {
 		s.audio.Close() //nolint:errcheck // 关闭失败无需处理
 		s.audio = nil
@@ -473,11 +529,21 @@ func (s *Sink) closeLocked() {
 // PlaybackPosition 实现 sink.PositionReporter。
 func (s *Sink) PlaybackPosition() (time.Duration, bool) {
 	s.cbMu.Lock()
-	defer s.cbMu.Unlock()
-	if !s.started || s.wallStart.IsZero() {
+	started, wallStart := s.started, s.wallStart
+	s.cbMu.Unlock()
+	if !started || wallStart.IsZero() {
 		return 0, false
 	}
-	pos := s.plan.Position + time.Since(s.wallStart)
+	if s.precise && s.clock != nil && s.clock.OK() {
+		// 时钟源精确版：位置 = plan.Position + (master 设备时间 - 起播设备时间)
+		elapsed := time.Duration(s.clock.GetTime() - s.clock.DeviceTime(wallStart))
+		pos := s.plan.Position + elapsed
+		if pos < 0 {
+			pos = 0
+		}
+		return pos, true
+	}
+	pos := s.plan.Position + time.Since(wallStart)
 	if pos < 0 {
 		pos = 0
 	}
