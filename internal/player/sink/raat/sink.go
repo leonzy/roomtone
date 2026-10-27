@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -90,6 +91,10 @@ type Sink struct {
 	flacSetup bool
 	// deviceCodecs info 声明的线编码列表（如 ["flac"]）。
 	deviceCodecs []string
+	// deviceCodeSigningKeys info 声明的代码签名公钥名列表（load_script 用）。
+	deviceCodeSigningKeys []string
+	// signProxy raat-sign 签名代理（LoadScript 用；nil 时默认构造）。
+	signProxy *SignProxy
 }
 
 // New 创建 sink。真正建连在 Open。
@@ -152,7 +157,14 @@ type infoResponse struct {
 	Transport struct {
 		IsSupported bool `json:"is_supported"`
 	} `json:"transport"`
+	// Info 内层 info（code_signing_keys 在这里，逗号分隔）。
+	Info struct {
+		CodeSigningKeys string `json:"code_signing_keys"`
+	} `json:"info"`
 }
+
+// RawCodeSigningKeys 逗号分隔的签名密钥名（空串 = 无）。
+func (r *infoResponse) RawCodeSigningKeys() string { return r.Info.CodeSigningKeys }
 
 // hasCodec 设备是否声明支持某线编码。
 func (r *infoResponse) hasCodec(name string) bool {
@@ -254,6 +266,11 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	if _, ok := setupArgs["wire_codec"]; ok {
 		s.flacSetup = true
 	}
+	// code_signing_keys：SOOD 通告的键名列表（info 响应 info.code_signing_keys，
+	// 逗号分隔）——LoadScript 的签名决策依据。
+	if raw := info.RawCodeSigningKeys(); raw != "" {
+		s.deviceCodeSigningKeys = splitComma(raw)
+	}
 
 	// Dial 音频通道
 	audioAddr := hostOfAddr(addr)
@@ -281,6 +298,17 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	// 屏显/反控（B7）：transport 支持时订阅设备遥控。
 	if s.transportSupported {
 		s.subscribeTransport()
+	}
+	// app channel（B10）：type=2 通知先经 appchannel 分发（含 "channel" 键），
+	// 其余走 OnServerRequest（transport 通知）。
+	prevHandler := ctrl.OnServerRequest
+	ctrl.OnServerRequest = func(raw json.RawMessage) {
+		if dispatchAppMessage(s, raw) {
+			return
+		}
+		if prevHandler != nil {
+			prevHandler(raw)
+		}
 	}
 	return nil
 }
@@ -615,6 +643,17 @@ func (s *Sink) PlaybackPosition() (time.Duration, bool) {
 		pos = 0
 	}
 	return pos, true
+}
+
+// splitComma 逗号分隔（trim 空白，跳过空项）。
+func splitComma(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func hostOfAddr(addr string) string {

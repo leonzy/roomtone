@@ -39,6 +39,8 @@ type Conn struct {
 	pending sync.Map // rid -> *call
 	// OnServerRequest type=2 通知（subscribe 类）回调。
 	OnServerRequest func(raw json.RawMessage)
+	// OnAppMessage app channel 消息回调（{"channel":...,"message":...}）。
+	OnAppMessage func(channel string, msg json.RawMessage)
 	// OnCoreResponse type=0x80000004（Core 响应设备请求）回调。
 	OnCoreResponse func(raw json.RawMessage)
 
