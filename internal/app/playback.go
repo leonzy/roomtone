@@ -20,6 +20,7 @@ import (
 	"songloft/internal/player/sink/dlna"
 	"songloft/internal/player/sink/local"
 	"songloft/internal/player/sink/raop"
+	"songloft/internal/player/sink/raop2"
 	"songloft/internal/services"
 )
 
@@ -284,6 +285,28 @@ func (b *playerSinkBuilder) Build(ctx context.Context, p *player.Player) (sink.S
 					slog.Warn("设备反控失败", "player", p.ID, "cmd", cmd, "err", err)
 				}
 			}
+		}
+
+		// V1/V2 协商（A2P-7）：Caps.AirPlay2（发现层从 _airplay._tcp 判定）→
+		// raop2（V2 客户端，内部自动回退 V1 模式）；否则 raop（V1 会话）。
+		// Kind 仍为 raop——对客户端零破坏，V1/V2 是同一设备的传输代际。
+		if p.Caps.AirPlay2 {
+			return raop2.New(p.ID, raop2.Options{
+				Address:     p.Address,
+				DeviceID:    p.Caps.DeviceID,
+				PublicKey:   p.Caps.PublicKey,
+				SampleRate:  rate,
+				Channels:    ch,
+				Latency:     2 * time.Second,
+				DialTimeout: 5 * time.Second,
+				Password:    p.Password,
+				OnControl:   onControl,
+				// 对齐 _use_airplay2 判定（AirPlayClientV2.cs:6500-6518）：
+				// 编组设备（psgid/tsid）或 HK-setup 或曾配对 → V2 路径。
+				UseAirPlay2:              p.Caps.DeviceID != "" && p.Caps.AirPlay2,
+				RequiresPairing:          p.Caps.RequiresPairing,
+				SupportsBPlistNowPlaying: p.Caps.SupportsBPlistNowPlaying,
+			}), nil
 		}
 		return raop.New(p.ID, raop.Options{
 			ALAC:        true,
