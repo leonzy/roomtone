@@ -40,45 +40,46 @@ import (
 
 // App 应用程序结构
 type App struct {
-	config             *config.AppConfig
-	router             *chi.Mux
-	db                 database.DB
-	configService      *services.ConfigService
-	songService        *services.SongService
-	playlistService    *services.PlaylistService
-	playHistoryService *services.PlayHistoryService
-	songTagService     *services.SongTagService
-	themePackService   *services.ThemePackService
-	authService        *services.AuthService
-	upgradeService     *services.UpgradeService
-	cacheService       *services.CacheService
-	backupService      *services.BackupService
-	urlResolver        *services.InternalURLResolver // 共享:把 JS 插件相对路径解析为本机绝对 URL + access_token
-	lyricFetcher       *services.LyricFetcher        // 共享:解包插件歌词 JSON 拿 LRC 文本
-	scanner            *services.Scanner
-	autoScanner        *services.AutoScanner
-	metadataExtractor  *services.MetadataExtractor
-	jsPluginManager    *jsplugin.Manager
-	sourceMetrics      *source.SourceMetrics
-	sourceOrchestrator *source.SourceOrchestrator
-	metadataRefresher  *services.MetadataRefresher
-	downloadActivity   *services.DownloadActivity // 下载活动闸门，导入探测据此让路（issue #265）
-	playActivity       *playactivity.Registry     // 跨 song/会话 cancel 的全局表，处理快速切歌时旧请求的让位（issue #79）
-	playbackBus        *player.EventBus
-	wsHub              *ws.Hub
-	playerManager      *player.Manager
-	playerOffline      *playerOfflineTracker
-	playbackHandler    *handlers.PlaybackHandler
-	playerDiscovery    *discovery.Discovery
-	alarmRunner        *alarmRunner
-	alarmHandler       *handlers.AlarmHandler
-	lanURL             *services.LANURLResolver
-	dlnaStreams        *dlnaStreams
-	webDist            embed.FS
-	tracelyClient      *tracely.Client
-	logLevelVar        *slog.LevelVar        // 全局 slog 等级动态切换；由 /settings/log-level 即时 Set
-	logWriter          *logging.RotateWriter // 日志落盘 writer（<data_dir>/logs/），供 /logs/export 读取；stdout 采集不受影响
-	server             *http.Server
+	config              *config.AppConfig
+	router              *chi.Mux
+	db                  database.DB
+	configService       *services.ConfigService
+	songService         *services.SongService
+	playlistService     *services.PlaylistService
+	playHistoryService  *services.PlayHistoryService
+	songTagService      *services.SongTagService
+	themePackService    *services.ThemePackService
+	authService         *services.AuthService
+	upgradeService      *services.UpgradeService
+	cacheService        *services.CacheService
+	hlsTranscodeService *services.HLSTranscodeService
+	backupService       *services.BackupService
+	urlResolver         *services.InternalURLResolver // 共享:把 JS 插件相对路径解析为本机绝对 URL + access_token
+	lyricFetcher        *services.LyricFetcher        // 共享:解包插件歌词 JSON 拿 LRC 文本
+	scanner             *services.Scanner
+	autoScanner         *services.AutoScanner
+	metadataExtractor   *services.MetadataExtractor
+	jsPluginManager     *jsplugin.Manager
+	sourceMetrics       *source.SourceMetrics
+	sourceOrchestrator  *source.SourceOrchestrator
+	metadataRefresher   *services.MetadataRefresher
+	downloadActivity    *services.DownloadActivity // 下载活动闸门，导入探测据此让路（issue #265）
+	playActivity        *playactivity.Registry     // 跨 song/会话 cancel 的全局表，处理快速切歌时旧请求的让位（issue #79）
+	playbackBus         *player.EventBus
+	wsHub               *ws.Hub
+	playerManager       *player.Manager
+	playerOffline       *playerOfflineTracker
+	playbackHandler     *handlers.PlaybackHandler
+	playerDiscovery     *discovery.Discovery
+	alarmRunner         *alarmRunner
+	alarmHandler        *handlers.AlarmHandler
+	lanURL              *services.LANURLResolver
+	dlnaStreams         *dlnaStreams
+	webDist             embed.FS
+	tracelyClient       *tracely.Client
+	logLevelVar         *slog.LevelVar        // 全局 slog 等级动态切换；由 /settings/log-level 即时 Set
+	logWriter           *logging.RotateWriter // 日志落盘 writer（<data_dir>/logs/），供 /logs/export 读取；stdout 采集不受影响
+	server              *http.Server
 }
 
 // NewApp 创建新的应用程序实例
@@ -94,6 +95,9 @@ func NewApp(cfg *config.AppConfig, webDist embed.FS) *App {
 
 // Close 关闭应用程序资源
 func (a *App) Close() error {
+	if a.hlsTranscodeService != nil {
+		a.hlsTranscodeService.Close()
+	}
 	// 关闭 JS 插件管理器（健康检查 + 热更新 + 所有服务）
 	if a.jsPluginManager != nil {
 		a.jsPluginManager.Close()
@@ -321,6 +325,11 @@ func (a *App) Init() error {
 		ffmpegConfig.Path = "ffmpeg"
 	}
 	a.cacheService.SetFFmpegPath(ffmpegConfig.Path)
+	proxySettings := handlers.NewProxyHandler(a.configService)
+	a.hlsTranscodeService, err = services.NewHLSTranscodeService(a.cacheService, proxySettings.GetPrivateAllowlist)
+	if err != nil {
+		return fmt.Errorf("创建直播转码服务失败: %w", err)
+	}
 	a.metadataExtractor.SetFFMpegPath(ffmpegConfig.Path)
 	// 指纹计算此前只查 PATH，配了自定义 ffmpeg 路径时会静默不可用
 	services.SetFingerprintFFmpegPath(ffmpegConfig.Path)

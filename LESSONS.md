@@ -10,6 +10,32 @@
 
 ## 条目
 
+### CI-002：ffprobe 包哈希必须按字段读取，不能截取整段 CSV
+
+- 范围：`TestHLSTranscodeRealFFmpeg` 的视频复制校验；基线 `af5a4b3873ba72e9918ddf661da87ae563448d36`。
+- 失败证据：2026-10-27，[Quality](https://github.com/songloft-org/songloft/actions/runs/40443632206) 在 Ubuntu / FFmpeg 6.1.1 报 `video packet 39 changed`；同一旧测试在本地 FFmpeg 5.1.7 重复十次通过。旧解析器从 CSV 的 `SHA256:` 截到行末，混入后续字段。真实源文件与首分片的第 39 包哈希相同，但源文件该包带 MPEG-TS Stream ID，分片末包不带；[ffprobe 6.1.1 源码](https://github.com/FFmpeg/FFmpeg/blob/n6.1.1/fftools/ffprobe.c)先输出 `data_hash` 再输出 side data，旧比较因此依赖输出布局。
+- 规则与修复：用 JSON 的 `packets[].data_hash` 比较压缩载荷，保留包顺序、非空输出、SHA-256 字段有效性及逐包相等校验。CSV 附加元数据变化不能当成视频重编码证据；不跳过检查、不放宽比较，也不改 FFmpeg 业务参数。
+- Done right：Linux amd64 / Go 1.26.0 / FFmpeg 5.1.7，`CGO_ENABLED=0 go test -tags dev,lite ./...`、同标签 vet、59 项脚本测试、格式及 diff 检查通过。隔离 Go overlay 将视频复制改为 libx264 重编码，新测试按预期因第 0 包哈希变化失败，证明仍能检测真实数据变化。日志、工具版本和版本对照证据位于 `/tmp/songloft-ci-hls-20261027/`；Ubuntu 6.1.1 及推送后同一 SHA 的 CI 结果按交付记录核对。
+- Not run：Safari、真实 IPTV 源及真机播放；本次仅修正测试解析，未改变服务端播放行为。
+- Seen 1× (2026-10-27)。状态：测试兼容性经验，与缺少 FFmpeg 依赖的 CI-001 分开记录。
+
+### CI-001：媒体集成测试的外部工具必须在质量作业显式安装
+
+- 范围：主仓库 Release/Quality、HLS 转码测试；songloft-org/songloft#541、songloft-org/songloft#542。
+- 失败证据：2026-10-27，指针提交 `b4ceafab36c6d6ec6e29df260f95a081f8c0acd5` 的 [Quality](https://github.com/songloft-org/songloft/actions/runs/40440501499) 未安装 ffmpeg，HLS 失败/取消/关闭测试在探测上游前返回「ffmpeg 未配置」，真实媒体夹具也无法运行，后续打包全部跳过。
+- 规则与修复：涉及真实 ffmpeg/ffprobe 的测试，CI 在运行测试前显式安装并输出两者版本；不能用扩充 Skip 或改预期状态码掩盖缺失依赖。`release.yml` 的 Quality 统一安装 Ubuntu ffmpeg 包。
+- Done right：Linux amd64 / Go 1.26.0 / FFmpeg 5.1.7，`CGO_ENABLED=0 go test -tags dev,lite ./...`、对应 vet、59 项脚本测试及 actionlint v1.7.12 通过；Go 测试复用同源缓存。日志 `/tmp/songloft-542-quality-{go,vet,scripts}.log`、`/tmp/songloft-542-actionlint.log`。CI 新运行的实际安装、测试与打包状态以修复提交的 GitHub 记录为准。
+- Seen 1× (2026-10-27)。状态：经验；本次只补 CI 依赖，不改 HLS 业务行为。
+
+### HLS-001：按真实输入容器验证 FFmpeg 参数，探测成功不代表转码命令可用
+
+- 范围：远程视频 HLS 转码，songloft-org/songloft#541；基线 `041d34d7e9387b60ed8126022071f731a7268aa6`。
+- 失败证据：2026-10-26，初版将 HLS demuxer 的 `-allowed_extensions ALL` 放到所有输入命令；ffprobe 对真实 H.264 + MP2 TS 源探测成功，ffmpeg 却在生成首片前报 `Option allowed_extensions not found`。隔离 overlay 恢复此参数，`TestHLSTranscodeRealFFmpeg` 在 0.41 秒按同样原因失败，日志 `/tmp/songloft-541-negative-demux.log`。
+- 规则与修复：不要把特定 demuxer 的选项放进共用输入参数；网关给改写资源保留允许的媒体后缀，使用通用协议/容器限制，普通 TS 输入无需 HLS 专属参数。测试分别覆盖直接 TS 与主列表→子列表→TS 分片的完整执行链。
+- Done right：Linux amd64 / Go 1.26.0 / FFmpeg 5.1.7，真实视频包 SHA-256 逐包不变、输出 AAC-LC 双声道 48kHz、滚动窗口、会话回收、定向 race 和实际后端 HTTP 验证通过。日志 `/tmp/songloft-541-race-complete.log`，实际进程与目录回收证据 `/tmp/songloft-541-smoke-rln_xh54/result.json`。另一个 overlay 去掉会话归属判断时，回归按预期因跨客户端读取成功而失败，日志 `/tmp/songloft-541-negative-owner.log`。
+- Not run：iPhone Safari、报告人的实际 IPTV 源及其他系统真机；后端/媒体验证不替代设备播放验收。
+- Seen 1× (2026-10-26)。状态：经验；主仓库后端实现与验证完成，发布及 Safari 实测以 #541 后续证据为准。
+
 ### PLAYLIST-001：内置歌单的展示偏好与隐藏歌曲语义必须分开核对
 
 - 范围：首页收藏展示、客户端菜单及服务端歌单可见性，songloft-org/songloft#532。

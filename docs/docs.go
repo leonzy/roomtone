@@ -6282,6 +6282,313 @@ const docTemplate = `{
                 }
             }
         },
+        "/proxy/transcode/hls/sessions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "拉取 HTTP/HTTPS TS 或普通 HLS 源，复制第一条逐行 H.264 视频轨，第一条音频轨转 AAC-LC 双声道 48kHz。audio_bitrate 默认 128，仅支持 64/96/128/192/256 kbps。仅生成临时滚动分片，不入库；等待首个完整分片就绪，启动超时 30 秒。共享 seek/均衡/URL 转码的 4 个槽位。会话绑定 JWT ClientID，120 秒无播放请求自动回收。playlist_url 包含 BASE_PATH、不含 token；Safari 使用时需追加 access_token，同一 token 会透传到分片链接。源视频的 profile/level 与关键帧仍需满足播放器要求。需 ffmpeg 和 ffprobe。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "资源代理"
+                ],
+                "summary": "创建远程直播 HLS 转码会话",
+                "parameters": [
+                    {
+                        "description": "直播源和可选拉流参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/services.HLSTranscodeOptions"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "首个分片已就绪的会话",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.hlsTranscodeSessionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "参数无效",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "源或其子资源不在允许范围内",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "缺少音视频轨或视频格式不支持",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "上游或转码失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "转码工具不可用或并发已满",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "504": {
+                        "description": "启动超时",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/proxy/transcode/hls/sessions/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "取消 FFmpeg 并等待进程退出，归还转码槽位并清理临时分片。已打开的分片在传输关闭后清理。仅允许创建会话的 JWT ClientID 操作。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "资源代理"
+                ],
+                "summary": "结束远程直播转码会话",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "会话已结束"
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "会话已回收或不属于当前客户端",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/proxy/transcode/hls/sessions/{id}/playlist.m3u8": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回包含最近 6 个分片的 HLS 媒体播放列表，目标分片时长 4 秒（实际依赖源关键帧）。只读取现有会话，不新建进程；相对分片链接保留子路径部署，并透传查询 access_token。Authorization 认证的播放器需自行向分片发送认证头。成功请求续期 120 秒闲置计时。",
+                "produces": [
+                    "application/vnd.apple.mpegurl"
+                ],
+                "tags": [
+                    "资源代理"
+                ],
+                "summary": "获取远程直播转码播放列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "无法发送 Authorization 头时使用的访问 token",
+                        "name": "access_token",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "HLS 媒体播放列表",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "会话已回收或不属于当前客户端",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "直播转码失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/proxy/transcode/hls/sessions/{id}/segments/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "只返回指定会话已完成的 segment-N.ts 分片，禁止目录遍历和读取临时文件。会话必须属于当前 JWT ClientID；支持 Range。成功打开分片续期闲置计时。",
+                "produces": [
+                    "video/mp2t"
+                ],
+                "tags": [
+                    "资源代理"
+                ],
+                "summary": "获取远程直播转码分片",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "分片文件名，例如 segment-000000001.ts",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "无法发送 Authorization 头时使用的访问 token",
+                        "name": "access_token",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "MPEG-TS 分片",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "206": {
+                        "description": "分片的指定字节范围",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "分片名称非法",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "会话或分片不存在/已过期",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "直播转码失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/scan": {
             "post": {
                 "security": [
@@ -13395,6 +13702,21 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.hlsTranscodeSessionResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "idle_timeout_seconds": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "playlist_url": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.httpProxySetting": {
             "type": "object",
             "properties": {
@@ -15695,6 +16017,28 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "services.HLSTranscodeOptions": {
+            "type": "object",
+            "required": [
+                "url"
+            ],
+            "properties": {
+                "audio_bitrate": {
+                    "type": "integer",
+                    "example": 128
+                },
+                "referer": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://example.com/live.m3u8"
+                },
+                "user_agent": {
+                    "type": "string"
                 }
             }
         },

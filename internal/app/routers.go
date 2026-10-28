@@ -92,6 +92,7 @@ func (a *App) setupAPIV1Router() {
 	upgradeHandler := handlers.NewUpgradeHandler(a.upgradeService, a.configService, filepath.Dir(a.config.DBPath))
 	proxyHandler := handlers.NewProxyHandler(a.configService)
 	proxyHandler.SetCacheService(a.cacheService)
+	hlsTranscodeHandler := handlers.NewHLSTranscodeHandler(a.hlsTranscodeService, a.config.BasePath)
 
 	// 创建缓存处理器（使用 App 的 cacheService 和 configService）
 	cacheHandler := handlers.NewCacheHandler(
@@ -366,6 +367,12 @@ func (a *App) setupAPIV1Router() {
 			r.Get("/proxy", proxyHandler.Proxy)
 			// 转码代理：服务端拉远程音频→ffmpeg 实时转 mp3 流式返回（no-import 场景下音箱不可解码的直链）
 			r.Get("/proxy/transcode", proxyHandler.Transcode)
+			r.Post("/proxy/transcode/hls/sessions", hlsTranscodeHandler.Create)
+			r.Get("/proxy/transcode/hls/sessions/{id}/playlist.m3u8", hlsTranscodeHandler.Playlist)
+			r.Head("/proxy/transcode/hls/sessions/{id}/playlist.m3u8", hlsTranscodeHandler.Playlist)
+			r.Get("/proxy/transcode/hls/sessions/{id}/segments/{name}", hlsTranscodeHandler.Segment)
+			r.Head("/proxy/transcode/hls/sessions/{id}/segments/{name}", hlsTranscodeHandler.Segment)
+			r.Delete("/proxy/transcode/hls/sessions/{id}", hlsTranscodeHandler.Delete)
 
 			// 歌曲播放端点（流式返回音频，支持 local/remote/radio 三种类型）
 			r.Get("/songs/{id}/play", songHandler.GetSongPlay)

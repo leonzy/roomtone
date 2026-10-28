@@ -519,11 +519,11 @@ func (m *Manager) tryServeStaticFile(w http.ResponseWriter, r *http.Request, sta
 		//
 		// credentialless 而非 require-corp：插件页引用的第三方跨源资源
 		// （如 fonts.googleapis.com）没有 CORP 头，require-corp 会把它们也拦
-		// 掉；插件认证走 URL token / localStorage，不依赖 cookie，
-		// credentialless 的「跨源请求不带凭证」对它无副作用。Firefox 119+
-		// 认这个响应头；Chromium 客户端另有 iframe 的 credentialless 属性兜
-		// 底（web/webview-host.js）；Safari 两者都不支持，standalone 部署在
-		// Safari 下跨源嵌入仍受限（embedded 部署同源，无此问题）。
+		// 掉。这个响应头只让跨源 no-cors 子资源请求不带凭证，仍保留插件
+		// 文档导航及同源资源的 Cookie；不要与 iframe 的 credentialless 属性
+		// 混淆，后者会隔离整个页面的凭证，导致 FN Connect 等网关登录失效。
+		// Firefox 119+ 支持此响应头；Safari 不支持，启用隔离的 standalone
+		// 宿主在 Safari 下跨源嵌入仍受限（embedded 部署同源，无此问题）。
 		w.Header().Set("Cross-Origin-Embedder-Policy", "credentialless")
 		_, _ = w.Write(content)
 		return true

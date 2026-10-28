@@ -286,6 +286,21 @@ manager/scheduler 的内存 map 键，以及 `plugin_storage.plugin_entry_path` 
 - ffmpeg 直拉远程 URL（`-i <url>`），经 `-http_proxy` 复用全局 http-proxy（仅 http/https）
 - 实现：`internal/services/url_transcode.go`（`StreamTranscodedURL`）+ `internal/handlers/proxy.go`（`Transcode`，`ProxyHandler` 持有 `*CacheService`）
 
+<a id="hls-transcode"></a>
+
+## 远程视频 HLS 转码会话（#541）
+
+- 入口：`POST /api/v1/proxy/transcode/hls/sessions`，JSON `{url, audio_bitrate?, user_agent?, referer?}`。`url` 为 HTTP/HTTPS TS、MP4 或普通 HLS 源；不接受 URL 用户凭证。码率为 64/96/128/192/256 kbps，默认 128。需配置的 ffmpeg 及其同目录或 PATH 中的 ffprobe。
+- 首版固定复制第一条**逐行 H.264** 视频轨、第一条音频转 **AAC-LC / 双声道 / 48kHz**，输出 MPEG-TS HLS。HEVC、隔行视频、缺少音视频轨返回 422；不自动重新编码视频。源的 H.264 profile/level、分辨率及关键帧仍需适合实际播放器，不承诺所有 IPTV 源均可在 Safari 播放。
+- 创建等待首个完整分片就绪，最长 30 秒；成功返回 201 `{id, playlist_url, idle_timeout_seconds:120}`，并设置 `Location`。`playlist_url` 包含部署 `BASE_PATH`、不包含 token。Safari 的 `<video>` 使用该地址时追加 `?access_token=<URL编码的访问token>`；服务端将其透传给相对分片链接。访问 token 到期仍会返回 401；调用方需刷新 token 并更新播放地址，同一 ClientID 可继续使用原会话。若播放器使用 Authorization 头，需自行给每条子请求发送该头。
+- `GET/HEAD /api/v1/proxy/transcode/hls/sessions/{id}/playlist.m3u8` 只读取现有会话；`GET/HEAD .../{id}/segments/{name}` 支持 Range；`DELETE .../{id}` 等待进程退出后返回 204。所有请求都需要 JWT，且会话绑定创建者 `ClientID`，其他客户端和过期会话返回 404。随机 ID 本身不是凭证。
+- 目标分片 4 秒，实际边界依赖输入关键帧；播放列表保留 6 片，额外保留 3 片供重试，使用原子更新。不提供节目回看；暂停超过闲置时间后需创建新会话。播放列表 `no-store`，分片 `private, no-store`。
+- 会话不入库，分片在独立系统临时目录滚动生成，不参与音乐缓存配置、清理或统计。进程按实时速度读取；每 200ms 检查临时空间，超过 128 MiB 停止，检查间隔内可能短暂超限。运行中 30 秒没有新播放列表也会停止；失败后的读取返回 502。上游自然结束则保留可播放的有限内容直至闲置回收。
+- 从首播就绪开始，120 秒无成功播放列表/分片请求自动回收；删除和应用关闭也会取消并等待进程。已经打开的分片有文件租约，传输关闭后清理。正常结束/失败会释放运行槽位，最多保留 16 个会话。运行中的探测/转码与 seek/均衡/MP3 URL 转码共用 4 个槽位，满则 503、不排队。进程被强制终止时临时残留由系统临时目录清理策略处理。
+- 拉流经独立回环 HTTP 网关：所有上游 HLS URI（子列表、分片、密钥、init）与重定向均校验 HTTP/HTTPS 和私网代理白名单；直连在实际拨号时校验并固定解析 IP。FFmpeg 仅允许受限输入协议/容器，不能直接读取本地文件、UDP 或未改写的 HTTPS 引用。源中的变量替换和内容导向等扩展首版返回 422。
+- 复用全局 HTTP/HTTPS 代理（会话创建时快照），SOCKS5 返回 503；代理是管理员配置的可信出站设施，代理模式下目标仍做本地地址校验，远端 DNS 解析依赖代理。已有电台 HLS 反代开关及其同源限制不受影响，旧 MP3 `/proxy/transcode` 保持原有契约。
+- 实现：`internal/services/hls_transcode.go`、`hls_pull_gateway.go`、`internal/handlers/hls_transcode.go`。API 契约以生成的 Swagger 为准。
+
 <a id="music-cache"></a>
 
 ## 音乐缓存（cache_service）

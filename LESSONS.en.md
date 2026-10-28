@@ -10,6 +10,32 @@ Evidence-backed lessons for the parent and public host contracts; see the [AI wo
 
 ## Entries
 
+### CI-002: Read ffprobe packet hashes by field rather than slicing CSV lines
+
+- Scope: video-copy verification in `TestHLSTranscodeRealFFmpeg`; baseline `af5a4b3873ba72e9918ddf661da87ae563448d36`.
+- Failure evidence: on 2026-10-27, [Quality](https://github.com/songloft-org/songloft/actions/runs/40443632206) reported `video packet 39 changed` on Ubuntu / FFmpeg 6.1.1; the same old test passed ten times locally with FFmpeg 5.1.7. Its CSV parser kept everything from `SHA256:` to the line end, including subsequent fields. Real source and first-segment packet 39 have the same hash, but the source packet carries an MPEG-TS Stream ID while the final segment packet does not. The [ffprobe 6.1.1 source](https://github.com/FFmpeg/FFmpeg/blob/n6.1.1/fftools/ffprobe.c) prints `data_hash` before side data, making the old comparison depend on output layout.
+- Rule and fix: compare compressed payloads through JSON `packets[].data_hash`, preserving packet order, nonempty output, SHA-256 field validation, and equality for every packet. Changes in CSV side metadata do not establish video reencoding. Do not skip the check, relax equality, or change production FFmpeg arguments.
+- Done right: Linux amd64 / Go 1.26.0 / FFmpeg 5.1.7; `CGO_ENABLED=0 go test -tags dev,lite ./...`, matching vet, 59 script tests, formatting, and diff checks pass. An isolated Go overlay replacing video copy with libx264 reencoding makes the updated test fail on packet 0 as expected, retaining detection of actual data changes. Logs, tool versions, and version-comparison evidence are under `/tmp/songloft-ci-hls-20261027/`; Ubuntu 6.1.1 and post-push CI results must be checked against the delivered SHA.
+- Not run: Safari, real IPTV sources, or physical-device playback. This only corrects test parsing and does not change server playback behavior.
+- Seen 1× (2026-10-27). Status: test-compatibility lesson, separate from missing FFmpeg dependencies in CI-001.
+
+### CI-001: Install external tools explicitly in the quality job for media integration tests
+
+- Scope: parent Release/Quality and HLS transcoding tests; songloft-org/songloft#541 and songloft-org/songloft#542.
+- Failure evidence: on 2026-10-27, [Quality](https://github.com/songloft-org/songloft/actions/runs/40440501499) for gitlink commit `b4ceafab36c6d6ec6e29df260f95a081f8c0acd5` had no ffmpeg. HLS failure/cancellation/shutdown tests returned “ffmpeg not configured” before contacting the upstream; real media fixtures could not run either, and subsequent packaging jobs were skipped.
+- Rule and fix: explicitly install ffmpeg/ffprobe and report both versions before tests using the real tools. Do not mask missing dependencies by adding skips or changing expected status codes. Quality in `release.yml` installs Ubuntu's ffmpeg package.
+- Done right: Linux amd64 / Go 1.26.0 / FFmpeg 5.1.7; `CGO_ENABLED=0 go test -tags dev,lite ./...`, matching vet, 59 script tests and actionlint v1.7.12 pass. Go tests reuse the cache for unchanged sources. Logs: `/tmp/songloft-542-quality-{go,vet,scripts}.log` and `/tmp/songloft-542-actionlint.log`. Actual installation, test and packaging status follow GitHub records for the fix commit.
+- Seen 1× (2026-10-27). Status: lesson; this change supplies CI dependencies without changing HLS behavior.
+
+### HLS-001: Validate FFmpeg options against the actual input container; successful probing does not prove transcoding works
+
+- Scope: remote video HLS transcoding, songloft-org/songloft#541; baseline `041d34d7e9387b60ed8126022071f731a7268aa6`.
+- Failure evidence: on 2026-10-26, the initial implementation included the HLS demuxer option `-allowed_extensions ALL` in every input command. ffprobe successfully inspected a real H.264 + MP2 TS source, but ffmpeg failed before the first segment with `Option allowed_extensions not found`. Restoring this option through an isolated overlay made `TestHLSTranscodeRealFFmpeg` fail for the same reason in 0.41 seconds; log: `/tmp/songloft-541-negative-demux.log`.
+- Rule and fix: keep demuxer-specific options out of shared input arguments. Preserve allowed media suffixes in gateway resource URLs and apply common protocol/container restrictions; ordinary TS input does not need HLS-specific options. Tests execute both direct TS and master-playlist → media-playlist → TS input paths.
+- Done right: Linux amd64 / Go 1.26.0 / FFmpeg 5.1.7; unchanged per-packet video SHA-256 hashes, AAC-LC stereo 48kHz output, rolling windows, session reclamation, targeted race checks, and real backend HTTP verification passed. Log: `/tmp/songloft-541-race-complete.log`; actual child-process and temporary-directory reclamation: `/tmp/songloft-541-smoke-rln_xh54/result.json`. A second overlay removing session ownership checks failed as expected because another client could read the session; log: `/tmp/songloft-541-negative-owner.log`.
+- Not run: iPhone Safari, the reporter's actual IPTV source, or physical devices on other systems. Backend/media checks do not replace device playback acceptance.
+- Seen 1× (2026-10-26). Status: lesson; main-repository backend implementation and verification complete; release and Safari acceptance follow subsequent evidence on #541.
+
 ### PLAYLIST-001: Check built-in playlist display preferences separately from hidden-song semantics
 
 - Scope: home favorites cards, client menus and server playlist visibility, songloft-org/songloft#532.

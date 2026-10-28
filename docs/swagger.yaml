@@ -373,6 +373,16 @@ definitions:
       enabled:
         type: boolean
     type: object
+  handlers.hlsTranscodeSessionResponse:
+    properties:
+      id:
+        type: string
+      idle_timeout_seconds:
+        example: 120
+        type: integer
+      playlist_url:
+        type: string
+    type: object
   handlers.httpProxySetting:
     properties:
       proxy:
@@ -1998,6 +2008,21 @@ definitions:
         type: string
       total:
         type: integer
+    type: object
+  services.HLSTranscodeOptions:
+    properties:
+      audio_bitrate:
+        example: 128
+        type: integer
+      referer:
+        type: string
+      url:
+        example: https://example.com/live.m3u8
+        type: string
+      user_agent:
+        type: string
+    required:
+    - url
     type: object
   services.MetadataRefreshProgress:
     properties:
@@ -6400,6 +6425,211 @@ paths:
       security:
       - BearerAuth: []
       summary: 代理并实时转码外部音频
+      tags:
+      - 资源代理
+  /proxy/transcode/hls/sessions:
+    post:
+      consumes:
+      - application/json
+      description: 拉取 HTTP/HTTPS TS 或普通 HLS 源，复制第一条逐行 H.264 视频轨，第一条音频轨转 AAC-LC 双声道
+        48kHz。audio_bitrate 默认 128，仅支持 64/96/128/192/256 kbps。仅生成临时滚动分片，不入库；等待首个完整分片就绪，启动超时
+        30 秒。共享 seek/均衡/URL 转码的 4 个槽位。会话绑定 JWT ClientID，120 秒无播放请求自动回收。playlist_url
+        包含 BASE_PATH、不含 token；Safari 使用时需追加 access_token，同一 token 会透传到分片链接。源视频的 profile/level
+        与关键帧仍需满足播放器要求。需 ffmpeg 和 ffprobe。
+      parameters:
+      - description: 直播源和可选拉流参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/services.HLSTranscodeOptions'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 首个分片已就绪的会话
+          schema:
+            $ref: '#/definitions/handlers.hlsTranscodeSessionResponse'
+        "400":
+          description: 参数无效
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 未认证
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 源或其子资源不在允许范围内
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: 缺少音视频轨或视频格式不支持
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: 上游或转码失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 转码工具不可用或并发已满
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: 启动超时
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建远程直播 HLS 转码会话
+      tags:
+      - 资源代理
+  /proxy/transcode/hls/sessions/{id}:
+    delete:
+      description: 取消 FFmpeg 并等待进程退出，归还转码槽位并清理临时分片。已打开的分片在传输关闭后清理。仅允许创建会话的 JWT ClientID
+        操作。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: 会话已结束
+        "401":
+          description: 未认证
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 会话已回收或不属于当前客户端
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 结束远程直播转码会话
+      tags:
+      - 资源代理
+  /proxy/transcode/hls/sessions/{id}/playlist.m3u8:
+    get:
+      description: 返回包含最近 6 个分片的 HLS 媒体播放列表，目标分片时长 4 秒（实际依赖源关键帧）。只读取现有会话，不新建进程；相对分片链接保留子路径部署，并透传查询
+        access_token。Authorization 认证的播放器需自行向分片发送认证头。成功请求续期 120 秒闲置计时。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 无法发送 Authorization 头时使用的访问 token
+        in: query
+        name: access_token
+        type: string
+      produces:
+      - application/vnd.apple.mpegurl
+      responses:
+        "200":
+          description: HLS 媒体播放列表
+          schema:
+            type: string
+        "401":
+          description: 未认证
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 会话已回收或不属于当前客户端
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: 直播转码失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取远程直播转码播放列表
+      tags:
+      - 资源代理
+  /proxy/transcode/hls/sessions/{id}/segments/{name}:
+    get:
+      description: 只返回指定会话已完成的 segment-N.ts 分片，禁止目录遍历和读取临时文件。会话必须属于当前 JWT ClientID；支持
+        Range。成功打开分片续期闲置计时。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 分片文件名，例如 segment-000000001.ts
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: 无法发送 Authorization 头时使用的访问 token
+        in: query
+        name: access_token
+        type: string
+      produces:
+      - video/mp2t
+      responses:
+        "200":
+          description: MPEG-TS 分片
+          schema:
+            type: file
+        "206":
+          description: 分片的指定字节范围
+          schema:
+            type: file
+        "400":
+          description: 分片名称非法
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 未认证
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 会话或分片不存在/已过期
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: 直播转码失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取远程直播转码分片
       tags:
       - 资源代理
   /scan:

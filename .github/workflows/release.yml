@@ -165,6 +165,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install FFmpeg for media integration tests
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version
+          ffprobe -version
       - name: Check Go formatting without rewriting files
         run: |
           git ls-files -z '*.go' | xargs -0 gofmt -l > "$RUNNER_TEMP/gofmt-files.txt"
