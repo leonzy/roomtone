@@ -52,3 +52,13 @@
 - 新增 TestTransferReplacesBusyTargetAndStopsSource：来源 11、目标 22 同时播放，转换后目标必须收到 11，来源 idle 且不再写帧。旧代码 overlay 超时失败，新实现及相关 Transfer/Next/Seek 检查重复 5 次通过。
 - 最终 Go app/player/.../database 串行套件与相关 go vet 通过；前端 370 项相关测试、Dart 分析和 Web/Go 嵌入构建通过。音量面板先关闭再打开转换面板已实际验证。
 - 实机忙碌目标转换未完成：餐厅连接中断，Cocoon 首次 SETUP 500；重试期间用户要求停止播放，已执行 stop，Web/Cocoon/餐厅均 idle。未宣称新的实机转换或听感通过。后续不再自动播放。
+
+
+## 双向实机转换与 Web 队列接管（2026-10-28）
+
+- a816851 / ea947cd 本机嵌入版：Cocoon(song 5) 与 Web(song 2) 先分别播放；界面将 Cocoon 转到忙碌 Web 后，Cocoon idle，Web 接续 song 5。用户确认“只有 Web 出声，正常”。
+- 随后 Cocoon 先播放 song 2，Web 继续 song 5；界面反向转移后 Web idle、Cocoon song 5 连续推进，用户确认“只有 Cocoon 出声，连续”。转换对话框均自动关闭，旧音量面板没有残留。
+- 额外发现 Web 收到 load 会 playSong，把来源曲目追加到旧队列并回推服务端。修正为按本机持久设备 ID 读取所属区域的完整队列、下标与曲目；校验服务端当前曲目与命令相符后替换本机队列。异步读取保留代次检查，stop 可取消；play 等待 load 完成，避免网络读取较慢时恢复旧曲。
+- 373 项相关测试通过；新增完整队列替换、读取中 stop、play 等待 load/stop 取消等待的回归。四个变更文件 Dart 分析无问题，release Web 构建通过。证据存于本机工具目录 transfer-busy-start.json、transfer-cocoon-to-web.json、transfer-web-to-cocoon.json、transfer-queue-final-tests.log。
+
+最终嵌入构建实机复验：Web 原 8 首队列(song 13)与 Cocoon 6 首英语队列(song 2)均 playing 后，从界面转移 Cocoon→Web。断言 Web song_id=2、playing、完整队列 [5,2,3,4,7,6]、current=1；Cocoon idle。界面队列显示 6 首、进度持续推进（72.604s），证据 transfer-complete-queue-live.json / transfer-complete-queue-fixed.png。完成后停止测试并恢复本轮开始时 Web/Cocoon 的队列与下标，未恢复自动播放。
