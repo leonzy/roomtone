@@ -48,7 +48,7 @@
 	url = https://github.com/songloft-org/songloft-tv.git
 [submodule "clients/player-lynx"]
 	path = clients/player-lynx
-	url = https://github.com/songloft-org/songloft-player-lynx.git
+	url = https://github.com/leonzy/roomtone-player-lynx.git
 [submodule "tools/tracely"]
 	path = tools/tracely
 	url = https://github.com/hanxi/tracely.git

@@ -1,11 +1,31 @@
 package local
 
 import (
+	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"songloft/internal/player/sink"
 )
+
+func TestNewLoadDoesNotReusePreviousPosition(t *testing.T) {
+	s := New("web", &recCtl{}, sink.Caps{})
+	s.HandleReport(Report{SongID: 1, State: "paused", PositionMs: 1000})
+	if _, ok := s.PlaybackPosition(); !ok {
+		t.Fatal("expected initial report")
+	}
+	if err := s.Open(context.Background(), sink.StreamPlan{SongID: 1, Position: 78 * time.Second}); err != nil {
+		t.Fatal(err)
+	}
+	if pos, ok := s.PlaybackPosition(); ok {
+		t.Fatalf("new load reused old position %v", pos)
+	}
+	s.HandleReport(Report{SongID: 1, State: "paused", PositionMs: 78000})
+	if pos, ok := s.PlaybackPosition(); !ok || pos != 78*time.Second {
+		t.Fatalf("fresh position = %v, valid = %v", pos, ok)
+	}
+}
 
 type recCtl struct {
 	mu   sync.Mutex

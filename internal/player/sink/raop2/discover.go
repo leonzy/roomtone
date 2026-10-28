@@ -2,6 +2,8 @@ package raop2
 
 import (
 	"context"
+	"encoding/hex"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -110,6 +112,7 @@ func (d Device) HasFeature(flag uint64) bool {
 type Entry struct {
 	Name string // 实例名（含 ._airplay._tcp.local 后缀）
 	Host string
+	Addr net.IP
 	Port int
 	TXT  []string
 }
@@ -140,7 +143,11 @@ func QueryMDNS(ctx context.Context, service string, timeout time.Duration) ([]En
 			if e == nil || e.Host == "" {
 				continue
 			}
-			out = append(out, Entry{Name: e.Name, Host: e.Host, Port: e.Port, TXT: e.InfoFields})
+			addr := e.AddrV4
+			if addr == nil {
+				addr = e.AddrV6
+			}
+			out = append(out, Entry{Name: e.Name, Host: e.Host, Addr: addr, Port: e.Port, TXT: e.InfoFields})
 		case <-time.After(time.Until(deadline)):
 			return out, nil
 		}
@@ -150,6 +157,9 @@ func QueryMDNS(ctx context.Context, service string, timeout time.Duration) ([]En
 
 // Discover 查询 `_airplay._tcp` 并解析 + 编组合并。
 func Discover(ctx context.Context, query Query, timeout time.Duration) ([]Device, error) {
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
 	if query == nil {
 		query = QueryMDNS
 	}
@@ -159,10 +169,26 @@ func Discover(ctx context.Context, query Query, timeout time.Duration) ([]Device
 	}
 	var devs []Device
 	for _, e := range entries {
+		service := strings.ToLower(strings.TrimSuffix(e.Name, "."))
+		if (!strings.HasSuffix(service, "._airplay._tcp.local") && !strings.HasSuffix(service, "._airplay._tcp")) || e.Port <= 0 || e.Port > 65535 || e.Host == "" {
+			continue
+		}
 		if d, ok := ParseAirPlayTXT(e.TXT); ok {
+			if !d.HasFeature(FeatureSupportsAirPlayAudio) {
+				continue
+			}
 			d.Name = trimServiceSuffix(e.Name)
-			d.DeviceID = deviceIDFromName(e.Name)
-			d.Address = joinHostPort(e.Host, e.Port)
+			if d.DeviceID == "" {
+				d.DeviceID = deviceIDFromName(e.Name)
+			}
+			if d.DeviceID == "" {
+				continue
+			}
+			host := e.Host
+			if e.Addr != nil {
+				host = e.Addr.String()
+			}
+			d.Address = joinHostPort(host, e.Port)
 			if d.Model == "" {
 				d.Model = "AirPlay"
 			}
@@ -227,6 +253,7 @@ func ParseAirPlayTXT(txt []string) (Device, bool) {
 		return Device{}, false
 	}
 	d := Device{
+		DeviceID:   normalizeDeviceID(props["deviceid"]),
 		Channels:   2,
 		SampleRate: 44100,
 		BitDepth:   16,
@@ -288,34 +315,70 @@ func parseTXTFields(txt []string) map[string]string {
 		if !ok {
 			continue
 		}
-		out[k] = v
+		out[strings.ToLower(k)] = v
 	}
 	return out
 }
 
 func trimServiceSuffix(name string) string {
-	if i := strings.Index(name, "._airplay._tcp"); i > 0 {
-		return name[:i]
+	name = decodeDNSName(name)
+	if i := strings.Index(strings.ToLower(name), "._airplay._tcp"); i > 0 {
+		name = name[:i]
 	}
-	if i := strings.Index(name, "._raop._tcp"); i > 0 {
-		return name[:i]
+	if i := strings.Index(strings.ToLower(name), "._raop._tcp"); i > 0 {
+		name = name[:i]
 	}
-	return name
+	if id, display, ok := strings.Cut(name, "@"); ok && normalizeDeviceID(id) != "" {
+		name = display
+	}
+	return strings.TrimSpace(name)
 }
 
 // deviceIDFromName 从服务实例名取设备 MAC（与 raop.SplitServiceName 同约定）。
 func deviceIDFromName(name string) string {
-	n := trimServiceSuffix(name)
+	n := decodeDNSName(name)
+	if i := strings.Index(strings.ToLower(n), "._airplay._tcp"); i > 0 {
+		n = n[:i]
+	}
 	// 实例名形如 "AB12CD345678@HomePod 客厅" 或纯 MAC
 	if i := strings.Index(n, "@"); i > 0 {
 		n = n[:i]
 	}
-	return n
+	return normalizeDeviceID(n)
+}
+
+func normalizeDeviceID(raw string) string {
+	id := strings.NewReplacer(":", "", "-", "").Replace(strings.TrimSpace(raw))
+	if len(id) != 12 {
+		return ""
+	}
+	if _, err := hex.DecodeString(id); err != nil {
+		return ""
+	}
+	return strings.ToLower(id)
+}
+
+func decodeDNSName(name string) string {
+	var out strings.Builder
+	for i := 0; i < len(name); i++ {
+		if name[i] == '\\' && i+1 < len(name) {
+			if i+3 < len(name) {
+				if n, err := strconv.Atoi(name[i+1 : i+4]); err == nil && n >= 0 && n <= 255 {
+					out.WriteByte(byte(n))
+					i += 3
+					continue
+				}
+			}
+			i++
+		}
+		out.WriteByte(name[i])
+	}
+	return out.String()
 }
 
 func joinHostPort(host string, port int) string {
 	if port == 0 {
 		return host
 	}
-	return host + ":" + strconv.Itoa(port)
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }

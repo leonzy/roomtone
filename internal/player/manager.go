@@ -1531,8 +1531,15 @@ func (m *Manager) Restore(ctx context.Context) error {
 		return err
 	}
 	m.mu.Lock()
+	ignored := map[string]bool{}
 	for i := range players {
 		p := players[i]
+		// Old AirPlay 2 discovery accepted unrelated Bonjour companion records.
+		// Keep persisted rows recoverable, but never restore them as outputs.
+		if p.Kind == KindRAOP && strings.Contains(strings.ToLower(p.ID), "._companion-link._tcp") {
+			ignored[p.ID] = true
+			continue
+		}
 		p.Online = false // 重启后一律先标离线，等发现/重连再上线
 		m.players[p.ID] = &p
 	}
@@ -1548,8 +1555,18 @@ func (m *Manager) Restore(ctx context.Context) error {
 	}
 	for _, g := range groups {
 		g.Members = members[g.ID]
+		kept := g.Members[:0]
+		for _, member := range g.Members {
+			if !ignored[member.PlayerID] {
+				kept = append(kept, member)
+			}
+		}
+		g.Members = kept
 		if len(g.Members) == 0 {
 			continue
+		}
+		if ignored[g.MasterID] {
+			g.MasterID = g.Members[0].PlayerID
 		}
 		m.mu.Lock()
 		m.groups[g.ID] = &g

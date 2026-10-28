@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"sort"
 	"strings"
 	"sync"
@@ -99,7 +100,15 @@ func mergeAirPlay2(sp *Speaker, d raop2.Device) {
 		sp.Caps.LatencyMs = 2000
 	}
 	sp.Caps.DeviceID = d.DeviceID
-	sp.Address = d.Address
+	oldHost, _, oldErr := net.SplitHostPort(sp.Address)
+	newHost, newPort, newErr := net.SplitHostPort(d.Address)
+	if oldErr == nil && newErr == nil && net.ParseIP(oldHost) != nil && net.ParseIP(newHost) == nil {
+		// Services merged by device identity share the just-discovered address.
+		// Keep that IP while selecting the AirPlay 2 service's port.
+		sp.Address = net.JoinHostPort(oldHost, newPort)
+	} else {
+		sp.Address = d.Address
+	}
 	if d.Channels > 0 {
 		sp.Caps.Channels = d.Channels
 	}

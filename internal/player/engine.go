@@ -1024,14 +1024,21 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		}
 		e.mu.Lock()
 		advanced := e.queue.Next(true)
-		if advanced && e.queue.Repeat() == RepeatOne {
-			// 位置不变，重播同一首
+		if advanced {
+			// PCM uses one continuous timeline, but transport time is per song.
+			// Reset before publishing the new queue index, including repeat-one.
+			nextID, _ := e.queue.CurrentSong()
+			_ = e.transport.Load(nextID, position)
 		}
 		e.mu.Unlock()
 		if !advanced {
 			e.mu.Lock()
+			if e.queue.Repeat() == RepeatOff && !e.queue.Shuffle() {
+				e.queue.Replace(nil, -1)
+			}
 			e.transport.Stop()
 			e.mu.Unlock()
+			e.persistQueue()
 			e.persistState()
 			e.emitState()
 			return
@@ -1132,8 +1139,12 @@ func (e *Engine) runDelegated(ctx context.Context, startAt time.Duration) {
 		e.mu.Unlock()
 		if !advanced {
 			e.mu.Lock()
+			if e.queue.Repeat() == RepeatOff && !e.queue.Shuffle() {
+				e.queue.Replace(nil, -1)
+			}
 			e.transport.Stop()
 			e.mu.Unlock()
+			e.persistQueue()
 			e.persistState()
 			e.emitState()
 			return

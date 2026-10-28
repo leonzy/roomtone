@@ -18,10 +18,11 @@ import (
 // metaSink 在 fake.Sink 之上记录元数据 / 进度 / 封面推送。
 type metaSink struct {
 	*fake.Sink
-	mu    sync.Mutex
-	metas []sink.NowPlaying
-	progs [][2]time.Duration
-	arts  []string
+	mu         sync.Mutex
+	metas      []sink.NowPlaying
+	progs      [][2]time.Duration
+	progTracks []int
+	arts       []string
 }
 
 func (s *metaSink) UpdateMetadata(m sink.NowPlaying) error {
@@ -34,6 +35,7 @@ func (s *metaSink) UpdateMetadata(m sink.NowPlaying) error {
 func (s *metaSink) UpdateProgress(pos, total time.Duration) error {
 	s.mu.Lock()
 	s.progs = append(s.progs, [2]time.Duration{pos, total})
+	s.progTracks = append(s.progTracks, len(s.metas)-1)
 	s.mu.Unlock()
 	return nil
 }
@@ -135,7 +137,7 @@ func TestEnginePushesMetadata(t *testing.T) {
 	}
 	a := builder.get("a")
 
-	// 3s 内收到 ≥2 次进度推送，total 等于曲目时长，首两拍位置递增。
+	// 3s 内收到 ≥2 次进度推送，total 等于曲目时长，同一曲内位置递增（换曲后归零）。
 	waitFor(t, "进度推送 ≥2 次", 3*time.Second, func() bool {
 		_, progs, _ := a.snapshot()
 		return len(progs) >= 2
@@ -146,8 +148,13 @@ func TestEnginePushesMetadata(t *testing.T) {
 			t.Fatalf("第 %d 次进度 total = %v，期望 3s", i, p[1])
 		}
 	}
-	if progs[0][0] >= progs[1][0] {
-		t.Fatalf("进度位置不递增：%v → %v", progs[0][0], progs[1][0])
+	a.mu.Lock()
+	progressTracks := append([]int(nil), a.progTracks...)
+	a.mu.Unlock()
+	for i := 1; i < len(progs); i++ {
+		if progressTracks[i] == progressTracks[i-1] && progs[i][0] < progs[i-1][0] {
+			t.Fatalf("同一曲进度倒退：%v → %v", progs[i-1][0], progs[i][0])
+		}
 	}
 
 	// 曲目变化时收到元数据 + 封面（首曲立即、切歌后再来一次，Title 变化）。

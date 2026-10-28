@@ -440,3 +440,11 @@ func TestMergeAirPlay2TransportIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestMergeAirPlay2KeepsResolvedIPWithNewPort(t *testing.T) {
+	sp := Speaker{Address: "192.168.1.24:5000"}
+	mergeAirPlay2(&sp, raop2.Device{DeviceID: "aabbccddeeff", Address: "speaker.local.:7000"})
+	if sp.Address != "192.168.1.24:7000" {
+		t.Fatalf("resolved IP lost: %+v", sp)
+	}
+}

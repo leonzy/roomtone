@@ -183,9 +183,9 @@ func TestDiscoverAirPlay(t *testing.T) {
 		case "_airplay._tcp":
 			return []Entry{
 				{Name: "HomePod 客厅._airplay._tcp.local", Host: "192.0.2.10", Port: 7000,
-					TXT: []string{"ft=0x200,0x1", "psgid=g1", "igl=1", "model=AudioAccessory1,1"}},
+					TXT: []string{"deviceid=00:11:22:33:44:55", "ft=0x200,0x1", "psgid=g1", "igl=1", "model=AudioAccessory1,1"}},
 				{Name: "HomePod 厨房._airplay._tcp.local", Host: "192.0.2.11", Port: 7000,
-					TXT: []string{"ft=0x200,0x1", "psgid=g1", "model=AudioAccessory1,1"}},
+					TXT: []string{"deviceid=00:11:22:33:44:66", "ft=0x200,0x1", "psgid=g1", "model=AudioAccessory1,1"}},
 			}, nil
 		}
 		return nil, nil

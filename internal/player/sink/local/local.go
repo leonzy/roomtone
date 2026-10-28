@@ -105,6 +105,10 @@ func (s *Sink) Caps() sink.Caps { return s.caps }
 func (s *Sink) Open(_ context.Context, plan sink.StreamPlan) error {
 	s.mu.Lock()
 	s.plan = plan
+	// A new load must not inherit the previous session's reported position.
+	// The engine keeps the transfer position until this source reports ready.
+	s.hasPos = false
+	s.playing = false
 	s.mu.Unlock()
 	if s.ctl == nil {
 		return errors.New("local sink: 客户端连接已断开")

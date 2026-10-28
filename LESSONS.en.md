@@ -214,3 +214,13 @@ Status: lesson / promotion candidate / promoted (authoritative destination)
 ### PLAYBACK-005: Replacing a busy zone must terminate its old session
 
 - 2026-10-28: Load replaced the queue while startLocked returned on running, leaving the target on its previous song. Stop the old run before loading and isolate stale failure/progress/completion callbacks by run context. Old-code regression timed out; the fix passed five repeats. See the playback feature review. Seen 1×.
+
+### AIRPLAY-005: mDNS query entries are not automatically audio outputs
+
+- 2026-10-28: iPad companion-link pairing entries leaked into an AirPlay 2 query and became speakers with escaped service names. Validate service type, audio capability and MAC identity; decode display names separately from stable identity. Exclude historical false entries on restore without deleting their database rows.
+- Service/identity regressions fail against old code; additional cases cover UTF-8 names, resolved IPs and V1/V2 port merging. Playback module tests pass, and the actual device list excludes pairing services. No playback was started, as requested. Seen 1×; lesson.
+
+### DEPLOY-001: Validate actual decoding capabilities when migrating playback
+
+- 2026-10-28, leonFN's inherited slim ffmpeg lacked the s16le muxer despite healthy HTTP, successful database migrations and AirPlay negotiation. Decoding exited 234 with zero samples. Executable availability/version and HTTP 200 do not establish runtime capability.
+- Full ffmpeg silently decodes one second of the actual FLAC into 176400 bytes of stereo 44.1kHz PCM. Verify the deployed executable and served scripts; listening remains subject to user confirmation. Resolve FN Compose variables from the original container. This package reads container_name from Compose in cmd/main, so the container may be renamed consistently; use appcenter-cli stop/start to update application-manager state instead of assuming force-recreate preserves launcher registration. On 2026-10-28, container roomtone, image roomtone:leonfn-20261028 and manager state running were verified; desktop-icon visibility was not directly rechecked after browser automation stopped. Seen 1×; lesson.

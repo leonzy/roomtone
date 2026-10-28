@@ -93,6 +93,7 @@ RUN apk add --no-cache \
     alsa-utils \
     alsa-ucm-conf \
     pulseaudio-utils \
+    ffmpeg \
     su-exec
 
 # 设置默认时区为东八区
@@ -105,11 +106,8 @@ WORKDIR /app
 # /app/data - 应用数据存储目录
 RUN mkdir -p /app/music /app/data
 
-# --link 使 COPY 层与 parent 层解耦：即使 apk add 层因包更新而变化，
-# 下面这些层的 digest 也保持不变（不再受 parent chain 影响）。
-# 引用发布工作流同步到 GHCR 的 latest，始终使用上游最新的 ffmpeg/ffprobe。
-COPY --link --from=ghcr.io/leonzy/roomtone-base-ffmpeg:latest /ffmpeg /bin/ffmpeg
-COPY --link --from=ghcr.io/leonzy/roomtone-base-ffmpeg:latest /ffprobe /bin/ffprobe
+# Server playback requires the s16le muxer and PCM encoders. Use Alpine's full
+# ffmpeg/ffprobe package above; the upstream slim binary omits the PCM muxer.
 
 # 启动脚本小、极少变动（--chmod 合并原独立 chmod 层）
 COPY --link --chmod=0755 scripts/docker-entrypoint.sh /app/docker-entrypoint.sh

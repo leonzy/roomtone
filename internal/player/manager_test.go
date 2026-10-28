@@ -26,6 +26,25 @@ type memStore struct {
 	states  map[string]player.StateSnapshot
 }
 
+func TestRestoreIgnoresLegacyCompanionServicesWithoutDeletingRows(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	bad := `raop:Aimee\231\154\132iPadpro._companion-link._tcp.local.`
+	store.players[bad] = player.Player{ID: bad, Kind: player.KindRAOP, Name: bad}
+	store.groups["bad-group"] = player.Group{ID: "bad-group", Name: bad, MasterID: bad}
+	store.members["bad-group"] = []player.Member{{PlayerID: bad}}
+	m := player.NewManager(player.ManagerDeps{Store: store})
+	if err := m.Restore(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.ListPlayers()) != 0 || len(m.ListGroups()) != 0 {
+		t.Fatal("companion service restored as playable output")
+	}
+	if len(store.players) != 1 || len(store.groups) != 1 {
+		t.Fatal("historical records must remain recoverable")
+	}
+}
+
 func newMemStore() *memStore {
 	return &memStore{
 		players: map[string]player.Player{},
