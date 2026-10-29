@@ -21,9 +21,9 @@ const items = ['notice.i1', 'notice.i2', 'notice.i3', 'notice.i4']
         </ul>
         <p class="notice-channel">{{ t('notice.channel') }}</p>
         <p class="notice-links">
-          <a href="https://github.com/songloft-org/songloft" target="_blank" rel="noopener">{{ t('notice.github') }}</a>
+          <a href="https://github.com/leonzy/roomtone" target="_blank" rel="noopener">{{ t('notice.github') }}</a>
           ·
-          <a href="https://songloft.hanxi.cc" target="_blank" rel="noopener">{{ t('notice.docs') }}</a>
+          <a href="https://leonzy.github.io/roomtone/" target="_blank" rel="noopener">{{ t('notice.docs') }}</a>
           ·
           <a href="https://github.com/songloft-org/songloft/issues/2" target="_blank" rel="noopener">{{ t('notice.wechat') }}</a>
           ·

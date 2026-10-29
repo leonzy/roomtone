@@ -19,7 +19,7 @@ const resolvedSrc = computed(() =>
     <img
       class="device-img"
       :src="resolvedSrc"
-      :alt="alt ?? 'Songloft'"
+      :alt="alt ?? 'Roomtone'"
       :loading="eager ? 'eager' : 'lazy'"
       decoding="async"
     />
