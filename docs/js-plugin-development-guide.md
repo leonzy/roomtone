@@ -614,6 +614,8 @@ async function songsExample() {
 }
 ```
 
+Roomtone 扩展：`songs.list({ limit: 1000, offset: 0, omitFingerprint: true })` 在 SQL 读取时跳过指纹列，适合目录树、元数据索引；其余歌曲信息保留。默认列表与 `songs.getById` 仍返回完整指纹及 AcoustID 所需时长。大曲库应分页读取，避免将全库指纹一次送入插件 VM。
+
 ### songloft.playlists — 歌单操作
 
 需要权限：`playlists.read`（读取）或 `playlists.write`（修改）；或者通配符糖 `playlists.*`。

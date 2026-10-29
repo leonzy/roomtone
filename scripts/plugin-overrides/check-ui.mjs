@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+import vm from 'node:vm';
+const [library, tag] = process.argv.slice(2);
+if (!library || !tag) throw new Error('Usage: node check-ui.mjs <patched-library-source> <patched-tag-source>');
+const html = readFileSync(join(tag, 'static/index.html'), 'utf8');
+const loader = html.slice(html.indexOf('async function loadSongs()'), html.indexOf('function doSearch()'));
+const songs = Array.from({length:2503}, (_, i) => ({id:i+1,type:'local',file_path:`music/album/track${i}.flac`}));
+const calls=[]; const label={textContent:''};
+const context = vm.createContext({S:{},E:()=>label,render(){},log(message){throw new Error(message)},af:async url=>{
+ calls.push(url); const query=new URL('http://test/'+url).searchParams;
+ const offset=Number(query.get('offset')),limit=Number(query.get('limit'));
+ return {ok:true,json:async()=>({songs:songs.slice(offset,offset+limit)})};
+}});
+vm.runInContext(loader, context); await vm.runInContext('loadSongs()',context);
+assert.equal(context.S.songs.length,2503);
+assert.equal(new Set(context.S.songs.map(s=>s.id)).size,2503);
+assert.deepEqual(calls,['./songs?limit=1000&offset=0','./songs?limit=1000&offset=1000','./songs?limit=1000&offset=2000']);
+const app=readFileSync(join(library,'static/js/app.js'),'utf8');
+const poll=app.slice(app.indexOf('async function loadLibraryIndex('));
+const urls=[];const results=[{pending:true,loaded:1000},{pending:true,loaded:2000},{folders:[{path:'album'}],summary:{total:2503}}];
+const indexContext=vm.createContext({apiGet:async url=>{urls.push(url);return results.shift()},document:{querySelector:()=>label},setTimeout:fn=>fn()});
+vm.runInContext(poll,indexContext);const result=await vm.runInContext('loadLibraryIndex(true)',indexContext);
+assert.equal(result.summary.total,2503);
+assert.deepEqual(urls,['/api/index?background=1&refresh=1','/api/index?background=1','/api/index?background=1']);
+console.log('Passed: paginated directory load preserves 2503 songs without duplicates; background index polls without repeatedly forcing a rebuild.');

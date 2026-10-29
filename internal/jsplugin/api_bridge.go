@@ -1016,12 +1016,13 @@ func (h *BridgeHandler) handleSongs(action, data string) (string, error) {
 	switch action {
 	case "songs.list":
 		var req struct {
-			PathPrefix string `json:"pathPrefix"`
-			Type       string `json:"type"`
-			OrderBy    string `json:"orderBy"`
-			Order      string `json:"order"`
-			Limit      int    `json:"limit"`
-			Offset     int    `json:"offset"`
+			OmitFingerprint bool   `json:"omitFingerprint"`
+			PathPrefix      string `json:"pathPrefix"`
+			Type            string `json:"type"`
+			OrderBy         string `json:"orderBy"`
+			Order           string `json:"order"`
+			Limit           int    `json:"limit"`
+			Offset          int    `json:"offset"`
 		}
 		if data != "" {
 			_ = json.Unmarshal([]byte(data), &req)
@@ -1030,12 +1031,13 @@ func (h *BridgeHandler) handleSongs(action, data string) (string, error) {
 			req.Limit = 20
 		}
 		filter := &database.SongFilter{
-			PathPrefix: req.PathPrefix,
-			Type:       req.Type,
-			OrderBy:    req.OrderBy,
-			Order:      req.Order,
-			Limit:      req.Limit,
-			Offset:     req.Offset,
+			OmitFingerprint: req.OmitFingerprint,
+			PathPrefix:      req.PathPrefix,
+			Type:            req.Type,
+			OrderBy:         req.OrderBy,
+			Order:           req.Order,
+			Limit:           req.Limit,
+			Offset:          req.Offset,
 		}
 		songs, err := h.db.SongRepository().List(ctx, filter)
 		if err != nil {

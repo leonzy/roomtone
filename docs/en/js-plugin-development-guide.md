@@ -616,6 +616,8 @@ async function songsExample() {
 }
 ```
 
+Roomtone extension: `songs.list({ limit: 1000, offset: 0, omitFingerprint: true })` skips fingerprint columns at SQL read time for directory and metadata indexes. All other song metadata remains available. The default list and `songs.getById` retain fingerprints, including the duration needed for AcoustID. Page through large libraries; do not send the entire fingerprint corpus through a plugin VM.
+
 ### songloft.playlists — Playlist Operations
 
 Requires permission: `playlists.read` (read) or `playlists.write` (modify); or the wildcard sugar `playlists.*`.

@@ -1,0 +1,54 @@
+diff --git a/plugin.json b/plugin.json
+index 554b672..e9f9312 100644
+--- a/plugin.json
++++ b/plugin.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "标签刮削",
+-  "version": "2.3.1",
++  "version": "2.3.1+roomtone.1",
+   "description": "智能刮削音乐标签：多源并发搜索 + 多级目录浏览，自动修正标题/艺术家/专辑，下载封面并写入音频文件",
+   "author": "Songloft Team",
+   "entryPath": "tag",
+diff --git a/src/main.ts b/src/main.ts
+index fffc677..21015db 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -122,7 +122,7 @@ async function listAllSongs(): Promise<any[]> {
+   const all: any[] = [];
+   const pageSize = 1000;
+   for (let page = 0; page < 100; page++) {
+-    const batch = await songloft.songs.list({ limit: pageSize, offset: page * pageSize });
++    const batch = await songloft.songs.list({ limit: pageSize, offset: page * pageSize, omitFingerprint: true } as any);
+     if (!Array.isArray(batch) || batch.length === 0) break;
+     all.push(...batch);
+     if (batch.length < pageSize) break;
+@@ -871,7 +871,7 @@ router.get('/songs', async (req) => {
+     if (keyword) {
+       songs = await songloft.songs.search(keyword);
+     } else if (params.get('limit')) {
+-      songs = await songloft.songs.list({ limit, offset });
++      songs = await songloft.songs.list({ limit, offset, omitFingerprint: true } as any);
+     } else {
+       // 未显式指定 limit 时分页拉全量（突破单次 10000 上限）
+       songs = await listAllSongs();
+diff --git a/static/index.html b/static/index.html
+index c9aa41f..2c5743d 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -577,7 +577,14 @@ function closeCfg(){E("cfgModal").classList.remove("open")}
+ async function loadScraped(){try{var r=await af("./storage/scraped");if(r.ok){var d=await r.json();(d||[]).forEach(function(id){S._scraped.add(Number(id))})}}catch(e){}updStats();if(S._tab==="songs")render()}
+ function markScraped(id){S._scraped.add(Number(id));updStats();if(S._tab==="songs")render()}
+ 
+-async function loadSongs(){try{var r=await af("./songs"),d=await r.json();var all=d.songs||d||[];
++async function loadSongs(){try{var all=[],pageSize=1000;
++for(var offset=0;;offset+=pageSize){
++var r=await af("./songs?limit="+pageSize+"&offset="+offset);if(!r.ok)throw new Error("歌曲加载失败 HTTP "+r.status);
++var d=await r.json(),batch=d.songs||[];all.push.apply(all,batch);
++E("barInfo").textContent="正在读取歌曲… "+all.length;
++if(batch.length<pageSize)break;
++}
++
+ // 刮削/整理仅支持本地歌曲（宿主 /tags 对非 local 直接 400）：工作集只含本地，网络歌曲单独存放仅供查看
+ S._allSongs=all.filter(function(s){return(s.type||"local")==="local"});
+ S._remoteSongs=all.filter(function(s){return(s.type||"local")!=="local"});

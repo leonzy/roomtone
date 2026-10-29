@@ -1,0 +1,132 @@
+diff --git a/plugin.json b/plugin.json
+index df65094..cd075e6 100644
+--- a/plugin.json
++++ b/plugin.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "歌曲库 Plus",
+-  "version": "0.2.16",
++  "version": "0.2.16+roomtone.1",
+   "description": "增强 Songloft 曲库的多维浏览、批量选择、歌单与电台管理、标签编辑能力。",
+   "author": "charce526",
+   "homepage": "https://github.com/charce526/songloft-library-plus",
+diff --git a/src/main.ts b/src/main.ts
+index b87b428..79893e8 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -49,7 +49,9 @@ type LibraryIndex = {
+ };
+ 
+ const router = createRouter();
+-const cacheTtlMs = 2 * 60 * 1000;
++const cacheTtlMs = 15 * 60 * 1000;
++let indexLoaded = 0;
++let indexError = "";
+ let indexCache: LibraryIndex | null = null;
+ let indexPromise: Promise<LibraryIndex> | null = null;
+ 
+@@ -116,7 +118,7 @@ function addFacet(
+   });
+ }
+ 
+-function buildIndex(songs: LibrarySong[], configuredRoot = ''): LibraryIndex {
++async function buildIndex(songs: LibrarySong[], configuredRoot = ''): Promise<LibraryIndex> {
+   const localPaths = songs
+     .filter((song) => song.type === 'local' && song.file_path)
+     .map((song) => dirname(song.file_path));
+@@ -148,7 +150,9 @@ function buildIndex(songs: LibrarySong[], configuredRoot = ''): LibraryIndex {
+   let remote = 0;
+   let radio = 0;
+ 
++  let processed = 0;
+   for (const song of songs) {
++    if (++processed % 500 === 0) await new Promise(resolve => setTimeout(resolve, 0));
+     duration += Number(song.duration || 0);
+     size += Number(song.file_size || 0);
+     if (song.type === 'local') local += 1;
+@@ -224,15 +228,25 @@ async function getIndex(force = false): Promise<LibraryIndex> {
+   if (!force && indexCache && Date.now() - indexCache.generatedAt < cacheTtlMs) {
+     return indexCache;
+   }
+-  if (!force && indexPromise) return indexPromise;
++  if (indexPromise) return indexPromise;
+   indexPromise = (async () => {
+-    const [songs, musicPath] = await Promise.all([
+-      songloft.songs.list({ limit: 100000, offset: 0 }) as Promise<LibrarySong[]>,
+-      hostRequest('/api/v1/settings/music-path')
+-        .then((result) => String((result as Record<string, unknown>)?.path || ''))
+-        .catch(() => ''),
+-    ]);
+-    indexCache = buildIndex(songs, musicPath);
++    indexLoaded = 0;
++    indexError = "";
++    const started = Date.now();
++    const songs: LibrarySong[] = [];
++    const musicPath = await hostRequest('/api/v1/settings/music-path')
++      .then((result) => String((result as Record<string, unknown>)?.path || ''))
++      .catch(() => '');
++    for (let offset = 0; ; offset += 1000) {
++      const options = { limit: 1000, offset, omitFingerprint: true };
++      const batch = await songloft.songs.list(options) as LibrarySong[];
++      for (const song of batch) songs.push(song);
++      indexLoaded = songs.length;
++      if (batch.length < options.limit) break;
++    }
++    songloft.log.info(`[library-plus] metadata loaded: ${songs.length} songs in ${Date.now() - started}ms`);
++    indexCache = await buildIndex(songs, musicPath);
++    songloft.log.info(`[library-plus] index ready in ${Date.now() - started}ms`);
+     indexPromise = null;
+     return indexCache;
+   })();
+@@ -396,6 +410,14 @@ function sortSongsByFavorite(songs: LibrarySong[], favoriteIds: Set<number>, ord
+ router.get('/api/index', async (req) => {
+   try {
+     const query = parseQuery(req.query);
++    if (boolValue(query.background)) {
++      if (boolValue(query.refresh)) { indexCache = null; indexError = ""; }
++      if (indexError) return jsonResponse({ error: indexError }, 500);
++      if (!indexCache || Date.now() - indexCache.generatedAt >= cacheTtlMs) {
++        if (!indexPromise) void getIndex().catch(error => { indexError = String(error?.message || error); });
++        return jsonResponse({ pending: true, loaded: indexLoaded }, 202);
++      }
++    }
+     const index = await getIndex(boolValue(query.refresh));
+     return jsonResponse({
+       generatedAt: index.generatedAt,
+diff --git a/static/js/app.js b/static/js/app.js
+index ef0073d..c16a4c4 100644
+--- a/static/js/app.js
++++ b/static/js/app.js
+@@ -1531,7 +1531,7 @@ async function refreshIndex(force) {
+   const button = $('#refreshButton');
+   setBusy(button, true, '…');
+   try {
+-    state.index = await apiGet(`/api/index${force ? '?refresh=1' : ''}`);
++    state.index = await loadLibraryIndex(force);
+     renderSummary();
+     if (state.mode === 'dashboard') renderDashboard();
+     else if (state.mode === 'folders') {
+@@ -1889,7 +1889,7 @@ async function init() {
+   try {
+     const [capabilities, index, favorites] = await Promise.all([
+       apiGet('/api/capabilities').catch(() => ({ language: false, style: false })),
+-      apiGet('/api/index'),
++      loadLibraryIndex(false),
+       apiGet('/api/favorites/ids').catch(() => ({ ids: [] })),
+     ]);
+     state.capabilities = capabilities;
+@@ -1906,3 +1906,14 @@ async function init() {
+ }
+ 
+ document.addEventListener('DOMContentLoaded', init);
++
++async function loadLibraryIndex(force) {
++  let result = await apiGet(`/api/index?background=1${force ? '&refresh=1' : ''}`);
++  while (result.pending) {
++    const label = document.querySelector('#dashboard .loading-state p');
++    if (label) label.textContent = `正在建立歌曲库索引…已读取 ${(result.loaded || 0).toLocaleString()} 首`;
++    await new Promise(resolve => setTimeout(resolve, 500));
++    result = await apiGet('/api/index?background=1');
++  }
++  return result;
++}

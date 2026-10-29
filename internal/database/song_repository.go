@@ -409,7 +409,7 @@ func (r *SongRepository) List(ctx context.Context, filter *SongFilter) ([]*model
 	if filter == nil {
 		filter = &SongFilter{}
 	}
-	sb := songSelectBuilder()
+	sb := songSelectBuilder(filter.OmitFingerprint)
 	sb = applySongFilter(sb, filter)
 	sb = applyOrder(sb, filter.OrderBy, filter.Order, "added_at DESC", songOrderWhitelist, "")
 	sb = applyPagination(sb, filter.Limit, filter.Offset)
@@ -626,7 +626,12 @@ func batchCreateSongs(ctx context.Context, q *sqlc.Queries, songs []*models.Song
 
 // songSelectBuilder 提供 List 用的 squirrel SELECT 模板，
 // COALESCE 列与 sqlc 行模型保持一致。
-func songSelectBuilder() sq.SelectBuilder {
+func songSelectBuilder(omitFingerprint ...bool) sq.SelectBuilder {
+	fingerprint, fingerprintDuration := "fingerprint", "fingerprint_duration"
+	if len(omitFingerprint) > 0 && omitFingerprint[0] {
+		fingerprint = "'' AS fingerprint"
+		fingerprintDuration = "0 AS fingerprint_duration"
+	}
 	return sq.Select(
 		"id", "type", "title", "artist", "album", "duration",
 		"file_path", "url", "cover_path", "cover_url",
@@ -637,7 +642,7 @@ func songSelectBuilder() sq.SelectBuilder {
 		"COALESCE(dedup_key, '')",
 		"added_at", "updated_at",
 		"year", "genre", "language", "style",
-		"fingerprint", "fingerprint_duration",
+		fingerprint, fingerprintDuration,
 		"isrc", "track",
 		"cue_source_path", "cue_track_index", "cue_audio_path",
 		"file_modified_at", "is_video",
