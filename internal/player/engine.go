@@ -106,6 +106,9 @@ type EngineDeps struct {
 	// 与 gapless 互斥（产品决策）：开着 crossfade 时交界处按普通路径重新
 	// Open，不再走 GaplessSink.Continue。
 	Crossfade func() time.Duration
+	// OnTrackFinished reports a natural completion once per engine, not per speaker.
+	// Pause, seek, stop and decoder failures must not invoke it.
+	OnTrackFinished func(Track)
 }
 
 // Engine 一个 owner（组或派对）的播放引擎：队列 + 传输状态机 + 解码分发。
@@ -1060,6 +1063,9 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			return
 		}
 		_ = state
+		if e.deps.OnTrackFinished != nil {
+			e.deps.OnTrackFinished(track)
+		}
 
 		// 自然播完：auto=true 时 repeat=one 原地重播。
 		// 做过交叉淡化时，下一曲已经播掉了 fade 秒的头部，从那里接着放。
@@ -1176,6 +1182,9 @@ func (e *Engine) runDelegated(ctx context.Context, startAt time.Duration) {
 
 		if !e.waitDelegated(ctx, track.Duration) {
 			return
+		}
+		if e.deps.OnTrackFinished != nil {
+			e.deps.OnTrackFinished(track)
 		}
 
 		position = 0

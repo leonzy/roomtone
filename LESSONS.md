@@ -224,3 +224,11 @@ Seen N× (YYYY-MM-DD, YYYY-MM-DD)
 
 - 2026-10-28，leonFN 复用上游镜像后 HTTP、数据库迁移和 AirPlay 握手均正常，但裁剪 ffmpeg 不含 s16le muxer，解码退出 234，samples=0。不能以命令存在、版本号或页面 200 代替运行时能力验证。
 - 改用完整 ffmpeg，原实际 FLAC 静默解码 1 秒得到 176400 字节双声道 44.1kHz PCM。部署同时核对实际运行二进制与服务脚本；听感等待用户确认，不能外推。飞牛 Compose 变量需从原容器解析。容器名可随 Compose 修改：本机包的 cmd/main 从 container_name 读取状态；但必须通过 appcenter-cli stop/start 更新应用管理状态，不能仅 force-recreate 后假定入口仍已注册。2026-10-28 容器 roomtone、镜像 roomtone:leonfn-20261028、应用管理 running 已验证；桌面图标可见性因浏览器工具中止未直接复验。Seen 1×，经验。
+
+### STATS-001：服务端播放必须接通已有插件事件
+
+- 范围：Roomtone 服务端音箱与 Lynx 播放统计，2026-10-29。
+- 证据：统计插件只累计 `finish`；PCM / 委派引擎从未向 JS 插件广播完成，Lynx 也只上报 `play`，因此音频成功但统计不增加。
+- 修复：引擎自然结束通过依赖回调广播已有 `finish` 契约；组和派对传递同一回调。Lynx 本地播放在实际起播后上报完成，服务端接管的播放由引擎上报。取消、错误、手动切歌不伪装完成。
+- 验证：`internal/player/completion_test.go` 覆盖双设备组、自动下一首、最后一首、错误、取消与委派播放；Lynx 队列和 API 测试覆盖去重及完成事件参数。不以测试夹具替代真实音箱验收，本轮未启动音箱播放。
+- Seen 1×（2026-10-29）。

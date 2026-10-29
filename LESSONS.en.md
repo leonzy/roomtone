@@ -224,3 +224,11 @@ Status: lesson / promotion candidate / promoted (authoritative destination)
 
 - 2026-10-28, leonFN's inherited slim ffmpeg lacked the s16le muxer despite healthy HTTP, successful database migrations and AirPlay negotiation. Decoding exited 234 with zero samples. Executable availability/version and HTTP 200 do not establish runtime capability.
 - Full ffmpeg silently decodes one second of the actual FLAC into 176400 bytes of stereo 44.1kHz PCM. Verify the deployed executable and served scripts; listening remains subject to user confirmation. Resolve FN Compose variables from the original container. This package reads container_name from Compose in cmd/main, so the container may be renamed consistently; use appcenter-cli stop/start to update application-manager state instead of assuming force-recreate preserves launcher registration. On 2026-10-28, container roomtone, image roomtone:leonfn-20261028 and manager state running were verified; desktop-icon visibility was not directly rechecked after browser automation stopped. Seen 1×; lesson.
+
+### STATS-001: Server playback must reach existing plugin events
+
+- Scope: Roomtone speaker playback and Lynx statistics, 2026-10-29.
+- Evidence: the statistics plugin records only `finish`; neither the PCM/delegated engine nor Lynx local playback emitted completion, despite successful audio playback.
+- Fix: natural engine completion broadcasts the existing plugin `finish` contract through a dependency callback shared by group and party engines. Lynx reports local completion after actual playback starts; server-owned sessions report from the engine. Cancellation, errors and manual skips are not completions.
+- Validation: `internal/player/completion_test.go` covers two-device groups, automatic advance, final tracks, errors, cancellation and delegated playback. Lynx queue/API tests cover duplicate completion and request parameters. Fixtures do not replace speaker acceptance; no speaker playback was started during this work.
+- Seen 1× (2026-10-29).

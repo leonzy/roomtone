@@ -152,6 +152,12 @@ func (a *App) initPlayback() {
 		PartyDriftToleranceMs: output.PartyDriftToleranceMs,
 		ReplayGain:            replayGain,
 		Crossfade:             crossfade,
+		OnTrackFinished: func(track player.Track) {
+			if a.jsPluginManager != nil {
+				broadcaster := &playEventBroadcastAdapter{m: a.jsPluginManager}
+				broadcaster.BroadcastPlayEvent(track.SongID, track.Title, track.Artist, "finish", "roomtone-server")
+			}
+		},
 	})
 
 	// 恢复上次的设备 / 组 / 队列。失败不阻塞启动，只是没有断点续播。

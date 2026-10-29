@@ -123,6 +123,9 @@ type ManagerDeps struct {
 	ReplayGain ReplayGainSource
 	// Crossfade 交叉淡化时长；返回 0 表示关闭（与 gapless 互斥）。
 	Crossfade func() time.Duration
+	// OnTrackFinished reports a natural completion once per engine, not per speaker.
+	// Pause, seek, stop and decoder failures must not invoke it.
+	OnTrackFinished func(Track)
 }
 
 // Manager 设备 / 组 / 派对 / 引擎的编排者。
@@ -1363,18 +1366,19 @@ func (m *Manager) ensureEngine(ctx context.Context, g Group) {
 		return
 	}
 	e := NewEngine("group", g.ID, EngineDeps{
-		Decoder:    m.deps.Decoder,
-		Runners:    m.deps.Runners,
-		Resolver:   m.deps.Resolver,
-		Budget:     m.deps.Budget,
-		Bus:        m.deps.Bus,
-		Store:      m.deps.Store,
-		Logger:     m.deps.Logger,
-		Clock:      m.deps.Clock,
-		Latency:    m.deps.Latency,
-		Metrics:    m.metrics,
-		ReplayGain: m.deps.ReplayGain,
-		Crossfade:  m.deps.Crossfade,
+		Decoder:         m.deps.Decoder,
+		Runners:         m.deps.Runners,
+		Resolver:        m.deps.Resolver,
+		Budget:          m.deps.Budget,
+		Bus:             m.deps.Bus,
+		Store:           m.deps.Store,
+		Logger:          m.deps.Logger,
+		Clock:           m.deps.Clock,
+		Latency:         m.deps.Latency,
+		Metrics:         m.metrics,
+		ReplayGain:      m.deps.ReplayGain,
+		Crossfade:       m.deps.Crossfade,
+		OnTrackFinished: m.deps.OnTrackFinished,
 	})
 	m.engines[key] = e
 	m.mu.Unlock()
