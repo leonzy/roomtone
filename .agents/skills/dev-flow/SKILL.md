@@ -1,9 +1,9 @@
 ---
 name: dev-flow
-description: 连续处理 Songloft 的 Issue、Bug、功能和优化，完成调查、实现、验证和自审；支持包含子模块的 Issue 排查及经验复盘。提交、推送、发布和 Issue 写操作按用户明确授权执行。
+description: 连续处理 Roomtone 的 Issue、Bug、功能和优化，完成调查、实现、验证和自审；支持包含子模块的 Issue 排查及经验复盘。提交、推送、发布和 Issue 写操作按用户明确授权执行。
 ---
 
-# Songloft Dev Flow
+# Roomtone Dev Flow
 
 用户交办任务后，连续完成调查、方案、实现、验证、自审和交付。阶段记录进度，不逐阶段审批。只有关键缺失信息影响正确性、需要用户决定产品行为或扩大范围时才询问；等待期间继续独立工作。用户指定的停点与已有授权优先。
 

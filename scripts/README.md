@@ -1,6 +1,6 @@
-# Songloft 脚本目录
+# Roomtone 脚本目录
 
-本目录包含 Songloft 后端的版本管理、构建辅助、子模块同步等自动化脚本。多平台二进制构建、Docker 镜像打包、GitHub Release 创建已交由 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 完成。
+本目录包含 Roomtone 后端的版本管理、构建辅助、子模块同步等自动化脚本。多平台二进制构建、Docker 镜像打包、GitHub Release 创建已交由 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 完成。
 
 ## 📋 脚本列表
 

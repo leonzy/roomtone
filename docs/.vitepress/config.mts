@@ -105,7 +105,7 @@ export default async () => {
       ],
 
       footer: {
-        message: '源码基于 <a href="https://github.com/songloft-org/songloft/blob/main/LICENSE">Apache 2.0</a> 协议开源',
+        message: '源码基于 <a href="https://github.com/leonzy/roomtone/blob/main/LICENSE">Apache 2.0</a> 协议开源',
         copyright: `Copyright © 2025-${new Date().getFullYear()} <a href="https://github.com/hanxi">涵曦</a>`,
       },
 

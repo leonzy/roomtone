@@ -1,10 +1,10 @@
-# Songloft Flutter 前端架构说明
+# Roomtone Flutter 前端架构说明
 
-> **独立仓库**: [https://github.com/songloft-org/songloft-player](https://github.com/songloft-org/songloft-player)
+> **独立仓库**: [https://github.com/songloft-org/songloft-player](https://github.com/leonzy/roomtone-player)
 
 本文描述 Flutter 客户端。ReactLynx + TypeScript 的 Lynx 预览客户端支持 Android/iOS/HarmonyOS/Web，详见[客户端选择](clients.md)及 [Lynx 指南](player-lynx/index.md)；它尚无桌面或 Bundle 本地后端，不沿用下面的 Flutter 目录与构建命令。
 
-Songloft Flutter 客户端支持 **Android、iOS、macOS、Windows、Linux、Web** 六个平台。完整版服务器默认嵌入独立的 Lynx Web（`clients/player-lynx`）；旧 Flutter Web 嵌入版仍可显式选择。同时支持 **Bundle 本地模式**：将 Go 后端嵌入 Flutter 客户端（移动端通过 gomobile 原生库，桌面端通过子进程），无需单独部署服务器即可播放本地音乐。
+Roomtone Flutter 客户端支持 **Android、iOS、macOS、Windows、Linux、Web** 六个平台。完整版服务器默认嵌入独立的 Lynx Web（`clients/player-lynx`）；旧 Flutter Web 嵌入版仍可显式选择。同时支持 **Bundle 本地模式**：将 Go 后端嵌入 Flutter 客户端（移动端通过 gomobile 原生库，桌面端通过子进程），无需单独部署服务器即可播放本地音乐。
 
 > 播放器与音箱的交互设计（输出选择器、动态分组、播放转移、派对与每音箱 EQ、本地播放器接管）是独立专题，见[播放与音箱交互设计（前端）](./architecture_playback_ui.md)；后端契约见[播放控制与音箱输出架构](./architecture_playback.md)。
 
@@ -531,7 +531,7 @@ flutter build windows --dart-define=HAS_BACKEND=true  # Windows
 - **Android 路径**：Bundle 模式 CWD 是 `/`，covers 等目录必须相对 `DBPath` 解析，不能按 CWD 解析
 - **原生桥接**：Android 用 `Class.forName("mobile.Mobile")` 反射调用 gomobile 生成类，未打包 `.aar` 时 `isAvailable()` 返回 false（优雅降级）；iOS 用 Swift 调用 `MobileStart` 等 Objective-C 函数
 - **桌面子进程**：`DesktopBackendService` 在 Flutter 可执行文件同目录查找 `songloft-server`（macOS 为 `Contents/Resources/`），并从 stdout 解析实际监听端口
-- **CI 产物**：统一以 `songloft-bundled-` 开头；Android/Linux/Windows 带架构，Apple 为 `songloft-bundled-macos.zip`、`songloft-bundled-ios-nosign.ipa`。4 个并行 Job（Android/Linux/Apple/Windows）失败不阻塞主 Release
+- **CI 产物**：统一以 `roomtone-bundled-` 开头；Android/Linux/Windows 带架构，Apple 为 `roomtone-bundled-macos.zip`、`roomtone-bundled-ios-nosign.ipa`。4 个并行 Job（Android/Linux/Apple/Windows）失败不阻塞主 Release
 
 ## 音频播放架构
 
@@ -603,5 +603,5 @@ make build-go-desktop-macos-arm64  # → clients/player/macos/Runner/songloft-se
 ```
 
 预编译安装包下载:
-- 标准版（需连接服务器）: [https://github.com/songloft-org/songloft-player/releases](https://github.com/songloft-org/songloft-player/releases)
-- Bundle 版（内嵌后端）: [https://github.com/leonzy/roomtone/releases](https://github.com/leonzy/roomtone/releases)（`songloft-bundled-*` 文件）
+- 标准版（需连接服务器）: [https://github.com/leonzy/roomtone-player/releases](https://github.com/leonzy/roomtone-player/releases)
+- Bundle 版（内嵌后端）: [https://github.com/leonzy/roomtone/releases](https://github.com/leonzy/roomtone/releases)（`roomtone-bundled-*` 文件）

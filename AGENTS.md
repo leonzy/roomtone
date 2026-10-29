@@ -60,14 +60,14 @@
 
 ## 项目概述
 
-Songloft 是自托管本地音乐服务器，支持**服务器部署**和 **Bundle 本地模式**（将 Go 后端嵌入客户端，无需单独部署服务器）。多仓库结构：
+Roomtone 是自托管本地音乐服务器，支持**服务器部署**和 **Bundle 本地模式**（将 Go 后端嵌入客户端，无需单独部署服务器）。多仓库结构：
 
 | 目录 | 技术 | 说明 |
 |------|------|------|
 | `/` | Go 1.26 + Chi v5 + SQLite | 后端 API 服务（默认端口 58091，账号 admin/admin） |
 | `/mobile` | Go + gomobile | Go 后端的移动端绑定入口（gomobile bind，导出 Start/Stop/IsRunning/GetPort） |
 | `/clients/player` ([独立仓库](https://github.com/leonzy/roomtone-player)，fork 自 `songloft-org/songloft-player`) | Flutter 3.41+ / Dart 3.7+ | 跨平台前端（6 平台），支持 Bundle 本地模式 |
-| `/clients/player-lynx` ([独立仓库](https://github.com/songloft-org/songloft-player-lynx)) | TS + ReactLynx | Android/iOS/HarmonyOS/Web 预览客户端，独立 main dev 构建与 v* 发版（子模块，无桌面/Bundle） |
+| `/clients/player-lynx` ([独立仓库](https://github.com/leonzy/roomtone-player-lynx)) | TS + ReactLynx | Android/iOS/HarmonyOS/Web 预览客户端，独立 main dev 构建与 v* 发版（子模块，无桌面/Bundle） |
 | `/clients/tv` ([独立仓库](https://github.com/songloft-org/songloft-tv)) | Kotlin | Android TV 客户端（子模块） |
 | `/plugins/toolchain` ([独立仓库](https://github.com/songloft-org/plugin-toolchain)) | TS + pnpm | JS 插件开发工具链（SDK / Builder / 脚手架） |
 | `/plugins/src` | TS | JS 插件源码（子模块集合，各插件在自己仓库分发 release） |

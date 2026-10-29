@@ -56,3 +56,32 @@ func TestCleanInvalidSongsUsesNarrowPathsAndRetainsExistingAudio(t *testing.T) {
 		t.Fatal("cancelled cleanup succeeded")
 	}
 }
+
+func TestCleanupPathMissingRechecksUnlistedFilesAndSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	cache := make(map[string]map[string]struct{})
+	path := filepath.Join(dir, "created-later.flac")
+	if !cleanupPathMissing(path, cache) {
+		t.Fatal("missing path was not detected")
+	}
+	if err := os.WriteFile(path, []byte("present"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if cleanupPathMissing(path, cache) {
+		t.Fatal("stale directory listing marked a newly created file missing")
+	}
+	link := filepath.Join(dir, "link.flac")
+	if err := os.Symlink(path, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	cache = make(map[string]map[string]struct{})
+	if cleanupPathMissing(link, cache) {
+		t.Fatal("valid symlink was marked missing")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if !cleanupPathMissing(link, cache) {
+		t.Fatal("dangling symlink was treated as an existing file")
+	}
+}

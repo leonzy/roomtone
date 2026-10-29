@@ -8,7 +8,7 @@ const zh: Dict = {
   'hero.badge': '自托管 · 开源 · 零用户追踪',
   'hero.title': '你的音乐，你的服务器',
   'hero.subtitle':
-    'Songloft 是面向个人的自托管音乐服务器：数据完全自主、插件化扩展、跨平台客户端，仅管理你合法拥有的音乐。',
+    'Roomtone 是面向个人的自托管音乐服务器：数据完全自主、插件化扩展、跨平台客户端，仅管理你合法拥有的音乐。',
   'hero.cta.primary': '快速开始',
   'hero.cta.secondary': '选择安装方式',
   'hero.cta.github': 'GitHub',
@@ -54,11 +54,11 @@ const zh: Dict = {
   'thirdparty.eyebrow': '社区生态',
   'thirdparty.title': '第三方客户端',
   'thirdparty.subtitle':
-    '以下第三方客户端由社区开发者独立维护，已适配 Songloft 服务端，为你提供更多平台选择。',
+    '以下第三方客户端由社区开发者独立维护，已适配 Roomtone 服务端，为你提供更多平台选择。',
 
   // Compliance
   'compliance.title': '合规与版权',
-  'compliance.intro': 'Songloft 是帮助你管理自己合法拥有音乐的工具，请在使用前了解：',
+  'compliance.intro': 'Roomtone 是帮助你管理自己合法拥有音乐的工具，请在使用前了解：',
   'compliance.i1': '不内置、不分发任何受版权保护的音乐内容',
   'compliance.i2': '请仅管理你合法拥有的音乐（购买 / 自录 / 公有领域 / CC 授权等）',
   'compliance.i3': '第三方插件由社区维护，音源版权责任由使用者自负',
@@ -70,11 +70,11 @@ const zh: Dict = {
   // Free / anti-scam notice
   'notice.badge': '💚 纯为爱发电',
   'notice.title': '永久免费 · 谨防诈骗',
-  'notice.intro': 'Songloft 是完全免费的开源项目，纯粹出于兴趣与热爱开发，与任何商业利益无关。',
+  'notice.intro': 'Roomtone 是完全免费的开源项目，纯粹出于兴趣与热爱开发，与任何商业利益无关。',
   'notice.i1': '✅ 永久免费：没有任何收费功能、内购或会员',
   'notice.i2': '✅ 无广告：不含任何广告或商业推广',
   'notice.i3': '✅ 不接受赞助 / 捐款：官方不设任何收款渠道',
-  'notice.i4': '⚠️ 谨防诈骗：任何以 Songloft 名义收费、售卖、代部署收费或索要赞助的行为，都与本项目无关',
+  'notice.i4': '⚠️ 谨防诈骗：任何以 Roomtone 名义收费、售卖、代部署收费或索要赞助的行为，都与本项目无关',
   'notice.channel': '官方渠道仅有 GitHub 仓库、文档站、官方微信群、Telegram 群与 Telegram 频道；即便在群内，我们也从不向任何人收取任何费用。请勿上当受骗。',
   'notice.github': 'GitHub 仓库',
   'notice.docs': '文档站',
@@ -93,7 +93,7 @@ const en: Dict = {
   'hero.badge': 'Self-hosted · Open source · No user tracking',
   'hero.title': 'Your music, your server',
   'hero.subtitle':
-    'Songloft is a self-hosted music server for individuals: fully own your data, extend with plugins, play everywhere — for music you legally own.',
+    'Roomtone is a self-hosted music server for individuals: fully own your data, extend with plugins, play everywhere — for music you legally own.',
   'hero.cta.primary': 'Get started',
   'hero.cta.secondary': 'Choose install',
   'hero.cta.github': 'GitHub',
@@ -133,10 +133,10 @@ const en: Dict = {
   'thirdparty.eyebrow': 'Community',
   'thirdparty.title': 'Third-party clients',
   'thirdparty.subtitle':
-    'These third-party clients are independently maintained by community developers and support connecting to Songloft servers.',
+    'These third-party clients are independently maintained by community developers and support connecting to Roomtone servers.',
 
   'compliance.title': 'Compliance & copyright',
-  'compliance.intro': 'Songloft helps you manage music you legally own. Before using it, please note:',
+  'compliance.intro': 'Roomtone helps you manage music you legally own. Before using it, please note:',
   'compliance.i1': 'It ships and distributes no copyrighted music content',
   'compliance.i2': 'Manage only music you legally own (purchased / self-recorded / public domain / CC)',
   'compliance.i3': 'Third-party plugins are community-maintained; source copyright is the user’s responsibility',
@@ -147,11 +147,11 @@ const en: Dict = {
 
   'notice.badge': '💚 A labor of love',
   'notice.title': 'Free forever · Beware of scams',
-  'notice.intro': 'Songloft is a fully free, open-source project built purely out of passion — with no commercial interest whatsoever.',
+  'notice.intro': 'Roomtone is a fully free, open-source project built purely out of passion — with no commercial interest whatsoever.',
   'notice.i1': '✅ Free forever: no paid features, in-app purchases, or subscriptions',
   'notice.i2': '✅ No ads: no advertising or commercial promotion of any kind',
   'notice.i3': '✅ No sponsorship / donations: there is no payment channel at all',
-  'notice.i4': '⚠️ Beware of scams: anyone charging fees, selling copies, offering paid deployment, or soliciting donations in Songloft’s name is unrelated to this project',
+  'notice.i4': '⚠️ Beware of scams: anyone charging fees, selling copies, offering paid deployment, or soliciting donations in Roomtone’s name is unrelated to this project',
   'notice.channel': 'The only official channels are the GitHub repository, the docs site, the official WeChat group, the Telegram group, and the Telegram channel; we never charge anyone, not even inside the group. Please stay alert to scams.',
   'notice.github': 'GitHub repo',
   'notice.docs': 'Docs site',

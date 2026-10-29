@@ -1,10 +1,10 @@
-# Songloft Flutter Frontend Architecture
+# Roomtone Flutter Frontend Architecture
 
-> **Standalone repository**: [https://github.com/songloft-org/songloft-player](https://github.com/songloft-org/songloft-player)
+> **Standalone repository**: [https://github.com/songloft-org/songloft-player](https://github.com/leonzy/roomtone-player)
 
 This page describes Flutter. The ReactLynx + TypeScript preview client supports Android/iOS/HarmonyOS/Web; see [client selection](clients.md) and [Lynx guides](player-lynx/index.md). It has no desktop or bundled local backend and does not use the Flutter layout or build commands below.
 
-The Songloft Flutter client supports six platforms: **Android, iOS, macOS, Windows, Linux, and Web**. The full server defaults to the separate Lynx Web client (`clients/player-lynx`); legacy embedded Flutter Web remains an explicit option. Flutter also supports **Bundle local mode**: embedding the Go backend into the client (as a native library via gomobile on mobile, and as a subprocess on desktop), so users can play local music without deploying a separate server.
+The Roomtone Flutter client supports six platforms: **Android, iOS, macOS, Windows, Linux, and Web**. The full server defaults to the separate Lynx Web client (`clients/player-lynx`); legacy embedded Flutter Web remains an explicit option. Flutter also supports **Bundle local mode**: embedding the Go backend into the client (as a native library via gomobile on mobile, and as a subprocess on desktop), so users can play local music without deploying a separate server.
 
 > Player/speaker interaction design (output picker, dynamic grouping, playback transfer, party and per-speaker EQ, local player takeover) is a separate topic: see [Playback and Speaker Interaction Design (Frontend)](./architecture_playback_ui.md). The backend contract lives in [Playback Control and Speaker Output Architecture](./architecture_playback.md).
 
@@ -531,7 +531,7 @@ flutter build windows --dart-define=HAS_BACKEND=true  # Windows
 - **Android paths**: in Bundle mode the CWD is `/`, so directories such as covers must resolve relative to `DBPath`, not the CWD
 - **Native bridging**: Android calls the gomobile-generated classes by reflection via `Class.forName("mobile.Mobile")`; when the `.aar` is not bundled, `isAvailable()` returns false (graceful degradation). iOS uses Swift to call Objective-C functions such as `MobileStart`
 - **Desktop subprocess**: `DesktopBackendService` looks for `songloft-server` in the same directory as the Flutter executable (on macOS, `Contents/Resources/`) and parses the actual listening port from stdout
-- **CI artifacts**: all start with `songloft-bundled-`; Android/Linux/Windows include the architecture, while Apple uses `songloft-bundled-macos.zip` and `songloft-bundled-ios-nosign.ipa`. The 4 parallel jobs (Android/Linux/Apple/Windows) do not block the main release on failure
+- **CI artifacts**: all start with `roomtone-bundled-`; Android/Linux/Windows include the architecture, while Apple uses `roomtone-bundled-macos.zip` and `roomtone-bundled-ios-nosign.ipa`. The 4 parallel jobs (Android/Linux/Apple/Windows) do not block the main release on failure
 
 ## Audio Playback Architecture
 
@@ -603,5 +603,5 @@ make build-go-desktop-macos-arm64  # → clients/player/macos/Runner/songloft-se
 ```
 
 Prebuilt installer downloads:
-- Standard edition (requires connecting to a server): [https://github.com/songloft-org/songloft-player/releases](https://github.com/songloft-org/songloft-player/releases)
-- Bundle edition (backend embedded): [https://github.com/leonzy/roomtone/releases](https://github.com/leonzy/roomtone/releases) (`songloft-bundled-*` files)
+- Standard edition (requires connecting to a server): [https://github.com/leonzy/roomtone-player/releases](https://github.com/leonzy/roomtone-player/releases)
+- Bundle edition (backend embedded): [https://github.com/leonzy/roomtone/releases](https://github.com/leonzy/roomtone/releases) (`roomtone-bundled-*` files)

@@ -23,8 +23,8 @@ const REPO_BLOB_BASE = 'https://github.com/leonzy/roomtone/blob/main';
 // 并【剥掉前缀】——子模块内部路径不含它。
 const SUBMODULE_BLOB_BASES = [
   { prefix: 'integrations/home-assistant/', base: 'https://github.com/songloft-org/home-assistant-addon/blob/main' },
-  { prefix: 'clients/player/', base: 'https://github.com/songloft-org/songloft-player/blob/main' },
-  { prefix: 'clients/player-lynx/', base: 'https://github.com/songloft-org/songloft-player-lynx/blob/main' },
+  { prefix: 'clients/player/', base: 'https://github.com/leonzy/roomtone-player/blob/main' },
+  { prefix: 'clients/player-lynx/', base: 'https://github.com/leonzy/roomtone-player-lynx/blob/main' },
   { prefix: 'plugins/toolchain/', base: 'https://github.com/songloft-org/plugin-toolchain/blob/main' },
 ];
 

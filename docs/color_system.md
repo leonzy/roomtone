@@ -1,6 +1,6 @@
-# Songloft 颜色系统规范
+# Roomtone 颜色系统规范
 
-本文档说明 Songloft 项目中使用的颜色体系及其使用规范。
+本文档说明 Roomtone 项目中使用的颜色体系及其使用规范。
 
 ## 📚 目录
 
@@ -14,7 +14,7 @@
 
 ## Flutter Material 3 颜色体系
 
-Songloft Flutter 前端使用 **Material 3** 设计系统，通过 `ColorScheme.fromSeed` 自动生成完整的颜色方案。
+Roomtone Flutter 前端使用 **Material 3** 设计系统，通过 `ColorScheme.fromSeed` 自动生成完整的颜色方案。
 
 ### 核心配置
 
@@ -70,7 +70,7 @@ class AppTheme {
 
 ### 主题模式
 
-Songloft 支持三种主题模式：
+Roomtone 支持三种主题模式：
 
 - **亮色模式**：明亮的界面风格
 - **暗色模式**：护眼的暗色界面
@@ -116,7 +116,7 @@ ThemeData(
 
 ## 主题包系统
 
-Songloft 支持通过 `.songloft-theme` 主题包自定义应用的配色和视觉样式。主题模式（亮色/暗色/跟随系统）和主题包相互独立——一个主题包同时定义亮色和暗色两套配色。
+Roomtone 支持通过 `.songloft-theme` 主题包自定义应用的配色和视觉样式。主题模式（亮色/暗色/跟随系统）和主题包相互独立——一个主题包同时定义亮色和暗色两套配色。
 
 ### SongloftThemeExtension
 
@@ -270,7 +270,7 @@ Text('文本', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVa
 
 ## 封面颜色提取
 
-Songloft 使用 `palette_generator` 库从歌曲封面图片中提取主色调，用于播放器界面的动态配色：
+Roomtone 使用 `palette_generator` 库从歌曲封面图片中提取主色调，用于播放器界面的动态配色：
 
 ```dart
 // clients/player/lib/core/utils/color_extraction.dart

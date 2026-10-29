@@ -168,7 +168,7 @@ jobs:
       - name: Install FFmpeg for media integration tests
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          sudo apt-get install -y --no-install-recommends ffmpeg libchromaprint-tools
           ffmpeg -version
           ffprobe -version
       - name: Check Go formatting without rewriting files
@@ -787,9 +787,9 @@ jobs:
       - name: Collect APKs
         run: |
           cd clients/player
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "$GITHUB_WORKSPACE/songloft-bundled-android-arm64-v8a.apk"
-          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "$GITHUB_WORKSPACE/songloft-bundled-android-armeabi-v7a.apk"
-          cp build/app/outputs/flutter-apk/app-x86_64-release.apk "$GITHUB_WORKSPACE/songloft-bundled-android-x86_64.apk"
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "$GITHUB_WORKSPACE/roomtone-bundled-android-arm64-v8a.apk"
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "$GITHUB_WORKSPACE/roomtone-bundled-android-armeabi-v7a.apk"
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk "$GITHUB_WORKSPACE/roomtone-bundled-android-x86_64.apk"
 
       # 无基线热更:每次发版自动产出本渠道最新的前端补丁(libapp.so)+ 后端补丁
       # (libgojni.so),随 release 上传;客户端查本渠道最新即更新。覆盖 arm64-v8a/
@@ -892,7 +892,7 @@ jobs:
         with:
           name: bundled-android
           path: |
-            songloft-bundled-android-*.apk
+            roomtone-bundled-android-*.apk
             manifest-*.json
             patch-*.zip
             backend-manifest-*.json
@@ -974,13 +974,13 @@ jobs:
       - name: Package tar.gz
         run: |
           cd clients/player/build/linux/x64/release/bundle
-          tar czf "$GITHUB_WORKSPACE/songloft-bundled-linux-x64.tar.gz" .
+          tar czf "$GITHUB_WORKSPACE/roomtone-bundled-linux-x64.tar.gz" .
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: bundled-linux
-          path: songloft-bundled-linux-x64.tar.gz
+          path: roomtone-bundled-linux-x64.tar.gz
           retention-days: 1
 
   build-bundled-apple:
@@ -1069,7 +1069,7 @@ jobs:
           cd clients/player/build/macos/Build/Products/Release
           app_dir=$(find . -maxdepth 1 -name "*.app" -type d -print -quit)
           test -n "$app_dir"
-          ditto -c -k --sequesterRsrc --keepParent "${app_dir#./}" "$GITHUB_WORKSPACE/songloft-bundled-macos.zip"
+          ditto -c -k --sequesterRsrc --keepParent "${app_dir#./}" "$GITHUB_WORKSPACE/roomtone-bundled-macos.zip"
 
       - name: Build Flutter iOS with embedded backend (no codesign)
         run: |
@@ -1087,7 +1087,7 @@ jobs:
           nm build/ios/iphoneos/Runner.app/Runner | grep -q 'MobileStart'
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r -y "$GITHUB_WORKSPACE/songloft-bundled-ios-nosign.ipa" Payload
+          zip -r -y "$GITHUB_WORKSPACE/roomtone-bundled-ios-nosign.ipa" Payload
           rm -rf Payload
 
       - name: Upload artifacts
@@ -1095,8 +1095,8 @@ jobs:
         with:
           name: bundled-apple
           path: |
-            songloft-bundled-macos.zip
-            songloft-bundled-ios-nosign.ipa
+            roomtone-bundled-macos.zip
+            roomtone-bundled-ios-nosign.ipa
           retention-days: 1
 
   build-bundled-windows:
@@ -1169,13 +1169,13 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item clients/player\build\native-webview-tests\Release\webview_hit_test.exe -Destination clients/player\build\windows\x64\runner\Release\ -ErrorAction Stop
-          Compress-Archive -Path clients/player\build\windows\x64\runner\Release\* -DestinationPath songloft-bundled-windows-x64.zip
+          Compress-Archive -Path clients/player\build\windows\x64\runner\Release\* -DestinationPath roomtone-bundled-windows-x64.zip
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: bundled-windows
-          path: songloft-bundled-windows-x64.zip
+          path: roomtone-bundled-windows-x64.zip
           retention-days: 1
 
   # ============================================================

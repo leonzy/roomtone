@@ -1,6 +1,6 @@
 # Playback Control and Speaker Output Architecture (Architecture and Implementation)
 
-> **Status (after the 2026-10-25 acceptance).** This document describes how Songloft extends from a "client-authoritative media server" into one that owns playback state and pushes audio to speakers on the local network.
+> **Status (after the 2026-10-25 acceptance).** This document describes how Roomtone extends from a "client-authoritative media server" into one that owns playback state and pushes audio to speakers on the local network.
 >
 > Implementation progress: **M0–M8 are all implemented** (queue/state machine, decode pipeline, `local`/`raop`/`dlna` sinks, device discovery, sync groups and the correction loop, per-speaker EQ, party mode, observability). Per-item acceptance assertions live in the [development plan](./playback_development_plan.md); **real-device items (G1 matrix, G2 dual-device cross-correlation, G3 listening, G4 party) are all `Not run`**.
 >

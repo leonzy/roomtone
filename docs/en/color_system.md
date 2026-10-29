@@ -1,6 +1,6 @@
-# Songloft Color System Guide
+# Roomtone Color System Guide
 
-This document explains the color system used in the Songloft project and the guidelines for using it.
+This document explains the color system used in the Roomtone project and the guidelines for using it.
 
 ## 📚 Table of Contents
 
@@ -14,7 +14,7 @@ This document explains the color system used in the Songloft project and the gui
 
 ## Flutter Material 3 Color System
 
-The Songloft Flutter frontend uses the **Material 3** design system, generating a complete color scheme automatically via `ColorScheme.fromSeed`.
+The Roomtone Flutter frontend uses the **Material 3** design system, generating a complete color scheme automatically via `ColorScheme.fromSeed`.
 
 ### Core Configuration
 
@@ -70,7 +70,7 @@ When a `themePack` is provided, the seedColor is replaced by the one defined in 
 
 ### Theme Modes
 
-Songloft supports three theme modes:
+Roomtone supports three theme modes:
 
 - **Light mode**: A bright interface style
 - **Dark mode**: An eye-friendly dark interface
@@ -116,7 +116,7 @@ ThemeData(
 
 ## Theme Pack System
 
-Songloft supports customizing the app’s color scheme and visual style via `.songloft-theme` theme packs. Theme mode (light/dark/system) and theme packs are independent — one theme pack defines both light and dark color schemes.
+Roomtone supports customizing the app’s color scheme and visual style via `.songloft-theme` theme packs. Theme mode (light/dark/system) and theme packs are independent — one theme pack defines both light and dark color schemes.
 
 ### SongloftThemeExtension
 
@@ -270,7 +270,7 @@ The theme dynamically adjusts component sizes based on screen type (Mobile / Tab
 
 ## Cover Color Extraction
 
-Songloft uses the `palette_generator` library to extract dominant colors from song cover images, used for dynamic coloring of the player interface:
+Roomtone uses the `palette_generator` library to extract dominant colors from song cover images, used for dynamic coloring of the player interface:
 
 ```dart
 // clients/player/lib/core/utils/color_extraction.dart

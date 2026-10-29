@@ -1,6 +1,6 @@
-# Songloft 项目架构说明
+# Roomtone 项目架构说明
 
-Songloft 是一个自托管的本地音乐服务器，采用前后端分离架构。支持两种运行模式：**服务器模式**（独立部署 Go 后端）和 **Bundle 本地模式**（Go 后端嵌入 Flutter 客户端，无需单独部署服务器）。
+Roomtone 是一个自托管的本地音乐服务器，采用前后端分离架构。支持两种运行模式：**服务器模式**（独立部署 Go 后端）和 **Bundle 本地模式**（Go 后端嵌入 Flutter 客户端，无需单独部署服务器）。
 
 服务器模式支持 Flutter、ReactLynx、官方 Electron Desktop 与 Android TV 客户端。Lynx 目前为 Android/iOS/HarmonyOS/Web 预览版，无桌面或 Bundle 模式；下方的客户端架构图描述默认 Flutter 方案。
 

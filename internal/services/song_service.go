@@ -1351,6 +1351,7 @@ func (s *SongService) CleanInvalidSongs(ctx context.Context) (*CleanResult, erro
 
 	result := &CleanResult{}
 	var toDelete []int64
+	directories := make(map[string]map[string]struct{})
 	for _, song := range songs {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -1360,7 +1361,7 @@ func (s *SongService) CleanInvalidSongs(ctx context.Context) (*CleanResult, erro
 		reason := ""
 
 		scanner := s.scanner.Load()
-		if _, err := os.Stat(song.FilePath); os.IsNotExist(err) {
+		if cleanupPathMissing(song.FilePath, directories) {
 			shouldClean = true
 			reason = "file_not_found"
 			result.FileNotFound++
@@ -1389,6 +1390,30 @@ func (s *SongService) CleanInvalidSongs(ctx context.Context) (*CleanResult, erro
 
 	result.Total = result.FileNotFound + result.InExcludedDir
 	return result, nil
+}
+
+// Directory entries prove presence without a stat per song. Missing names and
+// symlinks still require Stat, so a file created after ReadDir is never deleted
+// merely because it was absent from the request-local directory snapshot.
+func cleanupPathMissing(path string, directories map[string]map[string]struct{}) bool {
+	parent := filepath.Dir(path)
+	names, seen := directories[parent]
+	if !seen {
+		if entries, err := os.ReadDir(parent); err == nil {
+			names = make(map[string]struct{}, len(entries))
+			for _, entry := range entries {
+				if entry.Type()&os.ModeSymlink == 0 {
+					names[entry.Name()] = struct{}{}
+				}
+			}
+		}
+		directories[parent] = names
+	}
+	if _, present := names[filepath.Base(path)]; present {
+		return false
+	}
+	_, err := os.Stat(path)
+	return os.IsNotExist(err)
 }
 
 // UpdateLyrics 更新歌曲歌词，并在条件满足时把主歌词回写到本地音频文件。

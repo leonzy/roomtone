@@ -1,4 +1,4 @@
-# Songloft Backend Architecture
+# Roomtone Backend Architecture
 
 ## Tech Stack
 

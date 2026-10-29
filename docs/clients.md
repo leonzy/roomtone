@@ -1,6 +1,6 @@
 # 客户端选择
 
-Songloft 提供 Flutter、Lynx、Electron 桌面与 TV 客户端，均连接同一后端；发布包和能力范围分别维护。
+Roomtone 提供 Flutter、Lynx、Electron 桌面与 TV 客户端，均连接同一后端；发布包和能力范围分别维护。
 
 | 项目 | Flutter | Lynx（预览版） | Songloft Desktop | Songloft TV |
 | --- | --- | --- | --- | --- |
@@ -14,9 +14,9 @@ Songloft 提供 Flutter、Lynx、Electron 桌面与 TV 客户端，均连接同�
 
 ## Flutter
 
-- [标准版下载](https://github.com/songloft-org/songloft-player/releases/latest)：连接独立服务器。
-- [Bundle 下载](https://github.com/leonzy/roomtone/releases/latest)：选择 `songloft-bundled-*` 文件。
-- [架构](player/architecture.md) · [构建](player/build_guide.md) · [源码](https://github.com/songloft-org/songloft-player)。
+- [标准版下载](https://github.com/leonzy/roomtone-player/releases/latest)：连接独立服务器。
+- [Bundle 下载](https://github.com/leonzy/roomtone/releases/latest)：选择 `roomtone-bundled-*` 文件。
+- [架构](player/architecture.md) · [构建](player/build_guide.md) · [源码](https://github.com/leonzy/roomtone-player)。
 
 后端完整镜像与二进制默认嵌入 Lynx Web。Flutter 原生客户端与独立 Web 保留；旧 Flutter 嵌入版可通过 `make build-frontend-flutter-web-embedded` 显式构建。
 
@@ -24,16 +24,16 @@ Songloft 提供 Flutter、Lynx、Electron 桌面与 TV 客户端，均连接同�
 
 底层技术：[Lynx 官网](https://lynxjs.org/) · [ReactLynx 官方文档](https://lynxjs.org/react/)。
 
-- [开发版下载](https://github.com/songloft-org/songloft-player-lynx/releases/tag/dev)：main 代码推送后构建，五个包全部成功才更新。
-- [正式版本](https://github.com/songloft-org/songloft-player-lynx/releases/latest)：版本 tag 触发；首次成功发布前可能没有正式包。
+- [开发版下载](https://github.com/leonzy/roomtone-player-lynx/releases/tag/dev)：main 代码推送后构建，五个包全部成功才更新。
+- [正式版本](https://github.com/leonzy/roomtone-player-lynx/releases/latest)：版本 tag 触发；首次成功发布前可能没有正式包。
 - [客户端概览](player-lynx/index.md) · [安装](player-lynx/installation.md) · [构建](player-lynx/build-and-run.md) · [测试](player-lynx/testing.md) · [发版](player-lynx/releasing.md) · [贡献](player-lynx/contributing.md)。
 
 | 平台                     | 产物                                             | 使用边界                                                |
 | ------------------------ | ------------------------------------------------ | ------------------------------------------------------- |
-| Android 5.0+             | `songloft-lynx-android.apk`                      | release 签名，覆盖升级需相同签名与较新构建号            |
-| iOS 15+                  | `songloft-lynx-ios-nosign.ipa`                   | 未签名，安装前需自行重签；Live Activity 需 iOS 16.2+    |
-| HarmonyOS NEXT / API 13+ | `songloft-lynx-harmony.hap`                      | 实验性；签名 profile 决定可安装设备范围，全屏视频未实现 |
-| Web                      | `songloft-lynx-web-{standalone,embedded}.tar.gz` | 当前核心流程支持普通 HTTP；HTTPS 用于剪贴板和常亮等能力，无 Bundle、DLNA 或单曲离线缓存 |
+| Android 5.0+             | `roomtone-lynx-android.apk`                      | release 签名，覆盖升级需相同签名与较新构建号            |
+| iOS 15+                  | `roomtone-lynx-ios-nosign.ipa`                   | 未签名，安装前需自行重签；Live Activity 需 iOS 16.2+    |
+| HarmonyOS NEXT / API 13+ | `roomtone-lynx-harmony.hap`                      | 实验性；签名 profile 决定可安装设备范围，全屏视频未实现 |
+| Web                      | `roomtone-lynx-web-{standalone,embedded}.tar.gz` | 当前核心流程支持普通 HTTP；HTTPS 用于剪贴板和常亮等能力，无 Bundle、DLNA 或单曲离线缓存 |
 
 每个 Release 同时提供 `version.json` 与 `checksums.txt`。dev 下载包同样是 Release 构建，不开放 TCP/E2E 测试桥。
 
@@ -46,7 +46,7 @@ Web standalone 显示服务器地址输入；embedded 使用同源服务器并�
 - [下载与安装包](https://github.com/songloft-org/songloft-desktop/releases/latest)：各平台安装方式以仓库说明和 Release 产物为准。
 - [项目说明与源码](https://github.com/songloft-org/songloft-desktop) · [问题反馈](https://github.com/songloft-org/songloft-desktop/issues)。
 
-## Songloft TV（TV / 大屏客户端）
+## Roomtone TV（TV / 大屏客户端）
 
 [Songloft TV](https://github.com/songloft-org/songloft-tv) 使用 Kotlin + Jetpack Compose for TV，支持 Android 5.0（API 21）及以上的电视、盒子及横屏大屏设备。需连接已有的 Songloft 服务端，不含 Bundle 本地后端。
 

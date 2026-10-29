@@ -110,7 +110,7 @@ func extractFingerprintWithTools(ctx context.Context, filePath string, startSeco
 	ctx, cancel := context.WithTimeout(ctx, fingerprintTimeout)
 	defer cancel()
 
-	args := make([]string, 0, 12)
+	args := []string{"-hide_banner", "-nostdin"}
 	if startSeconds > 0 {
 		args = append(args, "-ss", strconv.FormatFloat(startSeconds, 'f', 3, 64))
 	}

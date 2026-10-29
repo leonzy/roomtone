@@ -1,6 +1,6 @@
 # Plugin Registry Authoring Guide
 
-This document explains how to create and publish a Songloft plugin registry, so that other users can subscribe to your registry URL and browse and install your plugins from the in-app "Plugin Store".
+This document explains how to create and publish a Roomtone plugin registry, so that other users can subscribe to your registry URL and browse and install your plugins from the in-app "Plugin Store".
 
 ---
 
@@ -220,11 +220,11 @@ Flutter and Lynx fetch registries, recursive `includes` and plugin metadata from
 
 If refresh finds the selected source removed or disabled, it falls back to all enabled sources. Valid empty catalogs replace the old cache, so later searches do not resurrect deleted entries. After installing an early result, a later higher version still offers an update.
 
-Source settings and installed plugins still come from Songloft; installation and updates still run on the server. Web falls back to the existing server reader on CORS or connection failures. Native clients retain successful entries and report failed requests as warnings. The first result can usually appear earlier, while total time depends on client connectivity, source responses and whether Web needs fallback.
+Source settings and installed plugins still come from Roomtone; installation and updates still run on the server. Web falls back to the existing server reader on CORS or connection failures. Native clients retain successful entries and report failed requests as warnings. The first result can usually appear earlier, while total time depends on client connectivity, source responses and whether Web needs fallback.
 
 ## GitHub Discovery Token
 
-Flutter and Lynx provide a GitHub Token entry at the top of the GitHub discovery page, with save, replace, and clear actions. The token is stored on the connected Songloft server and read when the client enters the page or explicitly refreshes it. Discovery requests still originate from the client.
+Flutter and Lynx provide a GitHub Token entry at the top of the GitHub discovery page, with save, replace, and clear actions. The token is stored on the connected Roomtone server and read when the client enters the page or explicitly refreshes it. Discovery requests still originate from the client.
 
 - Settings endpoint: authenticated clients read and write `{ "token": "..." }` through `GET/PUT /api/v1/settings/github-discovery-token`. An unset token is empty; PUT with an empty string clears it. Responses must not be cached.
 - With a token, search and Release queries connect directly to `https://api.github.com` and authenticate through the Authorization header. Neither GitHub acceleration proxies nor public plugin metadata requests receive this token. Failed authenticated requests do not fall back to an acceleration proxy.

@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/social-preview.png" alt="Songloft" width="640">
+  <img src="https://raw.githubusercontent.com/leonzy/roomtone/main/docs/public/social-preview.png" alt="Roomtone" width="640">
 </p>
 
 [![GitHub License](https://img.shields.io/github/license/leonzy/roomtone)](https://github.com/leonzy/roomtone)
@@ -26,7 +26,7 @@
 <p align="center">
   <a href="https://github.com/leonzy/roomtone">🏠 GitHub</a> •
   <a href="https://github.com/leonzy/roomtone/releases">📥 下载</a> •
-  <a href="https://songloft.hanxi.cc">📖 文档</a> •
+  <a href="https://leonzy.github.io/roomtone">📖 文档</a> •
   <a href="https://github.com/leonzy/roomtone/issues">💬 问题反馈</a> •
   <a href="https://github.com/songloft-org/songloft/issues/2">👥 上游微信群</a> •
   <a href="https://t.me/songloft_dev">💬 上游 Telegram 群</a> •
@@ -36,7 +36,7 @@
 
 > ### 💚 纯为爱发电 · 谨防诈骗
 >
-> Songloft 是**完全免费**的开源项目，纯粹出于兴趣与热爱开发，与任何商业利益无关：
+> Roomtone 是**完全免费**的开源项目，纯粹出于兴趣与热爱开发，与任何商业利益无关：
 >
 > - ✅ **永久免费** —— 没有任何收费功能、内购或会员
 > - ✅ **无广告** —— 不含任何广告或商业推广
@@ -74,10 +74,10 @@
 
 ## ⚖️ 版权与免责声明
 
-Songloft 是一款**面向个人用户的自托管工具**，定位为帮助用户管理自己合法拥有的音乐文件。在使用本项目前，请务必阅读并理解以下条款：
+Roomtone 是一款**面向个人用户的自托管工具**，定位为帮助用户管理自己合法拥有的音乐文件。在使用本项目前，请务必阅读并理解以下条款：
 
 - 🚫 **不提供任何音乐内容** — Songloft 本身不内置、不分发、不存储任何受版权保护的音乐资源，仅是一个供你管理本地音乐库的开源软件
-- ✅ **请仅管理合法来源的音乐** — 用户应仅使用 Songloft 管理自己合法获得的音乐文件，包括但不限于：
+- ✅ **请仅管理合法来源的音乐** — 用户应仅使用 Roomtone 管理自己合法获得的音乐文件，包括但不限于：
   - 自行购买并下载的数字音乐
   - 从实体唱片转录的个人备份
   - 自己创作或录制的作品
@@ -87,14 +87,14 @@ Songloft 是一款**面向个人用户的自托管工具**，定位为帮助用�
 - 🏠 **仅供个人非商业使用** — 严禁将本项目用于商业用途、对外公开分发版权内容，或搭建面向不特定多数人的公共服务
 - ⚠️ **责任自担** — 因不当使用本项目（包括但不限于侵犯第三方版权）所引发的任何法律责任、纠纷或损失，均由使用者本人承担，本项目作者及贡献者不承担任何责任
 - 📩 **侵权举报** — 如果你是版权持有人，认为本项目代码、文档或官方分发的插件侵犯了你的合法权益，请通过本仓库 [GitHub Issues](https://github.com/leonzy/roomtone/issues) 联系本 fork 维护者（上游代码本身的问题也可反馈给上游作者 im.hanxi@gmail.com），我们将在核实后及时处理。对于第三方社区插件的侵权问题，请直接联系该插件的维护者
-- ™️ **商标声明** — 本项目及内置插件中提到的所有品牌、协议、产品名称（包括但不限于「MIoT」「Bluetooth」「Android」「iOS」「macOS」「Windows」「Docker」等）均归各自商标权人所有。相关名称的出现仅出于互操作和指示性合理使用目的，**Songloft 与上述商标持有人无任何关联，也未获得任何形式的授权或背书**。详见 [NOTICE](./NOTICE)
+- ™️ **商标声明** — 本项目及内置插件中提到的所有品牌、协议、产品名称（包括但不限于「MIoT」「Bluetooth」「Android」「iOS」「macOS」「Windows」「Docker」等）均归各自商标权人所有。相关名称的出现仅出于互操作和指示性合理使用目的，**Roomtone 与上述商标持有人无任何关联，也未获得任何形式的授权或背书**。详见 [NOTICE](./NOTICE)
 - 🔒 **隐私** — 不采集任何用户数据；官方构建仅上报匿名运行统计（版本号、崩溃栈），自编译版本零遥测。详见 [PRIVACY.md](./PRIVACY.md)
 
 > 💡 我们尊重并支持知识产权保护。如果你喜欢某位艺术家的作品，请通过正版渠道购买或订阅以支持创作者。
 
 ## 📋 版本说明
 
-Songloft 提供三种版本，满足不同使用场景：
+Roomtone 提供三种版本，满足不同使用场景：
 
 | 版本 | 后缀 | 说明 | 适用场景 |
 |------|------|------|----------|
@@ -115,13 +115,13 @@ Songloft 提供三种版本，满足不同使用场景：
 
 | 平台 | 架构 | 下载链接 |
 |------|------|--------|
-| 🐧 Linux | x86_64 | [roomtone-linux-amd64](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-amd64) |
-| 🐧 Linux | ARM64 | [roomtone-linux-arm64](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-arm64) |
-| 🐧 Linux | ARMv7 | [roomtone-linux-armv7](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-armv7) |
-| 🍎 macOS | x86_64 (Intel) | [roomtone-darwin-amd64](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-darwin-amd64) |
-| 🍎 macOS | ARM64 (Apple Silicon) | [roomtone-darwin-arm64](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-darwin-arm64) |
-| 🪟 Windows | x86_64 | [roomtone-windows-amd64.exe](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-windows-amd64.exe) |
-| 🪟 Windows | ARM64 | [roomtone-windows-arm64.exe](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-windows-arm64.exe) |
+| 🐧 Linux | x86_64 | [roomtone-linux-amd64](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-linux-amd64) |
+| 🐧 Linux | ARM64 | [roomtone-linux-arm64](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-linux-arm64) |
+| 🐧 Linux | ARMv7 | [roomtone-linux-armv7](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-linux-armv7) |
+| 🍎 macOS | x86_64 (Intel) | [roomtone-darwin-amd64](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-darwin-amd64) |
+| 🍎 macOS | ARM64 (Apple Silicon) | [roomtone-darwin-arm64](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-darwin-arm64) |
+| 🪟 Windows | x86_64 | [roomtone-windows-amd64.exe](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-windows-amd64.exe) |
+| 🪟 Windows | ARM64 | [roomtone-windows-arm64.exe](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-windows-arm64.exe) |
 
 #### 📦 精简版（Lite）
 
@@ -129,13 +129,13 @@ Songloft 提供三种版本，满足不同使用场景：
 
 | 平台 | 架构 | 下载链接 |
 |------|------|--------|
-| 🐧 Linux | x86_64 | [roomtone-linux-amd64-lite](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-amd64-lite) |
-| 🐧 Linux | ARM64 | [roomtone-linux-arm64-lite](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-arm64-lite) |
-| 🐧 Linux | ARMv7 | [roomtone-linux-armv7-lite](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-armv7-lite) |
-| 🍎 macOS | x86_64 (Intel) | [roomtone-darwin-amd64-lite](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-darwin-amd64-lite) |
-| 🍎 macOS | ARM64 (Apple Silicon) | [roomtone-darwin-arm64-lite](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-darwin-arm64-lite) |
-| 🪟 Windows | x86_64 | [roomtone-windows-amd64-lite.exe](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-windows-amd64-lite.exe) |
-| 🪟 Windows | ARM64 | [roomtone-windows-arm64-lite.exe](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-windows-arm64-lite.exe) |
+| 🐧 Linux | x86_64 | [roomtone-linux-amd64-lite](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-linux-amd64-lite) |
+| 🐧 Linux | ARM64 | [roomtone-linux-arm64-lite](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-linux-arm64-lite) |
+| 🐧 Linux | ARMv7 | [roomtone-linux-armv7-lite](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-linux-armv7-lite) |
+| 🍎 macOS | x86_64 (Intel) | [roomtone-darwin-amd64-lite](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-darwin-amd64-lite) |
+| 🍎 macOS | ARM64 (Apple Silicon) | [roomtone-darwin-arm64-lite](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-darwin-arm64-lite) |
+| 🪟 Windows | x86_64 | [roomtone-windows-amd64-lite.exe](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-windows-amd64-lite.exe) |
+| 🪟 Windows | ARM64 | [roomtone-windows-arm64-lite.exe](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-windows-arm64-lite.exe) |
 
 #### 📱 Bundle 版（内嵌后端，无需服务器）
 
@@ -143,11 +143,11 @@ Songloft 提供三种版本，满足不同使用场景：
 
 | 平台 | 架构 | 下载链接 |
 |------|------|--------|
-| 🤖 Android | ARM64 + ARMv7 | [songloft-bundled-android-arm64-v8a.apk](https://github.com/leonzy/roomtone/releases/latest/download/songloft-bundled-android-arm64-v8a.apk) |
-| 🐧 Linux | x86_64 | [songloft-bundled-linux-x64.tar.gz](https://github.com/leonzy/roomtone/releases/latest/download/songloft-bundled-linux-x64.tar.gz) |
-| 🍎 macOS | ARM64 (Apple Silicon) | [songloft-bundled-macos-arm64.dmg](https://github.com/leonzy/roomtone/releases/latest/download/songloft-bundled-macos-arm64.dmg) |
-| 🪟 Windows | x86_64 | [songloft-bundled-windows-x64.zip](https://github.com/leonzy/roomtone/releases/latest/download/songloft-bundled-windows-x64.zip) |
-| 🍎 iOS | ARM64 | [songloft-bundled-ios-arm64.ipa](https://github.com/leonzy/roomtone/releases/latest/download/songloft-bundled-ios-arm64.ipa) |
+| 🤖 Android | ARM64 + ARMv7 | [roomtone-bundled-android-arm64-v8a.apk](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-bundled-android-arm64-v8a.apk) |
+| 🐧 Linux | x86_64 | [roomtone-bundled-linux-x64.tar.gz](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-bundled-linux-x64.tar.gz) |
+| 🍎 macOS | ARM64 (Apple Silicon) | [roomtone-bundled-macos-arm64.dmg](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-bundled-macos-arm64.dmg) |
+| 🪟 Windows | x86_64 | [roomtone-bundled-windows-x64.zip](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-bundled-windows-x64.zip) |
+| 🍎 iOS | ARM64 | [roomtone-bundled-ios-arm64.ipa](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-bundled-ios-arm64.ipa) |
 
 ### 🐳 Docker 镜像
 
@@ -155,49 +155,42 @@ Songloft 提供三种版本，满足不同使用场景：
 
 | 平台 | 下载链接 |
 |------|--------|
-| 🐧 Linux x86_64 | [roomtone-docker-linux-amd64.tar](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-amd64.tar) |
-| 🐧 Linux ARM64 | [roomtone-docker-linux-arm64.tar](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-arm64.tar) |
-| 🐧 Linux ARMv7 | [roomtone-docker-linux-arm-v7.tar](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-arm-v7.tar) |
+| 🐧 Linux x86_64 | [roomtone-docker-linux-amd64.tar](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-docker-linux-amd64.tar) |
+| 🐧 Linux ARM64 | [roomtone-docker-linux-arm64.tar](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-docker-linux-arm64.tar) |
+| 🐧 Linux ARMv7 | [roomtone-docker-linux-arm-v7.tar](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-docker-linux-arm-v7.tar) |
 
 #### 📦 精简版（Lite）
 
 | 平台 | 下载链接 |
 |------|--------|
-| 🐧 Linux x86_64 | [roomtone-docker-linux-amd64-lite.tar](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-amd64-lite.tar) |
-| 🐧 Linux ARM64 | [roomtone-docker-linux-arm64-lite.tar](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-arm64-lite.tar) |
-| 🐧 Linux ARMv7 | [roomtone-docker-linux-arm-v7-lite.tar](https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-arm-v7-lite.tar) |
+| 🐧 Linux x86_64 | [roomtone-docker-linux-amd64-lite.tar](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-docker-linux-amd64-lite.tar) |
+| 🐧 Linux ARM64 | [roomtone-docker-linux-arm64-lite.tar](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-docker-linux-arm64-lite.tar) |
+| 🐧 Linux ARMv7 | [roomtone-docker-linux-arm-v7-lite.tar](https://github.com/leonzy/roomtone/releases/download/dev/roomtone-docker-linux-arm-v7-lite.tar) |
+
+> 当前提供滚动开发包：[dev 下载页](https://github.com/leonzy/roomtone/releases/tag/dev)。请以制品的提交版本和校验和为准。
 
 ### 📱 Flutter 客户端
 
-除了 Web 界面，Songloft 还提供功能更强大的跨平台 Flutter 客户端，支持后台播放、本地缓存、媒体控制（耳机/锁屏/通知栏）等服务端 Web 界面无法实现的能力，覆盖 iOS、Android、macOS、Windows、Linux 和 Web 六端。
+除了 Web 界面，Roomtone 还提供功能更强大的跨平台 Flutter 客户端，支持后台播放、本地缓存、媒体控制（耳机/锁屏/通知栏）等服务端 Web 界面无法实现的能力，覆盖 iOS、Android、macOS、Windows、Linux 和 Web 六端。
 
-🔗 **GitHub 仓库**：[songloft-org/songloft-player](https://github.com/songloft-org/songloft-player)
+🔗 **GitHub 仓库**：[leonzy/roomtone-player](https://github.com/leonzy/roomtone-player)
 
-- **标准版**（需连接服务器）：[songloft-player Releases](https://github.com/songloft-org/songloft-player/releases/latest)
-- **Bundle 版**（内嵌后端，无需服务器）：[songloft Releases](https://github.com/leonzy/roomtone/releases/latest)（下载 `songloft-bundled-*` 文件）
+- **标准版**（需连接服务器）：[songloft-player Releases](https://github.com/leonzy/roomtone-player/releases/latest)
+- **Bundle 版**（内嵌后端，无需服务器）：[Roomtone Releases](https://github.com/leonzy/roomtone/releases/latest)（下载 `roomtone-bundled-*` 文件）
 
-> 🪟 **Windows 用户**：可通过 [Scoop](https://scoop.sh) 一键安装与更新，该 Bucket 提供三个应用，可按需选择：
-> ```powershell
-> scoop bucket add songloft https://github.com/songloft-org/songloft-scoop
-> scoop install songloft-player    # Flutter 客户端（GUI，需连接服务器）
-> scoop install songloft-server    # 服务端（CLI，仅命令行程序）
-> scoop install songloft-bundled   # Bundle 版（服务端 + 客户端一体化，无需单独部署服务器）
-> # 更新：scoop update songloft-player（其余同理）
-> # 卸载：scoop uninstall songloft-player（加 --purge 一并删除配置数据）
-> ```
-> ⚠️ `songloft-bundled` 与 `songloft-server`、`songloft-player` 存在文件冲突，**不能同时安装**；`songloft-server` 与 `songloft-player` 可以共存。
+> 🪟 **Windows**：请从本 fork 的 Releases 下载 `roomtone-bundled-windows-x64.zip`。
 
 > 💡 **Bundle 版使用方式**：首次启动在登录页点击「使用本地模式」→ 选择音乐目录 → 自动完成。支持随时在设置页切换本地/远程模式。
 
-> 💡 使用 **精简版（-lite）** 服务端时，推荐直接搭配 Flutter 客户端使用（无需额外部署 Web 前端）；如确实需要独立 Web 前端，可参考 [songloft-player](https://github.com/songloft-org/songloft-player) 仓库的 `flutter build web` 流程自行构建并由 Nginx 等反向代理静态托管。
+> 💡 使用 **精简版（-lite）** 服务端时，推荐直接搭配 Flutter 客户端使用（无需额外部署 Web 前端）；如确实需要独立 Web 前端，可参考 [songloft-player](https://github.com/leonzy/roomtone-player) 仓库的 `flutter build web` 流程自行构建并由 Nginx 等反向代理静态托管。
 
 ### 📱 Lynx 客户端（预览版）
 
-[Songloft Player (Lynx)](https://github.com/songloft-org/songloft-player-lynx) 使用 [ReactLynx](https://lynxjs.org/react/) + TypeScript，支持 Android、iOS、HarmonyOS 和 Web。已实现核心播放、曲库/歌单、歌词、插件、主题与多服务器；目前没有桌面客户端、Bundle 本地后端或客户端内检查更新。
+[Roomtone Player (Lynx)](https://github.com/leonzy/roomtone-player-lynx) 使用 [ReactLynx](https://lynxjs.org/react/) + TypeScript，支持 Android、iOS、HarmonyOS 和 Web。已实现核心播放、曲库/歌单、歌词、插件、主题与多服务器；支持客户端内检查更新；桌面客户端与 Bundle 本地后端由 Flutter 版本提供。
 
-- [开发版下载](https://github.com/songloft-org/songloft-player-lynx/releases/tag/dev)：main 代码推送后自动打包，五个产物全部成功才更新。
-- [正式版本](https://github.com/songloft-org/songloft-player-lynx/releases/latest)：通过版本 tag 发布；首次成功发版前可能尚无正式包。
-- [安装指南](https://songloft.hanxi.cc/player-lynx/installation) · [构建与运行](https://songloft.hanxi.cc/player-lynx/build-and-run) · [发版指南](https://songloft.hanxi.cc/player-lynx/releasing)。
+- [开发版下载](https://github.com/leonzy/roomtone-player-lynx/releases/tag/dev)：main 代码推送后自动打包，五个产物全部成功才更新。
+- [正式版本](https://github.com/leonzy/roomtone-player-lynx/releases/latest)：通过版本 tag 发布；首次成功发版前可能尚无正式包。
+- [安装指南](https://leonzy.github.io/roomtone/player-lynx/installation) · [构建与运行](https://leonzy.github.io/roomtone/player-lynx/build-and-run) · [发版指南](https://leonzy.github.io/roomtone/player-lynx/releasing)。
 
 Android 提供 release 签名 APK，iOS 提供需自行重签的 IPA，HarmonyOS 提供签名 HAP（设备范围由 profile 决定），Web 提供 standalone/embedded 两种压缩包。HarmonyOS 为实验性支持；Web 需 HTTPS 与 COOP/COEP 响应头，子路径部署未验证。详见[客户端选择](docs/clients.md)。
 
@@ -214,7 +207,7 @@ Android 提供 release 签名 APK，iOS 提供需自行重签的 IPA，HarmonyOS
 
 ### 📺 Kodi 插件
 
-除 Flutter 客户端外，Songloft 还提供官方 **Kodi 插件**，让你在 Kodi 媒体中心中直接播放 Songloft 音乐库。适合 **Xbox**、Apple TV、树莓派、Android TV 等支持 Kodi 的大屏设备，专为遥控器操作优化，带来流畅的客厅影音体验。
+除 Flutter 客户端外，Roomtone 还提供官方 **Kodi 插件**，让你在 Kodi 媒体中心中直接播放 Roomtone 音乐库。适合 **Xbox**、Apple TV、树莓派、Android TV 等支持 Kodi 的大屏设备，专为遥控器操作优化，带来流畅的客厅影音体验。
 
 🔗 **GitHub 仓库**：[songloft-org/plugin.audio.songloft](https://github.com/songloft-org/plugin.audio.songloft)
 📥 **下载**：[GitHub Releases](https://github.com/songloft-org/plugin.audio.songloft/releases/latest)
@@ -227,7 +220,7 @@ Android 提供 release 签名 APK，iOS 提供需自行重签的 IPA，HarmonyOS
 
 ### 🌐 第三方客户端
 
-以下第三方客户端由社区开发者独立维护，已适配 Songloft 服务端，为你提供更多平台选择：
+以下第三方客户端由社区开发者独立维护，已适配 Roomtone 服务端，为你提供更多平台选择：
 
 | 客户端 | 平台 | 说明 |
 |--------|------|------|
@@ -237,7 +230,7 @@ Android 提供 release 签名 APK，iOS 提供需自行重签的 IPA，HarmonyOS
 | [流云音盒](https://xgplayer.com/) | HarmonyOS | HarmonyOS 无损音乐播放器，聚合本地、云盘、WebDAV 与 NAS 私有曲库 |
 | [流云音乐](http://music.lyzo.top/) | iOS | 网盘音乐播放器，支持 WebDAV、Navidrome 等多种云盘与自托管音乐服务 |
 
-> 💡 第三方客户端由各自开发者维护，与 Songloft 项目无直接关联。如遇问题请联系对应客户端的开发者。
+> 💡 第三方客户端由各自开发者维护，与 Roomtone 项目无直接关联。如遇问题请联系对应客户端的开发者。
 ## 🚀 快速开始
 
 > 🔐 **安全提示（必读）**：默认管理员账号是 `admin / admin`，**仅适用于本地测试**。任何对外网暴露或多设备访问的部署，请务必通过环境变量 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 设置强密码后再启动；否则你的音乐库可能被陌生人访问。
@@ -249,7 +242,7 @@ Android 提供 release 签名 APK，iOS 提供需自行重签的 IPA，HarmonyOS
 ```bash
 # 1️⃣ 下载对应平台的二进制文件（默认即完整版）
 # 例如 Linux x86_64:
-wget https://github.com/leonzy/roomtone/releases/latest/download/roomtone-linux-amd64
+wget https://github.com/leonzy/roomtone/releases/download/dev/roomtone-linux-amd64
 mv roomtone-linux-amd64 songloft
 
 # 2️⃣ 添加执行权限
@@ -285,7 +278,7 @@ $env:ADMIN_PASSWORD = "your_strong_password"
 
 ### 🐳 方式二：Docker 部署
 
-> **ARMv7 用户**：旧版 Armbian / Debian 的宿主机 libseccomp 可能导致容器启动崩溃。遇到 `futexwakeup` / `SIGSEGV` 时，请参阅 [FAQ 排查步骤](https://songloft.hanxi.cc/faq#docker-armv7-seccomp)。
+> **ARMv7 用户**：旧版 Armbian / Debian 的宿主机 libseccomp 可能导致容器启动崩溃。遇到 `futexwakeup` / `SIGSEGV` 时，请参阅 [FAQ 排查步骤](https://leonzy.github.io/roomtone/faq#docker-armv7-seccomp)。
 
 #### 🌐 从 GitHub Container Registry 拉取（推荐）
 
@@ -316,7 +309,7 @@ docker run -d \
 
 ```bash
 # 1️⃣ 下载对应平台的 Docker 镜像 tar 文件（默认即完整版）
-wget https://github.com/leonzy/roomtone/releases/latest/download/roomtone-docker-linux-amd64.tar
+wget https://github.com/leonzy/roomtone/releases/download/dev/roomtone-docker-linux-amd64.tar
 
 # 2️⃣ 导入镜像
 docker load -i roomtone-docker-linux-amd64.tar
@@ -367,14 +360,14 @@ docker-compose down
 
 ### 🏠 方式三：Home Assistant 加载项
 
-如果你在使用 Home Assistant OS（HAOS），可以把 Songloft 作为**加载项（Add-on）**一键安装，无需手动写 `docker run`。
+如果你在使用 Home Assistant OS（HAOS），可以把 Roomtone 作为**加载项（Add-on）**一键安装，无需手动写 `docker run`。
 
 [![添加仓库到你的 Home Assistant。](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fsongloft-org%2Fhome-assistant-addon)
 
 点击上方徽章会直接在你的 HA 里弹出「添加加载项仓库」对话框；或手动操作：
 
 1. 「设置 → 加载项 → 加载项商店」，右上角菜单「仓库」，添加：`https://github.com/songloft-org/home-assistant-addon`
-2. 刷新后在商店里找到 **Songloft**，点击安装
+2. 刷新后在商店里找到 **Roomtone**，点击安装
 3. 到「配置」页填写管理员账号密码、音乐库路径（默认 `/media`），然后启动
 4. 点加载项详情页的「打开 Web UI」访问
 
@@ -406,7 +399,7 @@ docker-compose down
 
 ## ⚙️ 配置说明
 
-Songloft 仅依赖少量启动期配置（凭证、端口、数据库路径）通过环境变量或命令行参数指定，其余业务配置（音乐目录、扫描规则、封面存储等）都保存在数据库 `config` 表中，启动后通过 Web 界面管理。
+Roomtone 仅依赖少量启动期配置（凭证、端口、数据库路径）通过环境变量或命令行参数指定，其余业务配置（音乐目录、扫描规则、封面存储等）都保存在数据库 `config` 表中，启动后通过 Web 界面管理。
 
 ### 🌍 环境变量
 
@@ -445,16 +438,16 @@ Songloft 仅依赖少量启动期配置（凭证、端口、数据库路径）�
 ```
 
 > ⚙️ **优先级**：命令行参数 **高于** 环境变量。若两者均未提供，则回退到默认值（管理员账号为 `admin/admin`）。
-> ⚠️ **参数格式**：Songloft 使用单横杠参数（如 `-help`），不支持双横杠参数（如 `--help`）。
+> ⚠️ **参数格式**：Roomtone 使用单横杠参数（如 `-help`），不支持双横杠参数（如 `--help`）。
 > 🔐 **密码安全**：推荐通过环境变量 `ADMIN_PASSWORD` 传入密码，避免 `-password` 在进程列表中明文暴露。
 
 ## 🌐 反向代理子路径部署
 
-如果你通过 Nginx 等反向代理将 Songloft 挂在子路径下（如 `https://nas.example.com/songloft/`），需要配置 `BASE_PATH` 环境变量。
+如果你通过 Nginx 等反向代理将 Roomtone 挂在子路径下（如 `https://nas.example.com/songloft/`），需要配置 `BASE_PATH` 环境变量。
 
 ### 配置步骤
 
-**1. 启动 Songloft 时指定 BASE_PATH：**
+**1. 启动 Roomtone 时指定 BASE_PATH：**
 
 ```bash
 # 环境变量方式
@@ -488,7 +481,7 @@ location /songloft/ {
 }
 ```
 
-> ⚠️ **注意**：`proxy_pass` 末尾**不要**加斜杠。Nginx 会将完整路径（含 `/songloft/`）转发给后端，由 Songloft 自行处理前缀剥离。
+> ⚠️ **注意**：`proxy_pass` 末尾**不要**加斜杠。Nginx 会将完整路径（含 `/songloft/`）转发给后端，由 Roomtone 自行处理前缀剥离。
 
 ### 客户端连接
 
@@ -534,7 +527,7 @@ services:
 
 ```bash
 # 下载校验和文件
-wget https://github.com/leonzy/roomtone/releases/latest/download/checksums.txt
+wget https://github.com/leonzy/roomtone/releases/download/dev/checksums.txt
 
 # 验证文件
 sha256sum -c checksums.txt
@@ -564,13 +557,13 @@ Build Type: full
 
 ## 🔌 插件系统
 
-Songloft 内置 JS 插件引擎，插件运行在 QuickJS 沙箱中，支持权限模型、健康检查与热更新，可自由扩展音源 / 元数据 / 设备控制等能力。
+Roomtone 内置 JS 插件引擎，插件运行在 QuickJS 沙箱中，支持权限模型、健康检查与热更新，可自由扩展音源 / 元数据 / 设备控制等能力。
 
 ### 🎯 插件获取
 
-每个插件在自己的 GitHub 仓库下分发：进到对应仓库的 Releases 页下载最新版的 `.jsplugin.zip`，再到 Songloft 客户端的「插件管理」页上传即可启用。可在 [插件合集 Issue](https://songloft.hanxi.cc/issues/4) 找到当前可用的插件清单。
+每个插件在自己的 GitHub 仓库下分发：进到对应仓库的 Releases 页下载最新版的 `.jsplugin.zip`，再到 Roomtone 客户端的「插件管理」页上传即可启用。可在 [插件合集 Issue](https://leonzy.github.io/roomtone/issues/4) 找到当前可用的插件清单。
 
-> 想看更多插件或共建？欢迎在 [插件合集 Issue](https://songloft.hanxi.cc/issues/4) 留言。
+> 想看更多插件或共建？欢迎在 [插件合集 Issue](https://leonzy.github.io/roomtone/issues/4) 留言。
 
 > ⚠️ **版权提示**：第三方插件接入的任何网络音源、歌词、封面等内容，版权均归原权利人所有。请仅将插件用于访问你本人享有合法使用权的内容，下载 / 转存 / 二次分发等行为请遵守所在国家或地区的法律法规。详见上文 [版权与免责声明](#️-版权与免责声明)。
 
@@ -609,7 +602,7 @@ Songloft 内置 JS 插件引擎，插件运行在 QuickJS 沙箱中，支持权�
 
 ## ❓ 常见问题
 
-遇到问题？请查看 [常见问题与解决方案](https://songloft.hanxi.cc/faq) 💬
+遇到问题？请查看 [常见问题与解决方案](https://leonzy.github.io/roomtone/faq) 💬
 
 ## 🛠️ 技术支持
 

@@ -1,6 +1,6 @@
-# Songloft Architecture Overview
+# Roomtone Architecture Overview
 
-Songloft is a self-hosted local music server built with a decoupled frontend/backend architecture. It supports two run modes: **Server Mode** (deploying the Go backend standalone) and **Bundle Local Mode** (embedding the Go backend inside the Flutter client, with no need to deploy a separate server).
+Roomtone is a self-hosted local music server built with a decoupled frontend/backend architecture. It supports two run modes: **Server Mode** (deploying the Go backend standalone) and **Bundle Local Mode** (embedding the Go backend inside the Flutter client, with no need to deploy a separate server).
 
 Server Mode supports Flutter, ReactLynx, official Electron Desktop, and Android TV clients. Lynx is an Android/iOS/HarmonyOS/Web preview with no desktop or Bundle mode; the client architecture diagram below describes the default Flutter setup.
 

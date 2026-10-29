@@ -1,4 +1,4 @@
-# Songloft Frontend Gotchas
+# Roomtone Frontend Gotchas
 
 This document captures pitfalls in the Flutter client (`songloft-player`) that have been **diagnosed and fixed, but whose root causes are broadly applicable** — mostly in Flutter Web (CanvasKit) rendering, platform views (plugin iframes), and the audio backend. These burned through many rounds of investigation; archiving them here prevents repeating that.
 

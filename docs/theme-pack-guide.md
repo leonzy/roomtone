@@ -1,6 +1,6 @@
 # 主题包制作指南
 
-Songloft 支持通过 `.songloft-theme` 主题包自定义应用的配色、圆角和播放器渐变效果。本文档介绍主题包的格式规范、制作流程和最佳实践。
+Roomtone 支持通过 `.songloft-theme` 主题包自定义应用的配色、圆角和播放器渐变效果。本文档介绍主题包的格式规范、制作流程和最佳实践。
 
 ---
 
@@ -69,7 +69,7 @@ Songloft 支持通过 `.songloft-theme` 主题包自定义应用的配色、圆�
 
 #### seedColor 的工作原理
 
-Songloft 使用 Flutter 的 `ColorScheme.fromSeed()` 方法，从 seedColor 自动推导出约 30 个语义化颜色角色（primary、secondary、tertiary、error 等）。你只需选择一个你喜欢的主色调，Material 3 算法会确保所有派生颜色的对比度和和谐性。
+Roomtone 使用 Flutter 的 `ColorScheme.fromSeed()` 方法，从 seedColor 自动推导出约 30 个语义化颜色角色（primary、secondary、tertiary、error 等）。你只需选择一个你喜欢的主色调，Material 3 算法会确保所有派生颜色的对比度和和谐性。
 
 ::: tip 亮色和暗色的 seedColor 可以不同
 亮色模式下通常使用更饱和、更深的种子色；暗色模式下使用更亮的种子色，以获得更好的视觉效果。参考 Neon Night 主题：亮色 `#6750A4`，暗色 `#D0BCFF`。
@@ -134,7 +134,7 @@ Songloft 使用 Flutter 的 `ColorScheme.fromSeed()` 方法，从 seedColor 自�
 
 ### Step 3：本地测试
 
-1. 打开 Songloft 客户端
+1. 打开 Roomtone 客户端
 2. 进入 `设置 → 外观 → 主题包 → 导入主题包`
 3. 选择你的 `.songloft-theme` 文件
 4. 点击已导入的主题包激活

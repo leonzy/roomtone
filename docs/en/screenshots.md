@@ -1,6 +1,6 @@
 # 🖼️ Screenshot Gallery
 
-This page collects screenshots of Songloft's main screens, covering **desktop / mobile**, in both **light / dark** themes.
+This page collects screenshots of Roomtone's main screens, covering **desktop / mobile**, in both **light / dark** themes.
 
 > 📌 All screenshots are captured automatically by a script and committed with the repository under [`docs/public/screenshots/`](https://github.com/leonzy/roomtone/tree/main/docs/public/screenshots).
 > To regenerate these images after a UI redesign, see the [Landing Page Screenshot Update Guide](./screenshot-guide.md).

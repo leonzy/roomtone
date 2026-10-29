@@ -6,7 +6,7 @@ export interface L { zh: string; en: string }
 export const pick = (l: L, lang: Lang): string => l[lang] ?? l.zh
 
 export const RELEASE_BASE =
-  'https://github.com/leonzy/roomtone/releases/latest/download'
+  'https://github.com/leonzy/roomtone/releases/download/dev'
 
 export interface Asset {
   arch: string
@@ -238,31 +238,31 @@ export const INSTALL: InstallMethod[] = [
         os: 'android',
         osLabel: { zh: 'Android', en: 'Android' },
         icon: 'android',
-        assets: [a('arm64', { zh: 'ARM64 + ARMv7', en: 'ARM64 + ARMv7' }, 'songloft-bundled-android-arm64-v8a.apk')],
+        assets: [a('arm64', { zh: 'ARM64 + ARMv7', en: 'ARM64 + ARMv7' }, 'roomtone-bundled-android-arm64-v8a.apk')],
       },
       {
         os: 'ios',
         osLabel: { zh: 'iOS', en: 'iOS' },
         icon: 'apple',
-        assets: [a('arm64', { zh: 'ARM64', en: 'ARM64' }, 'songloft-bundled-ios-arm64.ipa')],
+        assets: [a('arm64', { zh: 'ARM64', en: 'ARM64' }, 'roomtone-bundled-ios-arm64.ipa')],
       },
       {
         os: 'macos',
         osLabel: { zh: 'macOS', en: 'macOS' },
         icon: 'apple',
-        assets: [a('arm64', { zh: 'Apple Silicon', en: 'Apple Silicon' }, 'songloft-bundled-macos-arm64.dmg')],
+        assets: [a('arm64', { zh: 'Apple Silicon', en: 'Apple Silicon' }, 'roomtone-bundled-macos-arm64.dmg')],
       },
       {
         os: 'windows',
         osLabel: { zh: 'Windows', en: 'Windows' },
         icon: 'windows',
-        assets: [a('amd64', { zh: 'x86_64', en: 'x86_64' }, 'songloft-bundled-windows-x64.zip')],
+        assets: [a('amd64', { zh: 'x86_64', en: 'x86_64' }, 'roomtone-bundled-windows-x64.zip')],
       },
       {
         os: 'linux',
         osLabel: { zh: 'Linux', en: 'Linux' },
         icon: 'linux',
-        assets: [a('amd64', { zh: 'x86_64', en: 'x86_64' }, 'songloft-bundled-linux-x64.tar.gz')],
+        assets: [a('amd64', { zh: 'x86_64', en: 'x86_64' }, 'roomtone-bundled-linux-x64.tar.gz')],
       },
     ],
   },
@@ -273,46 +273,18 @@ export const INSTALL: InstallMethod[] = [
     icon: 'smartphone',
     kind: 'external',
     note: {
-      zh: 'Windows 用户也可用 Scoop 一键安装 / 更新，见下方命令。',
-      en: 'Windows users can install & update in one line via Scoop — see the commands below.',
+      zh: '请从 Roomtone fork 的 Releases 下载；Bundle 版包含本地后端。',
+      en: 'Download from the Roomtone fork Releases; bundled packages include a local backend.',
     },
     external: [
       {
         label: { zh: '标准版 Releases', en: 'Standalone releases' },
-        url: 'https://github.com/songloft-org/songloft-player/releases/latest',
+        url: 'https://github.com/leonzy/roomtone-player/releases/latest',
         primary: true,
       },
       {
         label: { zh: '源码仓库', en: 'Source repo' },
-        url: 'https://github.com/songloft-org/songloft-player',
-      },
-    ],
-    commands: [
-      {
-        group: { zh: 'Windows · Scoop', en: 'Windows · Scoop' },
-        title: { zh: '添加 Bucket 并安装', en: 'Add bucket and install' },
-        code:
-          'scoop bucket add songloft https://github.com/songloft-org/songloft-scoop\n' +
-          'scoop install songloft-player    # Flutter 客户端（GUI，需连接服务器）\n' +
-          'scoop install songloft-server    # 服务端（CLI，仅命令行程序）\n' +
-          'scoop install songloft-bundled   # Bundle 版（服务端 + 客户端一体化）',
-      },
-      {
-        group: { zh: 'Windows · Scoop', en: 'Windows · Scoop' },
-        title: { zh: '更新 / 卸载', en: 'Update / uninstall' },
-        code:
-          'scoop update songloft-player     # 其余同理\n' +
-          'scoop uninstall songloft-player  # 加 --purge 一并删除配置数据',
-      },
-      {
-        group: { zh: 'Windows · Scoop', en: 'Windows · Scoop' },
-        title: {
-          zh: '⚠️ 注意：songloft-bundled 与 songloft-server、songloft-player 不能同时安装',
-          en: '⚠️ Note: songloft-bundled conflicts with songloft-server and songloft-player',
-        },
-        code:
-          '# songloft-bundled 与 songloft-server、songloft-player 存在文件冲突，不能同时安装\n' +
-          '# songloft-server 与 songloft-player 可以共存',
+        url: 'https://github.com/leonzy/roomtone-player',
       },
     ],
   },
@@ -329,12 +301,12 @@ export const INSTALL: InstallMethod[] = [
     external: [
       {
         label: { zh: '开发版下载', en: 'Development downloads' },
-        url: 'https://github.com/songloft-org/songloft-player-lynx/releases/tag/dev',
+        url: 'https://github.com/leonzy/roomtone-player-lynx/releases/tag/dev',
         primary: true,
       },
       {
         label: { zh: '正式版本', en: 'Stable releases' },
-        url: 'https://github.com/songloft-org/songloft-player-lynx/releases/latest',
+        url: 'https://github.com/leonzy/roomtone-player-lynx/releases/latest',
       },
       {
         label: { zh: '安装指南', en: 'Installation guide' },
@@ -342,7 +314,7 @@ export const INSTALL: InstallMethod[] = [
       },
       {
         label: { zh: '源码仓库', en: 'Source repository' },
-        url: 'https://github.com/songloft-org/songloft-player-lynx',
+        url: 'https://github.com/leonzy/roomtone-player-lynx',
       },
     ],
   },

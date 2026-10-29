@@ -1,6 +1,6 @@
 # Theme Pack Development Guide
 
-Songloft supports customizing the app's color scheme, border radii, and player gradient effects through `.songloft-theme` theme packs. This guide covers the format specification, creation workflow, and best practices.
+Roomtone supports customizing the app's color scheme, border radii, and player gradient effects through `.songloft-theme` theme packs. This guide covers the format specification, creation workflow, and best practices.
 
 ---
 
@@ -69,7 +69,7 @@ A theme pack is a JSON file (with `.songloft-theme` extension) that declares col
 
 #### How seedColor Works
 
-Songloft uses Flutter's `ColorScheme.fromSeed()` method, which derives ~30 semantic color roles (primary, secondary, tertiary, error, etc.) from the seed color. You only need to pick a main hue — the Material 3 algorithm ensures contrast ratios and color harmony across all derived colors.
+Roomtone uses Flutter's `ColorScheme.fromSeed()` method, which derives ~30 semantic color roles (primary, secondary, tertiary, error, etc.) from the seed color. You only need to pick a main hue — the Material 3 algorithm ensures contrast ratios and color harmony across all derived colors.
 
 ::: tip Light and dark can use different seed colors
 Light mode typically uses a more saturated, deeper seed color; dark mode uses a brighter one for better visual results. See the Neon Night theme: light `#6750A4`, dark `#D0BCFF`.
@@ -134,7 +134,7 @@ A single `seedColor` is all you need. `backgroundColor`, `surfaceColor`, `player
 
 ### Step 3: Test Locally
 
-1. Open the Songloft app
+1. Open the Roomtone app
 2. Go to `Settings → Appearance → Theme Packs → Import`
 3. Select your `.songloft-theme` file
 4. Tap the imported theme to activate it

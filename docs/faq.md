@@ -1,22 +1,22 @@
-# Songloft 常见问题解答 (FAQ)
+# Roomtone 常见问题解答 (FAQ)
 
 ## 关于项目
 
-### Q: Songloft 收费吗？可以赞助 / 捐款吗？
+### Q: Roomtone 收费吗？可以赞助 / 捐款吗？
 
-A: **不收费，也不接受任何赞助或捐款。** Songloft 是纯粹出于兴趣与热爱开发的开源项目（为爱发电），永久免费：
+A: **不收费，也不接受任何赞助或捐款。** Roomtone 是纯粹出于兴趣与热爱开发的开源项目（为爱发电），永久免费：
 
 - ✅ 没有任何收费功能、内购或会员，也没有任何广告或商业推广
 - ✅ 官方不设任何收款渠道，不接受赞助 / 捐款
-- ⚠️ **谨防诈骗**：官方渠道仅有 [GitHub 仓库](https://github.com/songloft-org/songloft)、[文档站](https://songloft.hanxi.cc)、[官方微信群](https://github.com/songloft-org/songloft/issues/2)、[Telegram 群](https://t.me/songloft_dev) 与 [Telegram 频道](https://t.me/songloft)。任何以 Songloft 名义收费、售卖付费版本、代部署收费或索要赞助的行为，都与本项目无关；即便在群内，我们也从不向任何人收取任何费用，请勿上当受骗。
+- ⚠️ **谨防诈骗**：官方渠道仅有 [GitHub 仓库](https://github.com/leonzy/roomtone)、[文档站](https://leonzy.github.io/roomtone)、[官方微信群](https://github.com/songloft-org/songloft/issues/2)、[Telegram 群](https://t.me/songloft_dev) 与 [Telegram 频道](https://t.me/songloft)。任何以 Roomtone 名义收费、售卖付费版本、代部署收费或索要赞助的行为，都与本项目无关；即便在群内，我们也从不向任何人收取任何费用，请勿上当受骗。
 
 ## 安装与部署
 
-### Q: 我应该如何下载 Songloft？
+### Q: 我应该如何下载 Roomtone？
 
 A: 
 - **后端服务器**：从 [GitHub Releases](https://github.com/leonzy/roomtone/releases) 下载适合您系统的版本，支持 Linux、macOS 和 Windows 平台，提供二进制文件和 Docker 镜像两种部署方式。
-- **Flutter 客户端**：从 [Flutter 客户端 Releases](https://github.com/songloft-org/songloft-player/releases) 下载预编译安装包，支持 Android、iOS、macOS、Windows、Linux 和 Web。
+- **Flutter 客户端**：从 [Flutter 客户端 Releases](https://github.com/leonzy/roomtone-player/releases) 下载预编译安装包，支持 Android、iOS、macOS、Windows、Linux 和 Web。
 
 - **Electron 桌面客户端**：[Songloft Desktop Releases](https://github.com/songloft-org/songloft-desktop/releases/latest)，连接已有服务器。
 - **TV 客户端**：[Songloft TV Releases](https://github.com/songloft-org/songloft-tv/releases/latest)，支持 Android 5.0+ 大屏设备。
@@ -64,7 +64,7 @@ docker run --rm --security-opt seccomp=unconfined --entrypoint /app/roomtone "$s
 
 **3. 升级宿主机组件后，在默认 seccomp 下重新验证**：
 
-优先通过当前发行版支持的软件源升级 libseccomp；旧版 Docker / runc 或自定义规则也可能需要更新。升级的是**宿主机组件**，仅更新 Songloft 镜像不能解决宿主机 libseccomp 过旧的问题。
+优先通过当前发行版支持的软件源升级 libseccomp；旧版 Docker / runc 或自定义规则也可能需要更新。升级的是**宿主机组件**，仅更新 Roomtone 镜像不能解决宿主机 libseccomp 过旧的问题。
 
 [Issue #507](https://github.com/songloft-org/songloft/issues/507) 中，Debian 10（buster）ARMv7 宿主机使用 Docker 24.0.5、runc 1.1.8、libseccomp 2.3.3。其软件源已有 `libseccomp2 2.5.1-1~bpo10+1` 的 buster-backports 包，在宿主机以 root（或加 `sudo`）执行以下命令后恢复正常：
 
@@ -81,7 +81,7 @@ docker restart songloft
 docker logs --tail 50 songloft
 ```
 
-该用户升级 libseccomp 到 2.5.1 后，同一个 Songloft v2.13.1 镜像在默认 seccomp 下通过版本检查，完整服务也成功启动，见[成功反馈](https://github.com/songloft-org/songloft/issues/507#issuecomment-6072549900)。
+该用户升级 libseccomp 到 2.5.1 后，同一个 Roomtone v2.13.1 镜像在默认 seccomp 下通过版本检查，完整服务也成功启动，见[成功反馈](https://github.com/songloft-org/songloft/issues/507#issuecomment-6072549900)。
 
 ### Q: Docker 部署时容器无法访问音乐文件怎么办？
 
@@ -113,7 +113,7 @@ environment:
 
 ### Q: 如何通过反向代理子路径部署（Sub Path）？
 
-A: Songloft 支持通过 `-base-path` 参数或 `BASE_PATH` 环境变量配置子路径，适用于 Nginx 反向代理多服务合并到同一端口的场景。
+A: Roomtone 支持通过 `-base-path` 参数或 `BASE_PATH` 环境变量配置子路径，适用于 Nginx 反向代理多服务合并到同一端口的场景。
 
 **启动配置**：
 ```bash
@@ -150,7 +150,7 @@ A:
 
 ### Q: 如何配置多个音乐目录？
 
-A: Songloft 只支持设置一个音乐根目录，但扫描器**完整支持软链接**（符号链接），可以通过在根目录下创建软链接来聚合多个目录。
+A: Roomtone 只支持设置一个音乐根目录，但扫描器**完整支持软链接**（符号链接），可以通过在根目录下创建软链接来聚合多个目录。
 
 **Linux / macOS**：
 
@@ -289,7 +289,7 @@ A:
 
 ### Q: 在 Firefox 下 Web 端小控件点不到、点击位置偏移怎么办？
 
-A: 这是 **Flutter Web（CanvasKit 渲染引擎）在 Firefox 系浏览器下已知的点击命中测试（hit-test）坐标偏移问题**（参见 [flutter/flutter#182764](https://github.com/flutter/flutter/issues/182764)、[flutter/flutter#117531](https://github.com/flutter/flutter/issues/117531)），属于渲染引擎/浏览器层行为，非 Songloft 分辨率适配问题。典型现象：设置大项能切换、细项小控件点不到；JS 插件页面（原生 HTML）不受影响。
+A: 这是 **Flutter Web（CanvasKit 渲染引擎）在 Firefox 系浏览器下已知的点击命中测试（hit-test）坐标偏移问题**（参见 [flutter/flutter#182764](https://github.com/flutter/flutter/issues/182764)、[flutter/flutter#117531](https://github.com/flutter/flutter/issues/117531)），属于渲染引擎/浏览器层行为，非 Roomtone 分辨率适配问题。典型现象：设置大项能切换、细项小控件点不到；JS 插件页面（原生 HTML）不受影响。
 
 **解决与规避：**
 - 优先使用 **Chromium 系浏览器**（Chrome / Edge / Chromium）访问 Web 端，可完全规避。
@@ -305,7 +305,7 @@ A:
 
 ### Q: macOS 上 Token 存储报错怎么办？
 
-A: Flutter 的 `secure_storage` 在 macOS 未签名沙盒环境下可能无法使用 Keychain。Songloft 已内置降级机制，会自动回退到 `SharedPreferences` 存储，不影响正常使用。
+A: Flutter 的 `secure_storage` 在 macOS 未签名沙盒环境下可能无法使用 Keychain。Roomtone 已内置降级机制，会自动回退到 `SharedPreferences` 存储，不影响正常使用。
 
 ### Q: 如何添加网络歌曲或网络电台？
 
@@ -317,7 +317,7 @@ A: TV 端推荐使用专门的 [songloft-tv](https://github.com/songloft-org/son
 
 ## 升级与维护
 
-### Q: 如何升级或更新 Songloft？
+### Q: 如何升级或更新 Roomtone？
 
 A: 
 - **二进制部署**：下载最新版本替换旧文件，重启服务
@@ -372,7 +372,7 @@ A: 使用开发模式启动（`make run`），访问 `http://localhost:58091/swa
 
 ### Q: 必须安装 ffprobe 吗？
 
-A: **不是必须的**。Songloft 使用纯 Go 库（`hanxi/tag`）提取音频元数据和封面，无需任何外部依赖。安装 `ffprobe` 后可以获取更精确的音频技术参数（时长、比特率、采样率）。Docker 镜像中已包含 ffprobe。
+A: **不是必须的**。Roomtone 使用纯 Go 库（`hanxi/tag`）提取音频元数据和封面，无需任何外部依赖。安装 `ffprobe` 后可以获取更精确的音频技术参数（时长、比特率、采样率）。Docker 镜像中已包含 ffprobe。
 
 ### Q: 开发环境需要什么？
 
@@ -398,4 +398,4 @@ A:
 
 - **GitHub Issues**: [https://github.com/leonzy/roomtone/issues](https://github.com/leonzy/roomtone/issues)
 - **项目主页**: [https://github.com/leonzy/roomtone](https://github.com/leonzy/roomtone)
-- **Flutter 客户端**: [https://github.com/songloft-org/songloft-player](https://github.com/songloft-org/songloft-player)
+- **Flutter 客户端**: [https://github.com/songloft-org/songloft-player](https://github.com/leonzy/roomtone-player)

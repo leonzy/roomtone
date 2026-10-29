@@ -2,11 +2,11 @@
 
 > Last updated: 2026-08-12
 
-Welcome to Songloft. Please read the following agreement carefully before using this software. By using this software, you acknowledge that you have read, understood, and agreed to be bound by this agreement.
+Welcome to Roomtone. Please read the following agreement carefully before using this software. By using this software, you acknowledge that you have read, understood, and agreed to be bound by this agreement.
 
 ## 1. Service Description
 
-Songloft is an open-source, self-hosted local music server software released under the Apache-2.0 license. It allows users to deploy a music management and playback service on their own devices.
+Roomtone is an open-source, self-hosted local music server software released under the Apache-2.0 license. It allows users to deploy a music management and playback service on their own devices.
 
 - **Self-hosted mode**: Users deploy the server themselves; all data is stored entirely on the user's own devices.
 - **Local mode (Bundle)**: The Go backend runs embedded within the client; all data is stored locally.
@@ -24,7 +24,7 @@ By using this software, you agree to:
 
 ### 3.1 Data Collection
 
-Songloft **does not collect any personal user data**. All data is stored within your own deployment environment.
+Roomtone **does not collect any personal user data**. All data is stored within your own deployment environment.
 
 ### 3.2 Telemetry & Monitoring
 
@@ -55,11 +55,11 @@ This **does not include** user data, music files, account information, or any pe
 
 ### 3.5 Third-Party Plugins
 
-JS plugins may access external services through host network capabilities. Data collection by third-party plugins is determined by the plugins themselves and is unrelated to the Songloft project. Please verify the network scope of any third-party plugin before installation.
+JS plugins may access external services through host network capabilities. Data collection by third-party plugins is determined by the plugins themselves and is unrelated to the Roomtone project. Please verify the network scope of any third-party plugin before installation.
 
 ## 4. Intellectual Property
 
-- The Songloft software itself is open-sourced under the Apache-2.0 license.
+- The Roomtone software itself is open-sourced under the Apache-2.0 license.
 - Copyright of music content managed through this software belongs to the original copyright holders.
 - This software makes no guarantees regarding the legality of user-stored content.
 

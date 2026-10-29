@@ -1,12 +1,12 @@
 # Landing Page Screenshot Update Guide
 
-The product UI screenshots shown on the documentation site's home page (landing page) are captured by driving the system Chrome with [Playwright](https://playwright.dev/), automatically logging into a locally running Songloft instance. The script is [`docs/scripts/capture-screenshots.mjs`](https://github.com/leonzy/roomtone/blob/main/docs/scripts/capture-screenshots.mjs), and its output lands in `docs/public/screenshots/`, committed alongside the repository.
+The product UI screenshots shown on the documentation site's home page (landing page) are captured by driving the system Chrome with [Playwright](https://playwright.dev/), automatically logging into a locally running Roomtone instance. The script is [`docs/scripts/capture-screenshots.mjs`](https://github.com/leonzy/roomtone/blob/main/docs/scripts/capture-screenshots.mjs), and its output lands in `docs/public/screenshots/`, committed alongside the repository.
 
 > When you need to update the UI screenshots (e.g., after a UI redesign), just re-run the script following this guide — no manual screenshotting required.
 
 ## Prerequisites
 
-1. **Run a Songloft service locally**, listening on the default port `58091`, with the default credentials `admin / admin`:
+1. **Run a Roomtone service locally**, listening on the default port `58091`, with the default credentials `admin / admin`:
 
    ```bash
    make run          # or start the full build any way you like (requires the bundled web frontend)

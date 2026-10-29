@@ -1,6 +1,6 @@
 # AI Development and Retrospectives
 
-This workflow covers Songloft and its submodules. Once assigned a task, the agent proceeds through investigation, design, implementation, validation, self-review, and delivery. You decide product behavior and authorize commits, pushes, and releases. Stages track progress rather than require separate approvals. Your requested stopping points and existing authorization take precedence.
+This workflow covers Roomtone and its submodules. Once assigned a task, the agent proceeds through investigation, design, implementation, validation, self-review, and delivery. You decide product behavior and authorize commits, pushes, and releases. Stages track progress rather than require separate approvals. Your requested stopping points and existing authorization take precedence.
 
 ## Entry Points and Responsibilities
 

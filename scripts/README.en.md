@@ -1,6 +1,6 @@
-# Songloft Scripts Directory
+# Roomtone Scripts Directory
 
-This directory contains automation scripts for the Songloft backend, covering version management, build helpers, submodule syncing, and more. Multi-platform binary builds, Docker image packaging, and GitHub Release creation are all handled by [`.github/workflows/release.yml`](../.github/workflows/release.yml).
+This directory contains automation scripts for the Roomtone backend, covering version management, build helpers, submodule syncing, and more. Multi-platform binary builds, Docker image packaging, and GitHub Release creation are all handled by [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 
 ## 📋 Script List
 

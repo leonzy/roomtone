@@ -1,12 +1,12 @@
 # JS Plugin Development Guide
 
-This document details the architecture, API, and development workflow of the Songloft JS plugin system.
+This document details the architecture, API, and development workflow of the Roomtone JS plugin system.
 
 ---
 
 ## 1. Overview
 
-The Songloft JS plugin system lets developers extend the music server with JavaScript, without compiling Go code.
+The Roomtone JS plugin system lets developers extend the music server with JavaScript, without compiling Go code.
 
 ### Design Philosophy
 
@@ -116,7 +116,7 @@ globalThis.onHTTPRequest = onHTTPRequest;
 pnpm run dev          # equivalent to songloft-plugin dev
 ```
 
-The first run interactively asks for the Songloft instance address, username, and password, after which it:
+The first run interactively asks for the Roomtone instance address, username, and password, after which it:
 
 1. Writes the credentials to `.songloft-dev.json` in the project root (the builder automatically appends it to `.gitignore`), so subsequent runs log in silently;
 2. Immediately performs a build and upload, automatically enabling the plugin on first install;
@@ -149,7 +149,7 @@ The builder will:
 Choose any of the following:
 
 - **Automatic upload in development mode** — `pnpm run dev` (see Step 3), ideal for local iteration;
-- **Upload from the settings page** — select `dist/<entryPath>.jsplugin.zip` on the plugin management page of the Songloft client;
+- **Upload from the settings page** — select `dist/<entryPath>.jsplugin.zip` on the plugin management page of the Roomtone client;
 - **Directory placement** — drop the zip into the server's `data/jsplugins/` directory, and it is scanned automatically on the next startup;
 - **API upload** — `POST /api/v1/jsplugins/upload`, multipart field name `file` (this is the interface development mode uses under the hood).
 
@@ -209,7 +209,7 @@ The dev command automatically maintains the following config file in the project
 
 | Field | When Written | Description |
 |------|----------|------|
-| `host` | On first startup | Songloft instance URL |
+| `host` | On first startup | Roomtone instance URL |
 | `username` / `password` | Written after interactive input on first startup, or can be filled in manually | Used to log in each session; stored in plaintext, **never commit** |
 | `pluginId` / `entryPath` | Written after first upload | For reference only; the dev command actually reconciles with the backend via `entryPath` |
 
@@ -1109,7 +1109,7 @@ const { apiGet, apiPost } = SongloftPlugin;
 
 ### Client SDK — Controlling the Host Player (webview pages only)
 
-Plugin pages opened inside the Songloft client can call host client capabilities via `window.SongloftPlugin.host` / `.player` — most commonly to rewrite the host's "now playing queue".
+Plugin pages opened inside the Roomtone client can call host client capabilities via `window.SongloftPlugin.host` / `.player` — most commonly to rewrite the host's "now playing queue".
 
 > - Works in: the **native client** (Android/iOS/macOS/Windows/Linux) webview plugin pages, and **Web plugin pages** (both embedded tab pages and home/full-screen pages open inside a host iframe, via a postMessage bridge).
 > - Does NOT work in: only when the user opens a plugin page standalone in a new browser tab via "Open in browser" (no host parent window) — there `host.isAvailable()` returns `false` and calls throw, so always feature-detect first.
@@ -1267,7 +1267,7 @@ The `--md-*` variables map **one-to-one** onto Flutter's `ColorScheme` fields (c
 | Surface | `--md-surface` `--md-on-surface` `--md-on-surface-variant` `--md-surface-dim` `--md-surface-bright` |
 | Surface ladder | `--md-surface-container-lowest` `--md-surface-container-low` `--md-surface-container` `--md-surface-container-high` `--md-surface-container-highest` |
 | Outline / inverse | `--md-outline` `--md-outline-variant` `--md-inverse-surface` `--md-on-inverse-surface` `--md-inverse-primary` |
-| Songloft-specific (no M3 role, **not pushed down**) | `--md-success` `--md-success-container` `--md-warning` `--md-warning-container` |
+| Roomtone-specific (no M3 role, **not pushed down**) | `--md-success` `--md-success-container` `--md-warning` `--md-warning-container` |
 | Derived alias (used by components: switch track / progress background) | `--md-surface-variant`→`surfaceContainerHighest` |
 | Corner radii (aligned with Flutter's `AppRadius`) | `--md-radius-sm` 8 · `-md` 12 · `-lg` 16 · `-xl` 24 · `-xxl` 28 · `-full` 50px |
 | Shadows | `--md-shadow-1` `--md-shadow-2` `--md-shadow-3` |
@@ -1404,12 +1404,12 @@ Adding the topic alone does not guarantee visibility. Also check the following w
 - Publish a stable GitHub Release with an existing, nonempty `{entryPath}.jsplugin.zip` asset. The manifest's `download_url` must reference that asset, which may belong to another GitHub repository. Clients validate the actual target repository's Release and asset. If `updateUrl` supplies the download URL, public metadata in another GitHub repository is also supported, with consistent versions and plugin entry paths.
 - Root manifest `entryHash` and `zipHash` may be omitted or empty without preventing GitHub discovery. Nonempty values must be 64 lowercase hexadecimal characters. The server still validates hashes in the actual installation package. Keep the root manifest's `main` and version aligned with the package. `zipHash` is the toolchain's canonical content hash, not the SHA-256 of the ZIP file itself.
 
-Release tags need not equal manifest versions: for example, `v0.17` can accompany `version: "0.17.0"`. The download URL must reference an actual Release asset. After adding the topic, refresh discovery to check the result; network failures appear as temporarily unverified. Community plugins are marked as not reviewed by Songloft and still require installation confirmation.
+Release tags need not equal manifest versions: for example, `v0.17` can accompany `version: "0.17.0"`. The download URL must reference an actual Release asset. After adding the topic, refresh discovery to check the result; network failures appear as temporarily unverified. Community plugins are marked as not reviewed by Roomtone and still require installation confirmation.
 
 ### Installation Methods
 
 1. **Development mode (recommended)**: iterate locally with `songloft-plugin dev`, see [§2.6](#development-mode-in-depth-songloft-plugin-dev)
-2. **UI upload**: upload the ZIP via the Songloft client's settings page → plugin management
+2. **UI upload**: upload the ZIP via the Roomtone client's settings page → plugin management
 3. **Directory placement**: drop the ZIP into the server's `data/jsplugins/` directory, and it is discovered automatically when the service starts
 4. **API upload**: `POST /api/v1/jsplugins/upload`, multipart field name `file` (this is the interface development mode uses under the hood)
 
@@ -1425,7 +1425,7 @@ Regardless of the method, if the original plugin is in the `active` state, the b
 
 ## 11. Hot Reload
 
-Plugins support runtime updates without restarting the Songloft service.
+Plugins support runtime updates without restarting the Roomtone service.
 
 ### Hot Reload Flow
 

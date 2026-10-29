@@ -1,4 +1,4 @@
-# Songloft 前端踩坑与铁律（Frontend Gotchas）
+# Roomtone 前端踩坑与铁律（Frontend Gotchas）
 
 本文沉淀 Flutter 客户端（`songloft-player`）里**已定位并修复、但根因具有普适性**的坑，主要集中在 Flutter Web（CanvasKit）渲染、平台视图（插件 iframe）、音频后端。这些坑反复消耗过大量排查回合，归档在此避免重蹈。
 

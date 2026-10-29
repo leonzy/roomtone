@@ -1,22 +1,22 @@
-# Songloft FAQ
+# Roomtone FAQ
 
 ## About the Project
 
-### Q: Does Songloft charge money? Can I sponsor / donate?
+### Q: Does Roomtone charge money? Can I sponsor / donate?
 
-A: **No, it is free, and it does not accept any sponsorship or donations.** Songloft is an open-source project built purely out of passion (a labor of love) and is free forever:
+A: **No, it is free, and it does not accept any sponsorship or donations.** Roomtone is an open-source project built purely out of passion (a labor of love) and is free forever:
 
 - ✅ No paid features, in-app purchases, or subscriptions, and no ads or commercial promotion
 - ✅ There is no payment channel at all; sponsorship / donations are not accepted
-- ⚠️ **Beware of scams**: the only official channels are the [GitHub repository](https://github.com/songloft-org/songloft), the [docs site](https://songloft.hanxi.cc), the [official WeChat group](https://github.com/songloft-org/songloft/issues/2), the [Telegram group](https://t.me/songloft_dev), and the [Telegram channel](https://t.me/songloft). Anyone charging fees, selling "paid versions", offering paid deployment, or soliciting donations in Songloft's name is unrelated to this project; we never charge anyone, not even inside the group. Please stay alert to scams.
+- ⚠️ **Beware of scams**: the only official channels are the [GitHub repository](https://github.com/leonzy/roomtone), the [docs site](https://leonzy.github.io/roomtone), the [official WeChat group](https://github.com/songloft-org/songloft/issues/2), the [Telegram group](https://t.me/songloft_dev), and the [Telegram channel](https://t.me/songloft). Anyone charging fees, selling "paid versions", offering paid deployment, or soliciting donations in Roomtone's name is unrelated to this project; we never charge anyone, not even inside the group. Please stay alert to scams.
 
 ## Installation & Deployment
 
-### Q: How should I download Songloft?
+### Q: How should I download Roomtone?
 
 A:
 - **Backend server**: Download the build for your system from [GitHub Releases](https://github.com/leonzy/roomtone/releases). Linux, macOS, and Windows are supported, with both binary and Docker image deployment options.
-- **Flutter client**: Download the prebuilt installers from [Flutter client Releases](https://github.com/songloft-org/songloft-player/releases). Android, iOS, macOS, Windows, Linux, and Web are supported.
+- **Flutter client**: Download the prebuilt installers from [Flutter client Releases](https://github.com/leonzy/roomtone-player/releases). Android, iOS, macOS, Windows, Linux, and Web are supported.
 
 - **Electron desktop client**: [Songloft Desktop Releases](https://github.com/songloft-org/songloft-desktop/releases/latest), connecting to an existing server.
 - **TV client**: [Songloft TV Releases](https://github.com/songloft-org/songloft-tv/releases/latest), for Android 5.0+ large-screen devices.
@@ -64,7 +64,7 @@ If the default profile crashes but disabling seccomp prints the version successf
 
 **3. Upgrade host components and verify again under the default seccomp profile**:
 
-Prefer upgrading libseccomp through package repositories supported by your distribution. Older Docker / runc versions or custom rules may also need updating. These are **host components**; updating the Songloft image alone cannot fix an outdated host libseccomp.
+Prefer upgrading libseccomp through package repositories supported by your distribution. Older Docker / runc versions or custom rules may also need updating. These are **host components**; updating the Roomtone image alone cannot fix an outdated host libseccomp.
 
 In [Issue #507](https://github.com/songloft-org/songloft/issues/507), a Debian 10 (buster) ARMv7 host was running Docker 24.0.5, runc 1.1.8, and libseccomp 2.3.3. Its repositories already provided the buster-backports package `libseccomp2 2.5.1-1~bpo10+1`. Running the following command on the host as root (or with `sudo`) resolved the problem:
 
@@ -81,7 +81,7 @@ docker restart songloft
 docker logs --tail 50 songloft
 ```
 
-After upgrading libseccomp to 2.5.1, the same Songloft v2.13.1 image passed the version check under the default seccomp profile, and the full service started successfully. See the [success report](https://github.com/songloft-org/songloft/issues/507#issuecomment-6072549900).
+After upgrading libseccomp to 2.5.1, the same Roomtone v2.13.1 image passed the version check under the default seccomp profile, and the full service started successfully. See the [success report](https://github.com/songloft-org/songloft/issues/507#issuecomment-6072549900).
 
 ### Q: What should I do if the container can't access music files during Docker deployment?
 
@@ -113,7 +113,7 @@ environment:
 
 ### Q: How do I deploy under a sub path via a reverse proxy?
 
-A: Songloft supports configuring a sub path via the `-base-path` argument or the `BASE_PATH` environment variable. This is useful when consolidating multiple services onto the same port behind an Nginx reverse proxy.
+A: Roomtone supports configuring a sub path via the `-base-path` argument or the `BASE_PATH` environment variable. This is useful when consolidating multiple services onto the same port behind an Nginx reverse proxy.
 
 **Startup configuration**:
 ```bash
@@ -150,7 +150,7 @@ A:
 
 ### Q: How do I configure multiple music directories?
 
-A: Songloft only supports setting a single music root directory, but the scanner **fully supports symlinks** (symbolic links), so you can aggregate multiple directories by creating symlinks under the root directory.
+A: Roomtone only supports setting a single music root directory, but the scanner **fully supports symlinks** (symbolic links), so you can aggregate multiple directories by creating symlinks under the root directory.
 
 **Linux / macOS**:
 
@@ -289,7 +289,7 @@ A:
 
 ### Q: On Firefox, small controls in the Web client aren't clickable / clicks are offset. What should I do?
 
-A: This is a **known click hit-test coordinate offset issue with Flutter Web (the CanvasKit rendering engine) on Firefox-family browsers** (see [flutter/flutter#182764](https://github.com/flutter/flutter/issues/182764), [flutter/flutter#117531](https://github.com/flutter/flutter/issues/117531)). It is rendering-engine/browser-layer behavior, not a Songloft resolution-adaptation problem. Typical symptoms: large settings items can be toggled but small controls can't be hit; JS plugin pages (native HTML) are unaffected.
+A: This is a **known click hit-test coordinate offset issue with Flutter Web (the CanvasKit rendering engine) on Firefox-family browsers** (see [flutter/flutter#182764](https://github.com/flutter/flutter/issues/182764), [flutter/flutter#117531](https://github.com/flutter/flutter/issues/117531)). It is rendering-engine/browser-layer behavior, not a Roomtone resolution-adaptation problem. Typical symptoms: large settings items can be toggled but small controls can't be hit; JS plugin pages (native HTML) are unaffected.
 
 **Fix and workarounds:**
 - Prefer a **Chromium-based browser** (Chrome / Edge / Chromium) for the Web client to avoid the issue entirely.
@@ -305,19 +305,19 @@ A:
 
 ### Q: What should I do if I get a Token storage error on macOS?
 
-A: Flutter's `secure_storage` may be unable to use the Keychain in an unsigned sandbox environment on macOS. Songloft has a built-in fallback mechanism that automatically falls back to `SharedPreferences` storage, without affecting normal usage.
+A: Flutter's `secure_storage` may be unable to use the Keychain in an unsigned sandbox environment on macOS. Roomtone has a built-in fallback mechanism that automatically falls back to `SharedPreferences` storage, without affecting normal usage.
 
 ### Q: How do I add network songs or internet radio?
 
 A: In the **Radio Favorites** playlist in the client, click the add button and enter the radio streaming address (e.g., `.m3u`, `.pls`, or a direct audio stream URL). Network songs can be searched and added to playlists via JS plugins. Scanning local `.m3u` files to automatically import radio stations is not currently supported.
 
-### Q: How do I use Songloft on TV?
+### Q: How do I use Roomtone on TV?
 
 A: For TV, we recommend the dedicated [songloft-tv](https://github.com/songloft-org/songloft-tv) client, designed specifically for Android TV with remote control support.
 
 ## Upgrades & Maintenance
 
-### Q: How do I upgrade or update Songloft?
+### Q: How do I upgrade or update Roomtone?
 
 A:
 - **Binary deployment**: Download the latest version, replace the old file, and restart the service
@@ -372,7 +372,7 @@ A: Start in development mode (`make run`) and visit `http://localhost:58091/swag
 
 ### Q: Is ffprobe required?
 
-A: **No, it's not required.** Songloft uses a pure Go library (`hanxi/tag`) to extract audio metadata and covers, with no external dependencies. Installing `ffprobe` lets you obtain more precise audio technical parameters (duration, bitrate, sample rate). The Docker image already includes ffprobe.
+A: **No, it's not required.** Roomtone uses a pure Go library (`hanxi/tag`) to extract audio metadata and covers, with no external dependencies. Installing `ffprobe` lets you obtain more precise audio technical parameters (duration, bitrate, sample rate). The Docker image already includes ffprobe.
 
 ### Q: What do I need for a development environment?
 
@@ -398,4 +398,4 @@ A:
 
 - **GitHub Issues**: [https://github.com/leonzy/roomtone/issues](https://github.com/leonzy/roomtone/issues)
 - **Project homepage**: [https://github.com/leonzy/roomtone](https://github.com/leonzy/roomtone)
-- **Flutter client**: [https://github.com/songloft-org/songloft-player](https://github.com/songloft-org/songloft-player)
+- **Flutter client**: [https://github.com/songloft-org/songloft-player](https://github.com/leonzy/roomtone-player)

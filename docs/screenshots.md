@@ -1,6 +1,6 @@
 # 🖼️ 界面截图一览
 
-本页汇总 Songloft 各主要界面的截图，涵盖**桌面端 / 移动端**，并提供**亮色 / 暗色**两套主题。
+本页汇总 Roomtone 各主要界面的截图，涵盖**桌面端 / 移动端**，并提供**亮色 / 暗色**两套主题。
 
 > 📌 所有截图由脚本自动抓取，随仓库提交在 [`docs/public/screenshots/`](https://github.com/leonzy/roomtone/tree/main/docs/public/screenshots)。
 > 想在 UI 改版后重新生成这些图，请参考 [落地页截图更新指南](./screenshot-guide.md)。

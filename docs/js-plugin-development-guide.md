@@ -1,12 +1,12 @@
 # JS 插件开发指南
 
-本文档详细介绍 Songloft JS 插件系统的架构、API 和开发流程。
+本文档详细介绍 Roomtone JS 插件系统的架构、API 和开发流程。
 
 ---
 
 ## 1. 概述
 
-Songloft JS 插件系统允许开发者使用 JavaScript 扩展音乐服务器功能，无需编译 Go 代码。
+Roomtone JS 插件系统允许开发者使用 JavaScript 扩展音乐服务器功能，无需编译 Go 代码。
 
 ### 设计理念
 
@@ -116,7 +116,7 @@ globalThis.onHTTPRequest = onHTTPRequest;
 pnpm run dev          # 等价于 songloft-plugin dev
 ```
 
-首次运行会交互式询问 Songloft 实例地址、用户名与密码，之后：
+首次运行会交互式询问 Roomtone 实例地址、用户名与密码，之后：
 
 1. 把账号密码写入项目根目录的 `.songloft-dev.json`（builder 会自动把它追加到 `.gitignore`），后续运行直接静默登录；
 2. 立即执行一次构建并上传，首次安装时自动启用插件；
@@ -149,7 +149,7 @@ builder 会：
 任选其一：
 
 - **开发模式自动上传** —— `pnpm run dev`（见 Step 3），适合本地迭代；
-- **设置页面上传** —— 在 Songloft 客户端的插件管理页选择 `dist/<entryPath>.jsplugin.zip`；
+- **设置页面上传** —— 在 Roomtone 客户端的插件管理页选择 `dist/<entryPath>.jsplugin.zip`；
 - **目录放置** —— 把 zip 放进服务器的 `data/jsplugins/` 目录，下次启动时自动扫描；
 - **API 上传** —— `POST /api/v1/jsplugins/upload`，multipart 字段名 `file`（开发模式底层即此接口）。
 
@@ -209,7 +209,7 @@ dev 命令自动在项目根目录维护下面的配置文件（同时把它追�
 
 | 字段 | 写入时机 | 说明 |
 |------|----------|------|
-| `host` | 首次启动 | Songloft 实例 URL |
+| `host` | 首次启动 | Roomtone 实例 URL |
 | `username` / `password` | 首次启动交互输入后写入，亦可手填 | 用于每次会话登录；明文存储，**切勿提交** |
 | `pluginId` / `entryPath` | 首次上传后写入 | 仅供参考，dev 命令实际通过 `entryPath` 与后端对账 |
 
@@ -1107,7 +1107,7 @@ const { apiGet, apiPost } = SongloftPlugin;
 
 ### 客户端 SDK —— 调用宿主播放器（webview 页面专用）
 
-在 Songloft 客户端中打开的插件页面，可通过 `window.SongloftPlugin.host` / `.player` 调用宿主客户端能力——最常见的是改写宿主的「正在播放队列」。
+在 Roomtone 客户端中打开的插件页面，可通过 `window.SongloftPlugin.host` / `.player` 调用宿主客户端能力——最常见的是改写宿主的「正在播放队列」。
 
 > - 生效范围：**native 客户端**（Android/iOS/macOS/Windows）的 webview 插件页；**Web 端插件页**（Tab 内嵌页与首页/全屏页均在宿主 iframe 内打开，走 postMessage 桥接）。**Linux 桌面当前没有 WebView 渲染引擎**：客户端不挂载插件页、改展示降级视图，用户需走「在浏览器中打开」（songloft-org/songloft-player#47）。
 > - 不生效：仅当用户通过「在浏览器中打开」把插件页在独立新浏览器标签打开时（无宿主父窗口）——此时 `host.isAvailable()` 返回 `false`，调用会抛错，务必先 feature-detect。
@@ -1402,12 +1402,12 @@ ZIP 文件名格式：`{entryPath}.jsplugin.zip`
 - 发布稳定的 GitHub Release，上传实际存在、非空的 `{entryPath}.jsplugin.zip`，清单的 `download_url` 指向该资产，允许使用其他 GitHub 仓库的发布包；客户端会验证目标仓库的实际 Release 和资产。如通过 `updateUrl` 获取下载地址，也允许其他 GitHub 仓库的公开更新清单，但必须保持版本和插件入口一致。
 - 根清单的 `entryHash`、`zipHash` 可以省略或留空，不影响 GitHub 发现；填写时必须符合 64 位小写十六进制格式。实际安装包中的哈希仍由服务器校验。建议同步根清单的 `main` 和版本，保持与发布包一致。`zipHash` 是工具链生成的 canonical 内容哈希，不是 ZIP 文件本身的 SHA-256。
 
-Release tag 不必与清单版本相同，例如 `v0.17` 可配合 `version: "0.17.0"`；下载 URL 必须指向实际存在的 Release 资产。设置 topic 后可主动刷新发现页检查结果，网络失败会显示为「暂未验证」。社区插件会标注「未经 Songloft 审核」，安装前仍需用户确认。
+Release tag 不必与清单版本相同，例如 `v0.17` 可配合 `version: "0.17.0"`；下载 URL 必须指向实际存在的 Release 资产。设置 topic 后可主动刷新发现页检查结果，网络失败会显示为「暂未验证」。社区插件会标注「未经 Roomtone 审核」，安装前仍需用户确认。
 
 ### 安装方式
 
 1. **开发模式（推荐）**：`songloft-plugin dev` 在本地迭代，参见 [§2.6](#26-开发模式详解-songloft-plugin-dev)
-2. **UI 上传**：通过 Songloft 客户端的设置页面 → 插件管理上传 ZIP
+2. **UI 上传**：通过 Roomtone 客户端的设置页面 → 插件管理上传 ZIP
 3. **目录放置**：将 ZIP 放入服务器的 `data/jsplugins/` 目录，服务启动时自动发现
 4. **API 上传**：`POST /api/v1/jsplugins/upload`，multipart 字段名 `file`（开发模式底层即此接口）
 
@@ -1423,7 +1423,7 @@ Release tag 不必与清单版本相同，例如 `v0.17` 可配合 `version: "0.
 
 ## 11. 热更新
 
-插件支持运行时更新，无需重启 Songloft 服务。
+插件支持运行时更新，无需重启 Roomtone 服务。
 
 ### 热更新流程
 

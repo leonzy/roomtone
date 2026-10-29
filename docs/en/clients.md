@@ -1,6 +1,6 @@
 # Choosing a client
 
-Songloft offers Flutter, Lynx, Electron desktop, and TV clients connecting to the same backend. Their packages and capability scopes are maintained separately.
+Roomtone offers Flutter, Lynx, Electron desktop, and TV clients connecting to the same backend. Their packages and capability scopes are maintained separately.
 
 | Item | Flutter | Lynx (preview) | Songloft Desktop | Songloft TV |
 | --- | --- | --- | --- | --- |
@@ -14,9 +14,9 @@ Songloft offers Flutter, Lynx, Electron desktop, and TV clients connecting to th
 
 ## Flutter
 
-- [Standalone downloads](https://github.com/songloft-org/songloft-player/releases/latest): connect to a separate server.
-- [Bundle downloads](https://github.com/leonzy/roomtone/releases/latest): choose `songloft-bundled-*` assets.
-- [Architecture (Chinese)](../player/architecture.md) · [Build guide (Chinese)](../player/build_guide.md) · [Source](https://github.com/songloft-org/songloft-player).
+- [Standalone downloads](https://github.com/leonzy/roomtone-player/releases/latest): connect to a separate server.
+- [Bundle downloads](https://github.com/leonzy/roomtone/releases/latest): choose `roomtone-bundled-*` assets.
+- [Architecture (Chinese)](../player/architecture.md) · [Build guide (Chinese)](../player/build_guide.md) · [Source](https://github.com/leonzy/roomtone-player).
 
 Full backend images/binaries embed Lynx Web by default. Native Flutter and standalone Web remain available; explicitly build legacy embedded Flutter Web with `make build-frontend-flutter-web-embedded`.
 
@@ -24,16 +24,16 @@ Full backend images/binaries embed Lynx Web by default. Native Flutter and stand
 
 Underlying technology: [Lynx official website](https://lynxjs.org/) · [ReactLynx documentation](https://lynxjs.org/react/).
 
-- [Development downloads](https://github.com/songloft-org/songloft-player-lynx/releases/tag/dev): main code pushes build automatically; all five packages must pass before downloads update.
-- [Stable releases](https://github.com/songloft-org/songloft-player-lynx/releases/latest): version tags trigger publication; packages may not exist before the first successful release.
+- [Development downloads](https://github.com/leonzy/roomtone-player-lynx/releases/tag/dev): main code pushes build automatically; all five packages must pass before downloads update.
+- [Stable releases](https://github.com/leonzy/roomtone-player-lynx/releases/latest): version tags trigger publication; packages may not exist before the first successful release.
 - [Overview](player-lynx/index.md) · [Installation](player-lynx/installation.md) · [Build](player-lynx/build-and-run.md) · [Testing](player-lynx/testing.md) · [Releasing](player-lynx/releasing.md) · [Contributing](player-lynx/contributing.md).
 
 | Platform                 | Package                                          | Limits                                                                      |
 | ------------------------ | ------------------------------------------------ | --------------------------------------------------------------------------- |
-| Android 5.0+             | `songloft-lynx-android.apk`                      | Release-signed; upgrades require the same key and a newer build number      |
-| iOS 15+                  | `songloft-lynx-ios-nosign.ipa`                   | Unsigned; re-sign before installation. Live Activity needs iOS 16.2+        |
-| HarmonyOS NEXT / API 13+ | `songloft-lynx-harmony.hap`                      | Experimental; profile controls eligible devices. No fullscreen video        |
-| Web                      | `songloft-lynx-web-{standalone,embedded}.tar.gz` | Core flows support ordinary HTTP; HTTPS enables clipboard/wake lock; no Bundle, DLNA, or single-song offline cache |
+| Android 5.0+             | `roomtone-lynx-android.apk`                      | Release-signed; upgrades require the same key and a newer build number      |
+| iOS 15+                  | `roomtone-lynx-ios-nosign.ipa`                   | Unsigned; re-sign before installation. Live Activity needs iOS 16.2+        |
+| HarmonyOS NEXT / API 13+ | `roomtone-lynx-harmony.hap`                      | Experimental; profile controls eligible devices. No fullscreen video        |
+| Web                      | `roomtone-lynx-web-{standalone,embedded}.tar.gz` | Core flows support ordinary HTTP; HTTPS enables clipboard/wake lock; no Bundle, DLNA, or single-song offline cache |
 
 Releases include `version.json` and `checksums.txt`. Downloadable dev packages are also Release builds with no TCP/E2E bridge.
 
@@ -46,7 +46,7 @@ Standalone Web shows a server-address field; embedded uses the same-origin serve
 - [Downloads and installers](https://github.com/songloft-org/songloft-desktop/releases/latest): see the repository instructions and Release assets for installation on each platform.
 - [Project documentation and source](https://github.com/songloft-org/songloft-desktop) · [Report issues](https://github.com/songloft-org/songloft-desktop/issues).
 
-## Songloft TV (TV / large-screen client)
+## Roomtone TV (TV / large-screen client)
 
 [Songloft TV](https://github.com/songloft-org/songloft-tv) uses Kotlin + Jetpack Compose for TV on Android 5.0 (API 21) or later TVs, boxes, and landscape large-screen devices. It requires an existing Songloft server and does not include a bundled local backend.
 
