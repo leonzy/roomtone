@@ -1,0 +1,2 @@
+# Unified diff context lines intentionally contain one space.
+scripts/plugin-overrides/*.patch -whitespace text eol=lf
