@@ -176,7 +176,7 @@ Beyond the web interface, Roomtone also offers a more powerful cross-platform Fl
 
 🔗 **GitHub repository**: [leonzy/roomtone-player](https://github.com/leonzy/roomtone-player)
 
-- **Standard edition** (requires connecting to a server): [songloft-player Releases](https://github.com/leonzy/roomtone-player/releases/latest)
+- **Standard edition** (requires connecting to a server): [songloft-player Releases](https://github.com/leonzy/roomtone-player/releases)
 - **Bundle edition** (embedded backend, no server required): [Roomtone Releases](https://github.com/leonzy/roomtone/releases/latest) (download the `roomtone-bundled-*` files)
 
 > 🪟 **Windows**: download `roomtone-bundled-windows-x64.zip` from this fork’s Releases.
@@ -189,7 +189,7 @@ Beyond the web interface, Roomtone also offers a more powerful cross-platform Fl
 
 [Roomtone Player (Lynx)](https://github.com/leonzy/roomtone-player-lynx) uses [ReactLynx](https://lynxjs.org/react/) + TypeScript on Android, iOS, HarmonyOS, and Web. Playback, library/playlists, lyrics, plugins, themes, and multiple servers are implemented. In-app client update checks are supported; use the Flutter edition for desktop clients and a bundled local backend.
 
-- [Development downloads](https://github.com/leonzy/roomtone-player-lynx/releases/tag/dev): main code pushes build automatically; all five packages must succeed before downloads update.
+- [Test downloads (Actions)](https://github.com/leonzy/roomtone-player-lynx/actions/workflows/build-and-release.yml): enable `test_only` and download `roomtone-lynx-test-packages` after all five packages pass. Android uses test signing; HarmonyOS is unsigned.
 - [Stable releases](https://github.com/leonzy/roomtone-player-lynx/releases/latest): published by version tags; a stable package may not exist before the first successful release.
 - [Installation](https://leonzy.github.io/roomtone/en/player-lynx/installation) · [Build and run](https://leonzy.github.io/roomtone/en/player-lynx/build-and-run) · [Releasing](https://leonzy.github.io/roomtone/en/player-lynx/releasing).
 

@@ -279,7 +279,7 @@ export const INSTALL: InstallMethod[] = [
     external: [
       {
         label: { zh: '标准版 Releases', en: 'Standalone releases' },
-        url: 'https://github.com/leonzy/roomtone-player/releases/latest',
+        url: 'https://github.com/leonzy/roomtone-player/releases',
         primary: true,
       },
       {
@@ -300,8 +300,8 @@ export const INSTALL: InstallMethod[] = [
     },
     external: [
       {
-        label: { zh: '开发版下载', en: 'Development downloads' },
-        url: 'https://github.com/leonzy/roomtone-player-lynx/releases/tag/dev',
+        label: { zh: '测试包下载（Actions）', en: 'Test packages (Actions)' },
+        url: 'https://github.com/leonzy/roomtone-player-lynx/actions/workflows/build-and-release.yml',
         primary: true,
       },
       {

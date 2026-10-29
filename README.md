@@ -175,7 +175,7 @@ Roomtone 提供三种版本，满足不同使用场景：
 
 🔗 **GitHub 仓库**：[leonzy/roomtone-player](https://github.com/leonzy/roomtone-player)
 
-- **标准版**（需连接服务器）：[songloft-player Releases](https://github.com/leonzy/roomtone-player/releases/latest)
+- **标准版**（需连接服务器）：[songloft-player Releases](https://github.com/leonzy/roomtone-player/releases)
 - **Bundle 版**（内嵌后端，无需服务器）：[Roomtone Releases](https://github.com/leonzy/roomtone/releases/latest)（下载 `roomtone-bundled-*` 文件）
 
 > 🪟 **Windows**：请从本 fork 的 Releases 下载 `roomtone-bundled-windows-x64.zip`。
@@ -188,7 +188,7 @@ Roomtone 提供三种版本，满足不同使用场景：
 
 [Roomtone Player (Lynx)](https://github.com/leonzy/roomtone-player-lynx) 使用 [ReactLynx](https://lynxjs.org/react/) + TypeScript，支持 Android、iOS、HarmonyOS 和 Web。已实现核心播放、曲库/歌单、歌词、插件、主题与多服务器；支持客户端内检查更新；桌面客户端与 Bundle 本地后端由 Flutter 版本提供。
 
-- [开发版下载](https://github.com/leonzy/roomtone-player-lynx/releases/tag/dev)：main 代码推送后自动打包，五个产物全部成功才更新。
+- [测试包下载（Actions）](https://github.com/leonzy/roomtone-player-lynx/actions/workflows/build-and-release.yml)：手动开启 `test_only`，五种制品成功后下载 `roomtone-lynx-test-packages` artifact。Android 使用测试签名，鸿蒙未签名。
 - [正式版本](https://github.com/leonzy/roomtone-player-lynx/releases/latest)：通过版本 tag 发布；首次成功发版前可能尚无正式包。
 - [安装指南](https://leonzy.github.io/roomtone/player-lynx/installation) · [构建与运行](https://leonzy.github.io/roomtone/player-lynx/build-and-run) · [发版指南](https://leonzy.github.io/roomtone/player-lynx/releasing)。
 
