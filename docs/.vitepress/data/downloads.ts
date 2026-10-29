@@ -133,7 +133,7 @@ export const INSTALL: InstallMethod[] = [
       {
         group: { zh: '方式 A · docker run', en: 'Option A · docker run' },
         title: { zh: '拉取镜像（完整版 / 精简版）', en: 'Pull image (full / lite)' },
-        code: 'docker pull ghcr.io/leonzy/roomtone:latest\ndocker pull ghcr.io/leonzy/roomtone:lite',
+        code: 'docker pull ghcr.io/leonzy/roomtone:dev\ndocker pull ghcr.io/leonzy/roomtone:dev-lite',
       },
       {
         group: { zh: '方式 A · docker run', en: 'Option A · docker run' },
@@ -143,7 +143,7 @@ export const INSTALL: InstallMethod[] = [
           '  -v /path/to/music:/app/music \\\n' +
           '  -v /path/to/data:/app/data \\\n' +
           "  -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='your_strong_password' \\\n" +
-          '  ghcr.io/leonzy/roomtone:latest',
+          '  ghcr.io/leonzy/roomtone:dev',
       },
       {
         group: { zh: '方式 B · Docker Compose（推荐）', en: 'Option B · Docker Compose (recommended)' },
@@ -151,7 +151,7 @@ export const INSTALL: InstallMethod[] = [
         code:
           'services:\n' +
           '  roomtone:\n' +
-          '    image: ghcr.io/leonzy/roomtone:latest\n' +
+          '    image: ghcr.io/leonzy/roomtone:dev\n' +
           '    container_name: roomtone\n' +
           '    restart: always\n' +
           '    ports:\n' +

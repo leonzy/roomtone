@@ -285,10 +285,10 @@ $env:ADMIN_PASSWORD = "your_strong_password"
 
 ```bash
 # 🌟 Full edition (recommended, includes the web frontend; :latest is the full edition)
-docker pull ghcr.io/leonzy/roomtone:latest
+docker pull ghcr.io/leonzy/roomtone:dev
 
 # 📦 Lite edition (no web frontend, must be paired with the Flutter client)
-docker pull ghcr.io/leonzy/roomtone:lite
+docker pull ghcr.io/leonzy/roomtone:dev-lite
 
 # Run the container
 docker run -d \
@@ -299,7 +299,7 @@ docker run -d \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD='your_strong_password' \
   -e PUID=$(id -u) -e PGID=$(id -g) \
-  ghcr.io/leonzy/roomtone:latest
+  ghcr.io/leonzy/roomtone:dev
 ```
 
 > 👤 **Run as non-root (optional)**: adding `-e PUID=$(id -u) -e PGID=$(id -g)` makes the container's main process run as your current host user, so newly created files under the mounted directories are no longer owned by root. Omit it to keep the container's default root-based startup — existing deployments are unaffected.
@@ -330,7 +330,7 @@ version: '3.8'
 
 services:
   songloft:
-    image: ghcr.io/leonzy/roomtone:latest
+    image: ghcr.io/leonzy/roomtone:dev
     container_name: roomtone
     restart: always
     ports:
@@ -467,7 +467,7 @@ docker run -d \
   -e ADMIN_PASSWORD='your_strong_password' \
   -e BASE_PATH=/songloft \
   -e PUID=$(id -u) -e PGID=$(id -g) \
-  ghcr.io/leonzy/roomtone:latest
+  ghcr.io/leonzy/roomtone:dev
 ```
 
 **2. Configure the Nginx reverse proxy:**
@@ -498,7 +498,7 @@ version: '3.8'
 
 services:
   songloft:
-    image: ghcr.io/leonzy/roomtone:latest
+    image: ghcr.io/leonzy/roomtone:dev
     container_name: roomtone
     restart: always
     ports:

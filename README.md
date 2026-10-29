@@ -284,10 +284,10 @@ $env:ADMIN_PASSWORD = "your_strong_password"
 
 ```bash
 # 🌟 完整版（推荐，包含 Web 前端，:latest 即完整版）
-docker pull ghcr.io/leonzy/roomtone:latest
+docker pull ghcr.io/leonzy/roomtone:dev
 
 # 📦 精简版（不含 Web 前端，需搭配 Flutter 客户端使用）
-docker pull ghcr.io/leonzy/roomtone:lite
+docker pull ghcr.io/leonzy/roomtone:dev-lite
 
 # 运行容器
 docker run -d \
@@ -298,7 +298,7 @@ docker run -d \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD='your_strong_password' \
   -e PUID=$(id -u) -e PGID=$(id -g) \
-  ghcr.io/leonzy/roomtone:latest
+  ghcr.io/leonzy/roomtone:dev
 ```
 
 > 👤 **非 root 运行（可选）**：加上 `-e PUID=$(id -u) -e PGID=$(id -g)` 后，容器内主程序会以宿主机当前用户身份运行，挂载目录下新产生的文件不再是 root 属主。不设置则保持容器默认的 root 运行方式，不影响现有部署。
@@ -329,7 +329,7 @@ version: '3.8'
 
 services:
   songloft:
-    image: ghcr.io/leonzy/roomtone:latest
+    image: ghcr.io/leonzy/roomtone:dev
     container_name: roomtone
     restart: always
     ports:
@@ -466,7 +466,7 @@ docker run -d \
   -e ADMIN_PASSWORD='your_strong_password' \
   -e BASE_PATH=/songloft \
   -e PUID=$(id -u) -e PGID=$(id -g) \
-  ghcr.io/leonzy/roomtone:latest
+  ghcr.io/leonzy/roomtone:dev
 ```
 
 **2. 配置 Nginx 反向代理：**
@@ -497,7 +497,7 @@ version: '3.8'
 
 services:
   songloft:
-    image: ghcr.io/leonzy/roomtone:latest
+    image: ghcr.io/leonzy/roomtone:dev
     container_name: roomtone
     restart: always
     ports:
