@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/mod/semver"
 	"songloft/internal/httputil"
 )
 
@@ -354,6 +355,12 @@ func (s *RegistryService) fetchBody(ctx context.Context, rawURL string, githubPr
 // CompareVersion 比较两个版本号，返回 >0 表示 a 更大。
 // 支持 semver（1.2.3）和日期格式（2026.6.2），按 dot-separated 数值逐段比较。
 func CompareVersion(a, b string) int {
+	canonicalA := "v" + strings.TrimPrefix(a, "v")
+	canonicalB := "v" + strings.TrimPrefix(b, "v")
+	if semver.IsValid(canonicalA) && semver.IsValid(canonicalB) {
+		return semver.Compare(canonicalA, canonicalB)
+	}
+
 	aParts := strings.Split(a, ".")
 	bParts := strings.Split(b, ".")
 

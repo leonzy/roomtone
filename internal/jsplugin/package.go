@@ -545,7 +545,7 @@ func (pm *PackageManager) checkUpdate(pluginID int64, githubProxy string, proxyD
 		return nil, fmt.Errorf("parse update info: %w", err)
 	}
 
-	hasUpdate := remoteManifest.Version != plugin.Version
+	hasUpdate := CompareVersion(remoteManifest.Version, plugin.Version) > 0
 	info := &UpdateInfo{
 		CurrentVersion: plugin.Version,
 		LatestVersion:  remoteManifest.Version,
