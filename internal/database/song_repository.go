@@ -225,6 +225,28 @@ type LocalPathInfo struct {
 	FileModifiedAt *time.Time
 }
 
+// LocalCleanupSong carries only the data needed to validate a local path.
+type LocalCleanupSong struct {
+	ID       int64
+	FilePath string
+}
+
+// ListLocalCleanupSongs preserves duplicate paths and excludes virtual CUE tracks.
+// Reuse the narrow scanner query instead of loading lyrics, covers and fingerprints.
+func (r *SongRepository) ListLocalCleanupSongs(ctx context.Context) ([]LocalCleanupSong, error) {
+	rows, err := r.queries.ListLocalSongPaths(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list local cleanup paths: %w", err)
+	}
+	result := make([]LocalCleanupSong, 0, len(rows))
+	for _, row := range rows {
+		if row.CueSourcePath == "" {
+			result = append(result, LocalCleanupSong{ID: row.ID, FilePath: row.FilePath})
+		}
+	}
+	return result, nil
+}
+
 // RelativePathSong 用于路径规范化清理。
 type RelativePathSong struct {
 	ID       int64

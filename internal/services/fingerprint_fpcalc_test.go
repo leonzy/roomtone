@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -84,6 +85,8 @@ func TestFingerprintFPCalcIntegration(t *testing.T) {
 		}
 		if _, _, err := extractFingerprintWithTools(context.Background(), invalid, 0, 0, ffmpeg, fpcalc); err == nil {
 			t.Fatal("invalid audio accepted")
+		} else if !strings.Contains(err.Error(), "broken.mp3") {
+			t.Fatalf("decoder diagnostic lost: %v", err)
 		}
 	})
 	t.Run("cancelled", func(t *testing.T) {

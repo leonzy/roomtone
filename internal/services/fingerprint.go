@@ -146,7 +146,7 @@ func extractFingerprintWithTools(ctx context.Context, filePath string, startSeco
 		var err error
 		fingerprint, err = fingerprintDecodedStream(ctx, fpcalcPath, cmd)
 		if err != nil {
-			return "", 0, err
+			return "", 0, fmt.Errorf("%w (%s)", err, strings.TrimSpace(stderr.String()))
 		}
 	}
 	if nl := strings.IndexByte(fingerprint, '\n'); nl >= 0 {

@@ -41,6 +41,7 @@ type SongRepository interface {
 	UpdateDuration(ctx context.Context, id int64, duration float64) error
 	UpdateSource(ctx context.Context, id int64, pluginEntryPath, sourceData string) error
 	ListLocalPaths(ctx context.Context) (map[string]database.LocalPathInfo, error)
+	ListLocalCleanupSongs(ctx context.Context) ([]database.LocalCleanupSong, error)
 	ListLocalSongsWithRelativePaths(ctx context.Context) ([]database.RelativePathSong, error)
 	UpdateSongFilePath(ctx context.Context, id int64, newPath string) error
 	ListTypesByIDs(ctx context.Context, ids []int64) (map[int64]string, error)
@@ -1343,12 +1344,7 @@ type CleanResult struct {
 // CleanInvalidSongs 清理无效的本地歌曲
 // 清理条件：文件不存在 或 文件路径在排除目录/路径中
 func (s *SongService) CleanInvalidSongs(ctx context.Context) (*CleanResult, error) {
-	filter := &database.SongFilter{
-		Type:  models.TypeLocal,
-		Limit: models.MaxPaginationLimit,
-	}
-
-	songs, err := s.songs.List(ctx, filter)
+	songs, err := s.songs.ListLocalCleanupSongs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list local songs: %w", err)
 	}
@@ -1356,8 +1352,8 @@ func (s *SongService) CleanInvalidSongs(ctx context.Context) (*CleanResult, erro
 	result := &CleanResult{}
 	var toDelete []int64
 	for _, song := range songs {
-		if song.CueSourcePath != "" {
-			continue
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 
 		shouldClean := false
