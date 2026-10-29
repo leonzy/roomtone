@@ -41,7 +41,7 @@
 
 ## 1. 概述
 
-JS 插件系统是 Songloft 的扩展机制，基于 QuickJS 沙盒运行。插件管理 API 分为三层：
+JS 插件系统是 Roomtone 的扩展机制，基于 QuickJS 沙盒运行。插件管理 API 分为三层：
 
 - **管理端点**（`/api/v1/jsplugins/*`）：插件的安装、卸载、启禁用、更新，需要 JWT 认证
 - **设置端点**（`/api/v1/settings/*`）：订阅源和代理等全局配置，需要 JWT 认证
@@ -566,7 +566,7 @@ Flutter/Lynx 商店通常由客户端渐进拉取清单；以下刷新端点保�
 | `registries[].name` | string | 订阅源名称 |
 | `registries[].enabled` | boolean | 是否启用 |
 
-未配置时 GET 返回内置默认值（Songloft 官方插件源）。
+未配置时 GET 返回内置默认值（上游 Songloft 官方插件源）。
 
 ---
 

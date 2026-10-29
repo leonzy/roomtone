@@ -21,7 +21,7 @@
 
 **章节来源**: `internal/handlers/auth.go`、`internal/middleware/auth.go`
 
-Songloft 使用 JWT 双令牌认证机制：
+Roomtone 使用 JWT 双令牌认证机制：
 
 - **Access Token**: 短期令牌，用于 API 鉴权。客户端通过 `Authorization: Bearer <token>` 请求头或 `?access_token=<token>` 查询参数传递
 - **Refresh Token**: 长期令牌，用于在 Access Token 过期后获取新令牌，无需重新登录

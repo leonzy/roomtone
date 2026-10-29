@@ -27,7 +27,7 @@
 
 **章节来源**: `docs/api_response.md`、`AGENTS.md`（后端编码约定）
 
-Songloft 后端 API 遵循以下核心原则：
+Roomtone 后端 API 遵循以下核心原则：
 
 - **RESTful 直返**: 成功响应直接返回业务模型或集合，不使用 `{code, data, message}` 统一信封。HTTP 状态码即语义，`code` 字段与之重复属于冗余设计。
 - **错误格式统一**: 所有 JSON API 端点的错误响应统一为 `{"error": "...", "detail": "..."}`，禁止使用 `message`、`msg`、`reason` 等替代字段名。

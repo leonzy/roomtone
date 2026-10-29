@@ -58,7 +58,7 @@
 
 **章节来源**: `internal/handlers/music.go`、`internal/app/routers.go`
 
-歌曲管理模块是 Songloft 核心 API，覆盖歌曲增删改查、播放流分发、封面/歌词、音频标签写入、文件整理和重复检测。所有端点均需 JWT 认证（`BearerAuth`），基础路径 `/api/v1`。
+歌曲管理模块是 Roomtone 核心 API，覆盖歌曲增删改查、播放流分发、封面/歌词、音频标签写入、文件整理和重复检测。所有端点均需 JWT 认证（`BearerAuth`），基础路径 `/api/v1`。
 
 **歌曲类型**: `local`（本地文件）、`remote`（外部 URL / 插件音源）、`radio`（在线广播/直播流）。
 

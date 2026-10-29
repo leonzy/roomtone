@@ -46,7 +46,7 @@
 
 **章节来源**: `internal/middleware/auth.go`
 
-Songloft 使用 **JWT 双令牌机制**（Access Token + Refresh Token）。认证中间件按以下优先级获取令牌：
+Roomtone 使用 **JWT 双令牌机制**（Access Token + Refresh Token）。认证中间件按以下优先级获取令牌：
 
 1. **Authorization 请求头**（首选）：`Authorization: Bearer <access_token>`
 2. **URL 查询参数**（回退）：`?access_token=<token>`，用于 `<img>` 标签、音频播放器等无法自定义 Header 的场景
