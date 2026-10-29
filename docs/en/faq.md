@@ -201,7 +201,7 @@ A: The default account and password are `admin` / `admin`, and changing them is 
 **Docker startup**: Set it via the `ADMIN_PASSWORD` environment variable:
 ```bash
 docker run -d \
-  --name songloft \
+  --name roomtone \
   -p 58091:58091 \
   -v /path/to/music:/app/music \
   -v /path/to/data:/app/data \
@@ -215,7 +215,7 @@ docker run -d \
 services:
   songloft:
     image: ghcr.io/leonzy/roomtone:latest
-    container_name: songloft
+    container_name: roomtone
     restart: always
     ports:
       - "58091:58091"

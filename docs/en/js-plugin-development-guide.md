@@ -296,7 +296,7 @@ Native clients have two paths for rendering a plugin UI: the system WebView, and
 
 Prerequisites for declaring `lynx`:
 
-- Use `pnpm create @songloft/songloft-plugin` and select the **"Lynx Native Rendering"** template (or manually set up an rspeedy + ReactLynx environment)
+- Use `pnpm create @ghcr.io/leonzy/roomtone-plugin` and select the **"Lynx Native Rendering"** template (or manually set up an rspeedy + ReactLynx environment)
 - Install `@songloft/lynx-plugin-sdk` as the host communication SDK (replaces `@songloft/client-sdk` used in WebView)
 - Set `"staticHash": false` in `plugin.json` (prevents bundle files from being renamed)
 

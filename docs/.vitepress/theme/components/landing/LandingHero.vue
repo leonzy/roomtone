@@ -11,7 +11,7 @@ const t = (k: string) => createT(lang.value)(k)
 const badges = [
   { alt: 'GitHub stars', src: 'https://img.shields.io/github/stars/leonzy/roomtone?style=flat&color=E8792B' },
   { alt: 'Release', src: 'https://img.shields.io/github/v/release/leonzy/roomtone?color=E8792B' },
-  { alt: 'Docker pulls', src: 'https://img.shields.io/docker/pulls/songloft/songloft?color=E8792B' },
+  { alt: 'Roomtone container image', src: 'https://img.shields.io/badge/GHCR-leonzy%2Froomtone-blue' },
   { alt: 'License', src: 'https://img.shields.io/github/license/leonzy/roomtone?color=E8792B' },
 ]
 </script>
@@ -37,7 +37,7 @@ const badges = [
         <p class="hero-note">{{ t('hero.note') }}</p>
       </div>
       <div class="hero-shot">
-        <BrowserFrame src="/screenshots/home-desktop.png" url="songloft · 我的音乐" :eager="true" />
+        <BrowserFrame src="/screenshots/home-desktop.png" url="Roomtone · 我的音乐" :eager="true" />
       </div>
     </div>
   </section>

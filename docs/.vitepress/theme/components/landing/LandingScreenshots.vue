@@ -17,10 +17,10 @@ const t = (k: string) => createT(lang.value)(k)
 
       <div class="gallery-grid">
         <div class="g-wide">
-          <BrowserFrame src="/screenshots/playlists-desktop.png" url="songloft · 歌单" />
+          <BrowserFrame src="/screenshots/playlists-desktop.png" url="Roomtone · 歌单" />
         </div>
-        <BrowserFrame src="/screenshots/settings-desktop.png" url="songloft · 设置" />
-        <BrowserFrame src="/screenshots/library-desktop.png" url="songloft · 歌曲库" />
+        <BrowserFrame src="/screenshots/settings-desktop.png" url="Roomtone · 设置" />
+        <BrowserFrame src="/screenshots/library-desktop.png" url="Roomtone · 歌曲库" />
       </div>
     </div>
   </section>

@@ -201,7 +201,7 @@ A: 默认账号密码为 `admin` / `admin`，建议修改。根据部署方式�
 **Docker 启动**：通过环境变量 `ADMIN_PASSWORD` 设置：
 ```bash
 docker run -d \
-  --name songloft \
+  --name roomtone \
   -p 58091:58091 \
   -v /path/to/music:/app/music \
   -v /path/to/data:/app/data \
@@ -215,7 +215,7 @@ docker run -d \
 services:
   songloft:
     image: ghcr.io/leonzy/roomtone:latest
-    container_name: songloft
+    container_name: roomtone
     restart: always
     ports:
       - "58091:58091"

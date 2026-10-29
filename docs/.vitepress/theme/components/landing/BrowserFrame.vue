@@ -20,7 +20,7 @@ const resolvedSrc = computed(() =>
       <span class="dot dot-r" />
       <span class="dot dot-y" />
       <span class="dot dot-g" />
-      <div class="browser-url">{{ url ?? 'songloft.local' }}</div>
+      <div class="browser-url">{{ url ?? 'roomtone.local' }}</div>
     </div>
     <img
       class="browser-img"

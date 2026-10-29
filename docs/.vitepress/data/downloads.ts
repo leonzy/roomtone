@@ -64,9 +64,9 @@ const binaryGroups = (suffix: string): OSGroup[] => [
     osLabel: { zh: 'Linux', en: 'Linux' },
     icon: 'linux',
     assets: [
-      a('amd64', { zh: 'x86_64', en: 'x86_64' }, `songloft-linux-amd64${suffix}`),
-      a('arm64', { zh: 'ARM64', en: 'ARM64' }, `songloft-linux-arm64${suffix}`),
-      a('armv7', { zh: 'ARMv7', en: 'ARMv7' }, `songloft-linux-armv7${suffix}`),
+      a('amd64', { zh: 'x86_64', en: 'x86_64' }, `roomtone-linux-amd64${suffix}`),
+      a('arm64', { zh: 'ARM64', en: 'ARM64' }, `roomtone-linux-arm64${suffix}`),
+      a('armv7', { zh: 'ARMv7', en: 'ARMv7' }, `roomtone-linux-armv7${suffix}`),
     ],
   },
   {
@@ -74,8 +74,8 @@ const binaryGroups = (suffix: string): OSGroup[] => [
     osLabel: { zh: 'macOS', en: 'macOS' },
     icon: 'apple',
     assets: [
-      a('amd64', { zh: 'Intel', en: 'Intel' }, `songloft-darwin-amd64${suffix}`),
-      a('arm64', { zh: 'Apple Silicon', en: 'Apple Silicon' }, `songloft-darwin-arm64${suffix}`),
+      a('amd64', { zh: 'Intel', en: 'Intel' }, `roomtone-darwin-amd64${suffix}`),
+      a('arm64', { zh: 'Apple Silicon', en: 'Apple Silicon' }, `roomtone-darwin-arm64${suffix}`),
     ],
   },
   {
@@ -83,8 +83,8 @@ const binaryGroups = (suffix: string): OSGroup[] => [
     osLabel: { zh: 'Windows', en: 'Windows' },
     icon: 'windows',
     assets: [
-      a('amd64', { zh: 'x86_64', en: 'x86_64' }, `songloft-windows-amd64${suffix}.exe`),
-      a('arm64', { zh: 'ARM64', en: 'ARM64' }, `songloft-windows-arm64${suffix}.exe`),
+      a('amd64', { zh: 'x86_64', en: 'x86_64' }, `roomtone-windows-amd64${suffix}.exe`),
+      a('arm64', { zh: 'ARM64', en: 'ARM64' }, `roomtone-windows-arm64${suffix}.exe`),
     ],
   },
 ]
@@ -97,8 +97,8 @@ export const INSTALL: InstallMethod[] = [
     icon: 'terminal',
     kind: 'download',
     note: {
-      zh: 'macOS 从 GitHub 下载后首次运行需先解除隔离：xattr -d com.apple.quarantine ./songloft',
-      en: 'On macOS run `xattr -d com.apple.quarantine ./songloft` before first launch.',
+      zh: 'macOS 从 GitHub 下载后首次运行需先解除隔离：xattr -d com.apple.quarantine ./roomtone',
+      en: 'On macOS run `xattr -d com.apple.quarantine ./roomtone` before first launch.',
     },
     editions: [
       {
@@ -133,26 +133,26 @@ export const INSTALL: InstallMethod[] = [
       {
         group: { zh: '方式 A · docker run', en: 'Option A · docker run' },
         title: { zh: '拉取镜像（完整版 / 精简版）', en: 'Pull image (full / lite)' },
-        code: 'docker pull songloft/songloft:latest\ndocker pull songloft/songloft:lite',
+        code: 'docker pull ghcr.io/leonzy/roomtone:latest\ndocker pull ghcr.io/leonzy/roomtone:lite',
       },
       {
         group: { zh: '方式 A · docker run', en: 'Option A · docker run' },
         title: { zh: '运行容器', en: 'Run container' },
         code:
-          'docker run -d --name songloft -p 58091:58091 \\\n' +
+          'docker run -d --name roomtone -p 58091:58091 \\\n' +
           '  -v /path/to/music:/app/music \\\n' +
           '  -v /path/to/data:/app/data \\\n' +
           "  -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='your_strong_password' \\\n" +
-          '  songloft/songloft:latest',
+          '  ghcr.io/leonzy/roomtone:latest',
       },
       {
         group: { zh: '方式 B · Docker Compose（推荐）', en: 'Option B · Docker Compose (recommended)' },
         title: { zh: 'docker-compose.yml', en: 'docker-compose.yml' },
         code:
           'services:\n' +
-          '  songloft:\n' +
-          '    image: songloft/songloft:latest\n' +
-          '    container_name: songloft\n' +
+          '  roomtone:\n' +
+          '    image: ghcr.io/leonzy/roomtone:latest\n' +
+          '    container_name: roomtone\n' +
           '    restart: always\n' +
           '    ports:\n' +
           '      - "58091:58091"\n' +
@@ -173,7 +173,7 @@ export const INSTALL: InstallMethod[] = [
   },
   {
     id: 'homeassistant',
-    label: { zh: 'Home Assistant', en: 'Home Assistant' },
+    label: { zh: '上游 Home Assistant', en: 'Upstream Home Assistant' },
     tagline: { zh: 'HAOS 加载项 · 一键安装', en: 'HAOS add-on · one-click' },
     icon: 'home',
     kind: 'external',
@@ -320,8 +320,8 @@ export const INSTALL: InstallMethod[] = [
   },
   {
     id: 'desktop',
-    label: { zh: 'Electron 桌面客户端', en: 'Electron Desktop Client' },
-    tagline: { zh: '官方客户端 · Windows / macOS / Linux', en: 'Official client · Windows / macOS / Linux' },
+    label: { zh: '上游 Electron 客户端', en: 'Upstream Electron Client' },
+    tagline: { zh: '独立上游项目 · Windows / macOS / Linux', en: 'Separate upstream project · Windows / macOS / Linux' },
     icon: 'monitor',
     kind: 'external',
     note: {

@@ -296,7 +296,7 @@ static/              # 静态资源目录（可选）
 
 声明 `lynx` 的前提：
 
-- 使用 `pnpm create @songloft/songloft-plugin` 时选择 **"Lynx 原生渲染"** 模板（或手动搭建 rspeedy + ReactLynx 环境）
+- 使用 `pnpm create @ghcr.io/leonzy/roomtone-plugin` 时选择 **"Lynx 原生渲染"** 模板（或手动搭建 rspeedy + ReactLynx 环境）
 - 安装 `@songloft/lynx-plugin-sdk` 作为宿主通信 SDK（替代 WebView 下的 `@songloft/client-sdk`）
 - `plugin.json` 中设置 `"staticHash": false`（防止 bundle 文件被重命名）
 

@@ -292,7 +292,7 @@ docker pull ghcr.io/leonzy/roomtone:lite
 
 # Run the container
 docker run -d \
-  --name songloft \
+  --name roomtone \
   -p 58091:58091 \
   -v /path/to/music:/app/music \
   -v /path/to/data:/app/data \
@@ -331,7 +331,7 @@ version: '3.8'
 services:
   songloft:
     image: ghcr.io/leonzy/roomtone:latest
-    container_name: songloft
+    container_name: roomtone
     restart: always
     ports:
       - "58091:58091"
@@ -459,7 +459,7 @@ BASE_PATH=/songloft ./roomtone
 
 # Docker
 docker run -d \
-  --name songloft \
+  --name roomtone \
   -p 58091:58091 \
   -v /path/to/music:/app/music \
   -v /path/to/data:/app/data \
@@ -499,7 +499,7 @@ version: '3.8'
 services:
   songloft:
     image: ghcr.io/leonzy/roomtone:latest
-    container_name: songloft
+    container_name: roomtone
     restart: always
     ports:
       - "58091:58091"
