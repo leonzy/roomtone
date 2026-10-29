@@ -170,6 +170,9 @@ make build-frontend-web            # Standalone deployment build
 make build-frontend-all            # All platforms supported by the current system
 ```
 
+
+The image installs Alpine full `ffmpeg` and Chromaprint `fpcalc`. Fingerprinting prefers the ffmpeg chromaprint muxer; if absent, a WAV pipe connects ffmpeg to fpcalc while preserving source sample rate and channels. The 120-second cap, CUE segment bounds and timeout still apply, with no temporary audio files. Playback decoding and PCM output remain available.
+
 <a id="docker-entrypoint"></a>
 
 ## Docker Entry and Hot Swap

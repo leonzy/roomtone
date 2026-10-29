@@ -94,6 +94,7 @@ RUN apk add --no-cache \
     alsa-ucm-conf \
     pulseaudio-utils \
     ffmpeg \
+    chromaprint \
     su-exec
 
 # 设置默认时区为东八区
@@ -108,6 +109,8 @@ RUN mkdir -p /app/music /app/data
 
 # Server playback requires the s16le muxer and PCM encoders. Use Alpine's full
 # ffmpeg/ffprobe package above; the upstream slim binary omits the PCM muxer.
+# Alpine omits the chromaprint muxer. Its fpcalc package supplies fingerprinting
+# alongside the full decoder, without reducing playback codec/muxer support.
 
 # 启动脚本小、极少变动（--chmod 合并原独立 chmod 层）
 COPY --link --chmod=0755 scripts/docker-entrypoint.sh /app/docker-entrypoint.sh

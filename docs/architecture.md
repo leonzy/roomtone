@@ -171,6 +171,9 @@ make build-frontend-web            # 独立部署版
 make build-frontend-all            # 当前系统支持的所有平台
 ```
 
+
+镜像同时安装 Alpine 完整 `ffmpeg` 和 Chromaprint 的 `fpcalc`。指纹优先使用 ffmpeg 的 chromaprint muxer；该 muxer 未编入时，以保留采样率和声道的 WAV 管道连接 ffmpeg 与 fpcalc。采样仍受 120 秒、CUE 区间和超时约束，不写临时音频文件；播放解码器及 PCM 输出能力保持完整。
+
 <a id="docker-entrypoint"></a>
 
 ## Docker 入口与热替换

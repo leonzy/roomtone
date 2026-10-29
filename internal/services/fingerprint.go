@@ -3,6 +3,8 @@ package services
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -22,6 +24,7 @@ var (
 	chromaprintAvailable bool
 	chromaprintOnce      sync.Once
 	resolvedFFmpegPath   string
+	resolvedFPCalcPath   string
 	durationRe           = regexp.MustCompile(`Duration:\s+(\d+):(\d+):(\d+)\.(\d+)`)
 )
 
@@ -34,7 +37,7 @@ func SetFingerprintFFmpegPath(path string) {
 	configuredFFmpegPath.Store(path)
 }
 
-// IsChromaprintAvailable 检测 ffmpeg 是否支持 chromaprint muxer（首次调用时检测，结果缓存）。
+// IsChromaprintAvailable 检测 ffmpeg muxer 或 ffmpeg PCM + fpcalc（首次调用时缓存）。
 func IsChromaprintAvailable() bool {
 	chromaprintOnce.Do(func() {
 		name := ""
@@ -52,6 +55,16 @@ func IsChromaprintAvailable() bool {
 		if err == nil && strings.Contains(string(out), "chromaprint") {
 			chromaprintAvailable = true
 			resolvedFFmpegPath = path
+		} else if err == nil && strings.Contains(string(out), "s16le") {
+			// Alpine 的完整 ffmpeg 提供播放所需 PCM，但没有 chromaprint muxer。
+			// 使用同一解码器和独立 Chromaprint 工具，避免替换为缺少 PCM 的精简 ffmpeg。
+			if fpcalc, lookupErr := safeLookPath("fpcalc"); lookupErr == nil {
+				if _, versionErr := exec.Command(fpcalc, "-version").Output(); versionErr == nil {
+					chromaprintAvailable = true
+					resolvedFFmpegPath = path
+					resolvedFPCalcPath = fpcalc
+				}
+			}
 		}
 	})
 	return chromaprintAvailable
@@ -87,6 +100,13 @@ const (
 // startSeconds / endSeconds 仅 CUE 轨非零：CUE 轨的 filePath 指向整轨镜像，
 // 必须按区间采样，否则同一镜像下的所有 track 会拿到完全相同的指纹。
 func ExtractFingerprint(ctx context.Context, filePath string, startSeconds, endSeconds float64) (string, float64, error) {
+	if !IsChromaprintAvailable() {
+		return "", 0, fmt.Errorf("chromaprint unavailable: need ffmpeg muxer or ffmpeg PCM + fpcalc")
+	}
+	return extractFingerprintWithTools(ctx, filePath, startSeconds, endSeconds, resolvedFFmpegPath, resolvedFPCalcPath)
+}
+
+func extractFingerprintWithTools(ctx context.Context, filePath string, startSeconds, endSeconds float64, ffmpegPath, fpcalcPath string) (string, float64, error) {
 	ctx, cancel := context.WithTimeout(ctx, fingerprintTimeout)
 	defer cancel()
 
@@ -100,21 +120,35 @@ func ExtractFingerprint(ctx context.Context, filePath string, startSeconds, endS
 	if trackLen := endSeconds - startSeconds; trackLen > 0 && trackLen < sample {
 		sample = trackLen
 	}
-	args = append(args, "-t", strconv.FormatFloat(sample, 'f', 3, 64),
-		"-f", "chromaprint", "-fp_format", "base64", "-")
+	args = append(args, "-t", strconv.FormatFloat(sample, 'f', 3, 64))
+	if fpcalcPath == "" {
+		args = append(args, "-f", "chromaprint", "-fp_format", "base64", "-")
+	} else {
+		// WAV 管道保留源采样率和声道，由 Chromaprint 执行原有重采样，
+		// 避免与既有 muxer 指纹产生差异。CUE seek 和 120 秒上限仍由解码器执行。
+		args = append(args, "-c:a", "pcm_s16le", "-f", "wav", "-")
+	}
 
-	cmd := exec.CommandContext(ctx, resolvedFFmpegPath, args...)
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	// ffmpeg 若派生了持有管道的子进程，SIGKILL 后 Wait 仍可能挂住 worker。
 	cmd.WaitDelay = 5 * time.Second
 
-	if err := cmd.Run(); err != nil {
-		return "", 0, fmt.Errorf("ffmpeg chromaprint: %w (%s)", err, stderr.String())
+	fingerprint := ""
+	if fpcalcPath == "" {
+		if err := cmd.Run(); err != nil {
+			return "", 0, fmt.Errorf("ffmpeg chromaprint: %w (%s)", err, stderr.String())
+		}
+		fingerprint = strings.TrimSpace(stdout.String())
+	} else {
+		var err error
+		fingerprint, err = fingerprintDecodedStream(ctx, fpcalcPath, cmd)
+		if err != nil {
+			return "", 0, err
+		}
 	}
-
-	fingerprint := strings.TrimSpace(stdout.String())
 	if nl := strings.IndexByte(fingerprint, '\n'); nl >= 0 {
 		fingerprint = fingerprint[:nl]
 	}
@@ -135,6 +169,57 @@ func ExtractFingerprint(ctx context.Context, filePath string, startSeconds, endS
 		return fingerprint, duration - startSeconds, nil
 	}
 	return fingerprint, duration, nil
+}
+
+func fingerprintDecodedStream(ctx context.Context, fpcalcPath string, decoder *exec.Cmd) (string, error) {
+	// length=0 reads the decoder's already bounded sample through EOF.
+	// An OS pipe keeps high-rate sources out of Go heap and temporary files.
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return "", err
+	}
+	defer reader.Close()
+	defer writer.Close()
+	cmd := exec.CommandContext(ctx, fpcalcPath, "-format", "wav", "-length", "0", "-json", "-")
+	cmd.Stdin = reader
+	decoder.Stdout = writer
+	cmd.WaitDelay = 5 * time.Second
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("fpcalc start: %w", err)
+	}
+	if err := decoder.Start(); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return "", fmt.Errorf("ffmpeg start: %w", err)
+	}
+	// Children own duplicate descriptors; parent ends must close for EOF/SIGPIPE.
+	_ = reader.Close()
+	_ = writer.Close()
+	decodeErr := decoder.Wait()
+	err = cmd.Wait()
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	if decodeErr != nil {
+		return "", fmt.Errorf("ffmpeg fingerprint decode: %w", decodeErr)
+	}
+	// fpcalc 在正常 EOF（短于采样上限）时可能返回 3，并同时输出完整指纹。
+	var exitErr *exec.ExitError
+	if err != nil && !(errors.As(err, &exitErr) && exitErr.ExitCode() == 3 && strings.Contains(stderr.String(), "End of file")) {
+		return "", fmt.Errorf("fpcalc: %w (%s)", err, stderr.String())
+	}
+	var result struct {
+		Fingerprint string `json:"fingerprint"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		return "", fmt.Errorf("fpcalc result: %w", err)
+	}
+	if strings.TrimSpace(result.Fingerprint) == "" {
+		return "", fmt.Errorf("fpcalc returned empty fingerprint")
+	}
+	return result.Fingerprint, nil
 }
 
 // FingerprintProgress 指纹计算进度。
