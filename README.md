@@ -2,7 +2,7 @@
 
 > **本仓库是 [Songloft](https://github.com/songloft-org/songloft) 的 fork，项目名 Roomtone。**
 > 代码中的 `songloft` 标识（Go module、环境变量、数据库文件名、JS 桥接命名空间、
-> 客户端集成名）保持不变，以兼容上游客户端与已发布插件；仅最终可执行文件（进程名）改为 `roomtone`。
+> 客户端集成名）保持不变，以兼容上游客户端与已发布插件；对外名称、主程序与下载包统一使用 Roomtone。Windows 继续保留旧资料目录标识，升级后沿用既有配置和数据。
 > 除改名外，本 fork 还新增了上游没有的**服务端播放控制与多房间音频输出**（AirPlay/DLNA 推送、同步组、每音箱 EQ、闹钟），设计与验收见 [播放架构](docs/architecture_playback.md) 与 [SlimServer 对照矩阵](docs/playback_compat_matrix.md)。
 > 版权与许可见 [NOTICE](NOTICE)。
 

@@ -3,7 +3,7 @@
 > **This repository is a fork of [Songloft](https://github.com/songloft-org/songloft), named Roomtone.**
 > All `songloft` identifiers in the code (Go module, env vars, database filename, JS bridge
 > namespaces, client integration names) are intentionally left unchanged for compatibility with
-> upstream clients and published plugins. Only the final executable (process name) is `roomtone`.
+> upstream clients and published plugins. Public names, main executables and download packages use Roomtone. Windows retains the legacy profile identity so existing settings and data stay available.
 > Beyond the rename, this fork also adds **server-side playback control and multi-room output**, which upstream does not have (AirPlay/DLNA push, sync groups, per-speaker EQ, alarms). See the [playback architecture](docs/en/architecture_playback.md) and the [SlimServer comparison matrix](docs/en/playback_compat_matrix.md).
 > See [NOTICE.en](NOTICE.en) for copyright and licensing.
 
