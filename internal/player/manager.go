@@ -926,11 +926,13 @@ func (m *Manager) AddMember(ctx context.Context, groupID, playerID string) (Grou
 	// 从原组摘出。原组被摘空就必须删掉：设备并组后如果留着空壳，
 	// 列表里会多一个没有成员的幽灵组，前端拿它当"可加入的组"渲染。
 	emptied := make([]string, 0, 1)
+	changedGroups := make([]string, 0, 1)
 	for _, other := range m.groups {
 		if other.ID == groupID {
 			continue
 		}
 		if other.HasMember(playerID) {
+			changedGroups = append(changedGroups, other.ID)
 			other.Members = removeMember(other.Members, playerID)
 			if len(other.Members) == 0 {
 				emptied = append(emptied, other.ID)
@@ -950,11 +952,22 @@ func (m *Manager) AddMember(ctx context.Context, groupID, playerID string) (Grou
 	snapshot := *g
 	m.mu.Unlock()
 	m.purgeEmptyGroups(ctx, emptied)
+	// Detach from a surviving source group before reusing its cached sink.
+	for _, id := range changedGroups {
+		if m.deps.Store != nil {
+			_ = m.deps.Store.DeleteMember(ctx, id, playerID)
+		}
+		_ = m.rebuildSinks(ctx, id)
+	}
 
 	if m.deps.Store != nil {
 		_ = m.deps.Store.SaveMember(ctx, groupID, newMember)
 	}
-	m.rebuildSinks(ctx, groupID)
+	if err := m.rebuildSinks(ctx, groupID); err != nil {
+		rollbackCtx := context.WithoutCancel(ctx)
+		_ = m.RemoveMember(rollbackCtx, groupID, playerID, "solo")
+		return GroupView{}, fmt.Errorf("加入区域失败: %w", err)
+	}
 	// 刚入组的设备要经过一个校正周期才真正对齐，期间前端显示"对齐中"。
 	m.markSyncing(playerID)
 	if m.deps.Bus != nil {
@@ -1369,12 +1382,12 @@ func (m *Manager) ensureEngine(ctx context.Context, g Group) {
 }
 
 // rebuildSinks 按组成员重建推送目标。
-func (m *Manager) rebuildSinks(ctx context.Context, groupID string) {
+func (m *Manager) rebuildSinks(ctx context.Context, groupID string) error {
 	m.mu.RLock()
 	g, ok := m.groups[groupID]
 	if !ok {
 		m.mu.RUnlock()
-		return
+		return nil
 	}
 	players := make([]*Player, 0, len(g.Members))
 	for _, mem := range g.Members {
@@ -1385,12 +1398,12 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) {
 	e := m.engines["group:"+groupID]
 	m.mu.RUnlock()
 	if e == nil {
-		return
+		return nil
 	}
 	format, err := NegotiateFormat(players)
 	if err != nil {
 		m.deps.Logger.Warn("negotiate format failed", "group", groupID, "err", err)
-		return
+		return err
 	}
 	e.SetFormat(format)
 	targets := make([]sink.Target, 0, len(players))
@@ -1403,6 +1416,12 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) {
 		}
 		s, ok := m.sinkFor(ctx, p)
 		if !ok {
+			e.mu.Lock()
+			active := e.running
+			e.mu.Unlock()
+			if active {
+				return fmt.Errorf("无法连接播放设备: %s", p.Name)
+			}
 			continue
 		}
 		// 控制型 sink（local 自拉流）不进分发列表：服务端拿不到它的 PCM，
@@ -1422,11 +1441,15 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) {
 			Delay:    memberDelay(*g, p.ID),
 		})
 	}
-	e.SetControls(controls)
+	if err := e.SetControls(controls); err != nil {
+		return err
+	}
 	// 播放中增删成员走差异路径：新增的立刻接进时间轴，移除的立刻停。
 	if err := e.SetTargets(ctx, targets); err != nil {
 		m.deps.Logger.Warn("attach playback target failed", "group", groupID, "err", err)
+		return err
 	}
+	return nil
 }
 
 // eqSettingsFor 把设备 EQ 翻成下发结构（客户端与 WS 共用一份口径）。

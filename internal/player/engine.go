@@ -246,10 +246,44 @@ func (e *Engine) SetTargets(ctx context.Context, ts []sink.Target) error {
 //
 // 控制型 sink 不接收 PCM：服务端只下发 load/play/pause/seek 指令，客户端
 // 自己拉流解码。它们与 targets 分开管理，因为 sink.Set 只装 PushSink。
-func (e *Engine) SetControls(cs []sink.Sink) {
+func (e *Engine) SetControls(cs []sink.Sink) error {
+	e.mu.Lock()
+	old := e.controls
+	running, ctx := e.running, e.runCtx
+	plan, cursor, base, timeline, rate := e.curPlan, e.cursor, e.planBase, e.timeline, e.format.SampleRate
+	e.mu.Unlock()
+	wanted := make(map[string]bool)
+	previous := make(map[string]bool)
+	for _, s := range cs {
+		wanted[s.ID()] = true
+	}
+	for _, s := range old {
+		previous[s.ID()] = true
+		if !wanted[s.ID()] {
+			_ = s.Stop()
+		}
+	}
+	if running && ctx != nil && plan.SongID != 0 && timeline != nil && rate > 0 {
+		offset := max(int64(0), cursor-base)
+		plan.Position += time.Duration(float64(offset) / float64(rate) * float64(time.Second))
+		for _, s := range cs {
+			if previous[s.ID()] {
+				continue
+			}
+			if err := s.Open(ctx, plan); err != nil {
+				_ = s.Stop()
+				return fmt.Errorf("open control %s: %w", s.ID(), err)
+			}
+			if err := s.Start(timeline.At(uint64(cursor))); err != nil {
+				_ = s.Stop()
+				return fmt.Errorf("start control %s: %w", s.ID(), err)
+			}
+		}
+	}
 	e.mu.Lock()
 	e.controls = append([]sink.Sink(nil), cs...)
 	e.mu.Unlock()
+	return nil
 }
 
 // Controls 当前控制型 sink 快照（只读用途）。
@@ -318,6 +352,9 @@ func (e *Engine) attachTarget(ctx context.Context, t sink.Target) error {
 	cursor, base := e.cursor, e.planBase
 	timeline := e.timeline
 	rate := e.format.SampleRate
+	if e.runCtx != nil {
+		ctx = e.runCtx
+	}
 	e.mu.Unlock()
 	if plan.SongID == 0 || timeline == nil || rate <= 0 {
 		// 还没开播：只登记，开播时统一 Open。
@@ -329,10 +366,13 @@ func (e *Engine) attachTarget(ctx context.Context, t sink.Target) error {
 		offset = 0
 	}
 	plan.Position += time.Duration(float64(offset) / float64(rate) * float64(time.Second))
+	plan.SampleIndex = &cursor
 	if err := t.Sink.Open(ctx, plan); err != nil {
+		_ = t.Sink.Stop()
 		return fmt.Errorf("open sink %s: %w", t.PlayerID, err)
 	}
 	if err := t.Sink.Start(timeline.At(uint64(cursor)).Add(t.Delay)); err != nil {
+		_ = t.Sink.Stop()
 		return fmt.Errorf("start sink %s: %w", t.PlayerID, err)
 	}
 	e.targets.Add(t)
@@ -846,13 +886,15 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		e.emitState()
 
 		// 打开 sink：每台设备各自 start 到同一时刻。
+		sampleOrigin := sampleBase
 		plan := sink.StreamPlan{
-			Format:   sink.Format{Codec: format.Codec, SampleRate: format.SampleRate, Channels: format.Channels, Bits: format.Bits},
-			SongID:   track.SongID,
-			Title:    track.Title,
-			Position: position,
-			Duration: track.Duration,
-			Latency:  e.deps.Latency,
+			Format:      sink.Format{Codec: format.Codec, SampleRate: format.SampleRate, Channels: format.Channels, Bits: format.Bits},
+			SongID:      track.SongID,
+			Title:       track.Title,
+			Position:    position,
+			Duration:    track.Duration,
+			Latency:     e.deps.Latency,
+			SampleIndex: &sampleOrigin,
 		}
 		e.mu.Lock()
 		if ctx.Err() != nil {
@@ -885,6 +927,9 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			if resume && len(targets) > 0 {
 				// 有成员不支持接续（DLNA 这类拉流设备）：退回普通切换，
 				// 交界处会有一次 Open/Play，属于已知降级。
+				for _, t := range targets {
+					_ = t.Sink.Stop()
+				}
 				e.deps.Logger.Info("gapless unavailable, falling back to reopen",
 					"owner", e.ownerKind+":"+e.ownerID)
 			}

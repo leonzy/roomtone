@@ -162,11 +162,14 @@ type EQSettings struct {
 
 // StreamPlan 下发给 sink 的播放计划。
 type StreamPlan struct {
-	Format   Format
-	SongID   int64
-	Title    string
-	Position time.Duration
-	Duration time.Duration
+	// SampleIndex is the absolute PCM timeline origin, independent of track position.
+	// nil preserves the legacy position-derived origin for external callers.
+	SampleIndex *int64
+	Format      Format
+	SongID      int64
+	Title       string
+	Position    time.Duration
+	Duration    time.Duration
 	// Latency 起播提前量：帧在 play_at 之前这么久就已经写好。
 	Latency time.Duration
 	// StreamURL 仅 PullSink 使用（局域网可达绝对地址）。

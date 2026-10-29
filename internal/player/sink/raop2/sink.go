@@ -202,6 +202,9 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 		s.opts.Channels = plan.Format.Channels
 	}
 	s.anchor = plan.Position.Milliseconds() * int64(s.opts.SampleRate) / 1000
+	if plan.SampleIndex != nil {
+		s.anchor = *plan.SampleIndex
+	}
 	s.sent = 0
 	s.pendingPCM = nil
 	s.backlog = map[uint16][]byte{}

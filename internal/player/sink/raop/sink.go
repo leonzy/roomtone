@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net"
@@ -130,6 +131,37 @@ func (s *Sink) Events() <-chan sink.Event { return s.events }
 
 // Open 完成 RTSP 握手：OPTIONS → ANNOUNCE → SETUP → RECORD。
 func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err = ctx.Err(); err != nil {
+			return err
+		}
+		err = s.openOnce(ctx, plan)
+		if err == nil {
+			return nil
+		}
+		var status *handshakeStatusError
+		var network net.Error
+		retry := errors.As(err, &network) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+		if errors.As(err, &status) {
+			retry = status.status == 453 || status.status >= 500
+		}
+		if !retry || attempt == 2 {
+			return err
+		}
+		slog.Warn("AirPlay handshake retry", "device", s.id, "attempt", attempt+2, "err", err)
+		timer := time.NewTimer(time.Duration(attempt+1) * 500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return err
+}
+
+func (s *Sink) openOnce(ctx context.Context, plan sink.StreamPlan) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -145,6 +177,9 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 		s.opts.Channels = plan.Format.Channels
 	}
 	s.anchor = plan.Position.Milliseconds() * int64(s.opts.SampleRate) / 1000
+	if plan.SampleIndex != nil {
+		s.anchor = *plan.SampleIndex
+	}
 	s.sent = 0
 	s.pendingPCM = nil
 	s.backlog = [packetBacklogSize]cachedPacket{}
@@ -575,12 +610,18 @@ func (s *Sink) doAuth(ctx context.Context, cl *Client, method, uri string, heade
 	return cl.Do(ctx, method, uri, headers, body)
 }
 
-func statusError(method string, status int) error {
-	if status == 453 {
-		return fmt.Errorf("raop: %s 返回 453（音箱拒绝新会话，可能仍有上一连接未释放或被其他播放占用）", method)
-	}
-	return fmt.Errorf("raop: %s 返回 %d", method, status)
+type handshakeStatusError struct {
+	method string
+	status int
 }
+
+func (e *handshakeStatusError) Error() string {
+	if e.status == 453 {
+		return fmt.Sprintf("raop: %s 返回 453（音箱拒绝新会话，可能仍有上一连接未释放或被其他播放占用）", e.method)
+	}
+	return fmt.Sprintf("raop: %s 返回 %d", e.method, e.status)
+}
+func statusError(method string, status int) error { return &handshakeStatusError{method, status} }
 
 // Release only the session acknowledged on our own RTSP connection. A failed
 // OPTIONS without a session must never tear down another sender's playback.

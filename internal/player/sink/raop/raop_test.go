@@ -271,43 +271,18 @@ func TestSinkHandshakeAndStream(t *testing.T) {
 }
 
 func TestSinkOpenRejectsBadStatus(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		br := bufio.NewReader(conn)
-		for {
-			if _, err := br.ReadString('\n'); err != nil {
-				return
-			}
-			// 读掉头部直到空行
-			for {
-				h, err := br.ReadString('\n')
-				if err != nil {
-					return
-				}
-				if strings.TrimSpace(h) == "" {
-					break
-				}
-			}
-			fmt.Fprint(conn, "RTSP/1.0 453 Not Enough Bandwidth\r\nCSeq: 1\r\n\r\n")
-			return
-		}
-	}()
-
-	s := New("p2", Options{Address: ln.Addr().String()})
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	f := newFakeRTSP(t)
+	f.onRequest = func(string, map[string]string) int { return 453 }
+	s := New("p2", Options{Address: f.addr()})
+	defer s.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err = s.Open(ctx, sink.StreamPlan{})
+	err := s.Open(ctx, sink.StreamPlan{})
 	if err == nil || !strings.Contains(err.Error(), "453") {
 		t.Fatalf("应返回 453 错误，实际 %v", err)
 	}
-	_ = s.Close()
+	methods, _ := f.snapshot()
+	if len(methods) != 3 {
+		t.Fatalf("retry count=%d", len(methods))
+	}
 }
