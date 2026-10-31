@@ -1,5 +1,9 @@
 # Development Lessons
 
+## MEDIA-001: Verify real media tools separately from portable fixtures
+
+On 2026-10-31 the Windows test process did not inherit the installed FFmpeg directory, making HLS failure-path tests return “ffmpeg not configured” prematurely. Argument tests hardcoded `/bin/echo`; `sample.dsf` and `sample.DSF` overwrote each other on a case-insensitive filesystem. Windows now uses a compiled Go echo fixture copied/cleaned per test; DSF fixtures have distinct basenames and HLS reports missing dependencies explicitly. `scripts/test-media.ps1 -FFmpegBin <bin directory>` validates FFmpeg/ffprobe and temporarily sets PATH, restoring it afterwards; do not hide missing dependencies with Skip. Production code `72221554` in leonFN image `roomtone:leonfn-20261028` passed Linux seek, live transcode, normalization, HLS, DSF scan and actual whole/CUE/120-second/invalid/cancelled fingerprint tests, using temporary files without device playback. An initial offline run omitted an MP3 fixture, causing three failures; adding the fixture resolved them. Seen 1×.
+
 ## LYR-002: Preserve provider diagnostics through plugin, host and client
 
 On 2026-10-31 provider errors/non-200 responses/no match were all collapsed to 404 and the client retained only loadFailed. Promotional metadata also polluted searches. Typed lyric errors and JSON detail now preserve per-source reasons; the client clears previous-song errors. Existing lyrics may be reused only for an exact complete fingerprint with duration within one second, never by title alone; explicit refresh bypasses reuse. Real SQLite and QuickJS regressions cover error propagation and safe reuse; 111 related client tests pass. Actual leonFN queries returned QQ and NetEase lyrics while independently reporting the LRCLIB network failure. No audio or tag writes were initiated.

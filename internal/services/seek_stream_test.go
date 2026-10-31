@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"songloft/internal/testutil/executable"
 )
 
 // countingWriter 记录写入次数，用于断言「降级前绝不向响应写字节」这条不变量。
@@ -57,7 +59,7 @@ func TestStreamSeekedMP3Unavailable(t *testing.T) {
 			// StartSecond 0 只在 Normalize / Speed / ForceTranscode / Bitrate 至少有一个时合法，
 			// 四者全无就是「没活干」，调用方应改走 http.ServeFile（支持 Range 且更快）。
 			name: "起播秒数非正且无均衡/变速/转码理由",
-			cs:   newTestCacheService("", "/bin/echo", ""),
+			cs:   newTestCacheService("", executable.Echo(t), ""),
 			opts: SeekStreamOptions{SourcePath: src, StartSecond: 0},
 		},
 	}
@@ -88,7 +90,7 @@ func TestStreamSeekedMP3FFmpegArgs(t *testing.T) {
 		if err := os.WriteFile(src, []byte("x"), 0644); err != nil {
 			t.Fatalf("write src: %v", err)
 		}
-		cs := newTestCacheService("", "/bin/echo", "")
+		cs := newTestCacheService("", executable.Echo(t), "")
 		var buf bytes.Buffer
 		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 			SourcePath: src, StartSecond: 61.5, RemainingSecond: 100,
@@ -137,7 +139,7 @@ func TestStreamSeekedMP3NormalizeArgs(t *testing.T) {
 
 	run := func(t *testing.T, startSecond float64) string {
 		t.Helper()
-		cs := newTestCacheService("", "/bin/echo", "")
+		cs := newTestCacheService("", executable.Echo(t), "")
 		var buf bytes.Buffer
 		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 			SourcePath: src, StartSecond: startSecond, RemainingSecond: 100, Normalize: true,
@@ -189,7 +191,7 @@ func TestStreamSeekedMP3SpeedArgs(t *testing.T) {
 	}
 
 	t.Run("纯变速从头起播", func(t *testing.T) {
-		cs := newTestCacheService("", "/bin/echo", "")
+		cs := newTestCacheService("", executable.Echo(t), "")
 		var buf bytes.Buffer
 		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 			SourcePath: src, StartSecond: 0, RemainingSecond: 100, Speed: 1.5,
@@ -211,7 +213,7 @@ func TestStreamSeekedMP3SpeedArgs(t *testing.T) {
 	})
 
 	t.Run("变速叠加 seek", func(t *testing.T) {
-		cs := newTestCacheService("", "/bin/echo", "")
+		cs := newTestCacheService("", executable.Echo(t), "")
 		var buf bytes.Buffer
 		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 			SourcePath: src, StartSecond: 42, RemainingSecond: 100, Speed: 2.0,
@@ -227,7 +229,7 @@ func TestStreamSeekedMP3SpeedArgs(t *testing.T) {
 	})
 
 	t.Run("变速叠加均衡滤镜顺序", func(t *testing.T) {
-		cs := newTestCacheService("", "/bin/echo", "")
+		cs := newTestCacheService("", executable.Echo(t), "")
 		var buf bytes.Buffer
 		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 			SourcePath: src, StartSecond: 0, RemainingSecond: 100, Normalize: true, Speed: 1.25,
@@ -269,7 +271,7 @@ func TestStreamSeekedMP3TranscodeArgs(t *testing.T) {
 			t.Fatalf("write src: %v", err)
 		}
 		opts.SourcePath = src
-		cs := newTestCacheService("", "/bin/echo", "")
+		cs := newTestCacheService("", executable.Echo(t), "")
 		var buf bytes.Buffer
 		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, opts); err != nil {
 			t.Fatalf("StreamSeekedMP3: %v", err)

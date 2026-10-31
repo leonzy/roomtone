@@ -20,6 +20,7 @@ import (
 	"songloft/internal/database/testutil"
 	"songloft/internal/models"
 	"songloft/internal/services"
+	"songloft/internal/testutil/executable"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -802,6 +803,9 @@ func TestParseSpeed(t *testing.T) {
 // 于是响应 body 就是 ffmpeg 的参数列表，可直接断言参数契约。ffmpegPath 传空则模拟缺 ffmpeg。
 func newSeekTestHandler(t *testing.T, ffmpegPath string) (*SongHandler, *database.SongRepository, *services.SongService) {
 	t.Helper()
+	if ffmpegPath == "/bin/echo" {
+		ffmpegPath = executable.Echo(t)
+	}
 	mdb := testutil.OpenMemoryDB(t)
 	repo := mdb.SongRepository()
 	songService := services.NewSongService(repo, nil, nil, nil, nil, nil)

@@ -26,7 +26,7 @@ func TestScanAndImportDSFWithDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"sample.dsf", "sample.DSF"} {
+	for _, name := range []string{"sample-lower.dsf", "sample-upper.DSF"} {
 		path := filepath.Join(root, name)
 		if err := os.WriteFile(path, sample, 0644); err != nil {
 			t.Fatal(err)

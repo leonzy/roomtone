@@ -39,8 +39,15 @@ func hlsFixture(t *testing.T, codec string, seconds int) string {
 
 func hlsTestService(t *testing.T) *HLSTranscodeService {
 	t.Helper()
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Fatal("HLS tests require ffmpeg on PATH: ", err)
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Fatal("HLS tests require ffprobe on PATH: ", err)
+	}
 	cache := &CacheService{}
-	cache.SetFFmpegPath("ffmpeg")
+	cache.SetFFmpegPath(ffmpeg)
 	s, err := NewHLSTranscodeService(cache, func() []string { return []string{"127.0.0.1"} })
 	if err != nil {
 		t.Fatal(err)
