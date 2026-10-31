@@ -1,5 +1,9 @@
 # Development Lessons
 
+## LYR-004: Lifecycle teardown must not disable a known search capability
+
+On 2026-10-31 leonFN logs showed the lyrics plugin unregistering its provider from onDeinit during idle eviction at 20:23. Subsequent new-song requests at 20:47–20:48 returned 404 in about 1ms without external searches, although the tag scraper fetched QQ lyrics. The old wakeup test had an empty onDeinit and missed the installed plugin's cleanup behavior. Host unload now preserves known lyric/cover capabilities for lazy wakeup, while explicit runtime unregister and DisablePlugin still remove them. A real QuickJS register/cleanup fixture exercises HealthChecker eviction and search wakeup, repeated ten times, plus explicit off/reload/disable boundaries. Fresh-start network success does not verify lifecycle behavior. Seen 1×.
+
 ## MEDIA-001: Verify real media tools separately from portable fixtures
 
 On 2026-10-31 the Windows test process did not inherit the installed FFmpeg directory, making HLS failure-path tests return “ffmpeg not configured” prematurely. Argument tests hardcoded `/bin/echo`; `sample.dsf` and `sample.DSF` overwrote each other on a case-insensitive filesystem. Windows now uses a compiled Go echo fixture copied/cleaned per test; DSF fixtures have distinct basenames and HLS reports missing dependencies explicitly. `scripts/test-media.ps1 -FFmpegBin <bin directory>` validates FFmpeg/ffprobe and temporarily sets PATH, restoring it afterwards; do not hide missing dependencies with Skip. Production code `72221554` in leonFN image `roomtone:leonfn-20261028` passed Linux seek, live transcode, normalization, HLS, DSF scan and actual whole/CUE/120-second/invalid/cancelled fingerprint tests, using temporary files without device playback. An initial offline run omitted an MP3 fixture, causing three failures; adding the fixture resolved them. Seen 1×.

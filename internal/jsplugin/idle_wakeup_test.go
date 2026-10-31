@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -30,9 +31,13 @@ function onHTTPRequest(req) {
 // 用于验证 SearchLyrics 遍历到被空闲驱逐的歌词插件时，经 InvokeHTTP→EnsureLoaded 唤醒后
 // 能真正调用到 onHTTPRequest 并拿到歌词(#303)。
 const lyricProviderJSCode = `
-function onInit() {}
-function onDeinit() {}
+function onInit() { songloft.lyrics.registerProvider(); songloft.covers.registerProvider(); }
+function onDeinit() { songloft.lyrics.unregisterProvider(); songloft.covers.unregisterProvider(); }
 function onHTTPRequest(req) {
+    if (req.path === "/disable-search") {
+        songloft.lyrics.unregisterProvider(); songloft.covers.unregisterProvider();
+        return { statusCode: 200, headers: {}, body: "disabled" };
+    }
     if (req.path === "/lyric-search") {
         return {
             statusCode: 200,
@@ -91,15 +96,37 @@ func TestIdleWakeup_SearchLyricsWakesSleepingProvider(t *testing.T) {
 	// 模拟插件在 onInit 里 registerProvider('lyrics') 的效果：注册为歌词提供者。
 	manager.RegisterLyricProvider(entryPath)
 
-	// 模拟空闲驱逐：卸载 VM。lyricProviders 不清理（生产同款行为，见 UnloadPlugin 注释）。
-	if err := manager.UnloadPlugin(ctx, entryPath); err != nil {
-		t.Fatalf("UnloadPlugin failed: %v", err)
+	// Exercise the actual health-check eviction path, including onDeinit cleanup.
+	// Drain queued initialization before aging the last-activity timestamp.
+	if _, _, _, err := manager.InvokeHTTP(ctx, entryPath, "GET", "/ready", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	svc, _ := manager.GetService(entryPath)
+	checker := NewHealthChecker(manager)
+	evicted := false
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+		svc.mu.Lock()
+		svc.lastActive = time.Now().Add(-11 * time.Minute)
+		svc.mu.Unlock()
+		if checker.checkIdle(svc) {
+			evicted = true
+			break
+		}
+		// Let queued bridge continuations finish; they are real near-term timers
+		// and correctly prevent eviction while still pending.
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !evicted {
+		t.Fatalf("idle health check must evict the provider: lastActive=%v nextTimer=%v streams=%v processes=%v", svc.LastActive(), manager.jsManager.GetNextTimerDeadline(svc.EnvID()), svc.HasActiveHTTPStreams(), svc.HasRunningProcesses())
 	}
 	if _, ok := manager.GetService(entryPath); ok {
 		t.Fatal("前置条件：空闲驱逐后插件应处于休眠（不在内存）")
 	}
 	if !manager.HasLyricProvider() {
 		t.Fatal("前置条件：驱逐后 lyricProviders 应保留该项（否则永远无法被唤醒搜索）")
+	}
+	if _, ok := manager.coverProviders.Load(entryPath); !ok {
+		t.Fatal("onDeinit must not remove the known cover provider during eviction")
 	}
 
 	// 核心断言：搜歌词时休眠插件被同步唤醒并返回歌词。
@@ -117,6 +144,30 @@ func TestIdleWakeup_SearchLyricsWakesSleepingProvider(t *testing.T) {
 	// 唤醒后应留在内存。
 	if _, ok := manager.GetService(entryPath); !ok {
 		t.Fatal("SearchLyrics 后 GetService 应为 true（休眠歌词插件被同步唤醒并留存）")
+	}
+	if _, _, _, err := manager.InvokeHTTP(ctx, entryPath, "GET", "/disable-search", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if manager.HasLyricProvider() {
+		t.Fatal("explicit runtime unregister must remove the provider")
+	}
+	if _, ok := manager.coverProviders.Load(entryPath); ok {
+		t.Fatal("explicit runtime unregister must remove the cover provider")
+	}
+	if err := manager.ReloadPlugin(ctx, entryPath); err != nil {
+		t.Fatal(err)
+	}
+	if !manager.HasLyricProvider() {
+		t.Fatal("reloaded plugin must register again")
+	}
+	if err := manager.DisablePlugin(ctx, plugin.ID); err != nil {
+		t.Fatal(err)
+	}
+	if manager.HasLyricProvider() {
+		t.Fatal("disabled plugin must not remain a provider")
+	}
+	if _, ok := manager.coverProviders.Load(entryPath); ok {
+		t.Fatal("disabled cover provider must be removed")
 	}
 }
 

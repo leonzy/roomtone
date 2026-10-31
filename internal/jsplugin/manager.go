@@ -319,9 +319,17 @@ func (m *Manager) LoadPlugin(ctx context.Context, plugin *JSPlugin) error {
 	bridgeHandler.onPlayEventRegister = m.RegisterPlayEvent
 	bridgeHandler.onPlayEventUnregister = m.UnregisterPlayEvent
 	bridgeHandler.onLyricProviderRegister = m.RegisterLyricProvider
-	bridgeHandler.onLyricProviderUnregister = m.UnregisterLyricProvider
+	bridgeHandler.onLyricProviderUnregister = func(entryPath string) {
+		if !service.unloading.Load() {
+			m.UnregisterLyricProvider(entryPath)
+		}
+	}
 	bridgeHandler.onCoverProviderRegister = m.RegisterCoverProvider
-	bridgeHandler.onCoverProviderUnregister = m.UnregisterCoverProvider
+	bridgeHandler.onCoverProviderUnregister = func(entryPath string) {
+		if !service.unloading.Load() {
+			m.UnregisterCoverProvider(entryPath)
+		}
+	}
 	service.bridgeHandler = bridgeHandler
 
 	// 2.5 清理同 pluginID 的残留 JS 环境。
@@ -395,6 +403,10 @@ func (m *Manager) UnloadPlugin(ctx context.Context, entryPath string) error {
 	}
 
 	// 停止服务
+	// onDeinit may unregister capabilities while freeing its VM. Keep known
+	// providers discoverable so a future search can wake an idle plugin. Explicit
+	// runtime unregister and DisablePlugin still remove these registrations.
+	service.unloading.Store(true)
 	if err := service.Stop(); err != nil {
 		slog.Warn("stop service failed", "entryPath", entryPath, "error", err)
 	}

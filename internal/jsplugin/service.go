@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"songloft/internal/jsruntime"
@@ -136,6 +137,9 @@ type WebSocketCloseData struct {
 
 // JSService 代表一个运行中的 JS 插件实例（Actor）
 type JSService struct {
+	// Lifecycle cleanup is not a user request to disable a known search provider.
+	// Manager sets this before Stop, and bridge callbacks read it without s.mu.
+	unloading     atomic.Bool
 	plugin        *JSPlugin               // 插件元数据
 	envID         string                  // jsruntime 环境 ID
 	scheduler     *ServiceScheduler       // 所属调度器
