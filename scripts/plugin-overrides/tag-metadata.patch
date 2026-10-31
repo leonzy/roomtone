@@ -686,14 +686,14 @@ index bf2341f..5b52d9c 100644
    },
    "dependencies": {
 diff --git a/plugin.json b/plugin.json
-index 554b672..7b1b7cd 100644
+index 554b672..5e32eff 100644
 --- a/plugin.json
 +++ b/plugin.json
 @@ -1,6 +1,6 @@
  {
    "name": "标签刮削",
 -  "version": "2.3.1",
-+  "version": "2.3.1+roomtone.9",
++  "version": "2.3.1+roomtone.10",
    "description": "智能刮削音乐标签：多源并发搜索 + 多级目录浏览，自动修正标题/艺术家/专辑，下载封面并写入音频文件",
    "author": "Songloft Team",
    "entryPath": "tag",
@@ -876,6 +876,25 @@ index 0000000..0426fda
 +
 +export function extractCandidate(filePath: string, tags?: { artist?: string; title?: string }): Candidate {
 +  return extractCandidates(filePath, tags)[0];
++}
+diff --git a/src/fingerprint-match.ts b/src/fingerprint-match.ts
+new file mode 100644
+index 0000000..5b4841e
+--- /dev/null
++++ b/src/fingerprint-match.ts
+@@ -0,0 +1,13 @@
++import { scoreMatch } from './scoring';
++
++/** Fingerprint similarity does not validate the attached MusicBrainz labels. */
++export function fingerprintConflicts(
++  candidates: { artist: string; title: string }[],
++  result: { artist: string; title: string },
++): boolean {
++  const known = candidates.filter(c => c.title);
++  if (!known.length) return false;
++  // Use text-only scoring without source bonuses or duration penalties. Allow
++  // moderate differences (versions, transliteration), flag near-total disagreement.
++  return Math.max(...known.map(c => scoreMatch(c, { ...result, source: 'netease' }))) < 0.25;
 +}
 diff --git a/src/main.ts b/src/main.ts
 index fffc677..db15d56 100644
@@ -1070,18 +1089,19 @@ index 0000000..a836906
 +    + (value.error ? '；部分搜索请求失败' : '');
 +}
 diff --git a/src/scraper.ts b/src/scraper.ts
-index 0257a15..c4eff93 100644
+index 0257a15..ec4e2e0 100644
 --- a/src/scraper.ts
 +++ b/src/scraper.ts
-@@ -22,6 +22,7 @@ import { toSimplified } from './t2s';
+@@ -22,6 +22,8 @@ import { toSimplified } from './t2s';
  import { cacheGet, cacheSet } from './cache';
  import { rateLimitWait } from './ratelimit';
  import { circuitFailure, circuitSuccess, circuitIsOpen } from './circuit';
 +import { formatSourceDiagnostic, sourceLabel, type SourceDiagnostic } from './scrape-diagnostics';
++import { fingerprintConflicts } from './fingerprint-match';
  
  export interface ScrapeResult {
    songId: number;
-@@ -44,7 +45,7 @@ export interface ScrapeResult {
+@@ -44,7 +46,7 @@ export interface ScrapeResult {
  /**
   * 单曲刮削（写入模式）
   */
@@ -1090,7 +1110,7 @@ index 0257a15..c4eff93 100644
    const cfg = config || await loadConfig();
    const result = await doScrape(songId, cfg, opts);
    if (!result) return null;
-@@ -59,10 +60,11 @@ export async function scrapeSong(songId: number, config?: ScraperConfig, opts?:
+@@ -59,10 +61,11 @@ export async function scrapeSong(songId: number, config?: ScraperConfig, opts?:
  // 内部实现
  // ============================================================
  
@@ -1103,7 +1123,7 @@ index 0257a15..c4eff93 100644
      songloft.log.warn(`[scraper] 歌曲不存在: ${songId}`);
      return null;
    }
-@@ -70,6 +72,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -70,6 +73,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    // 仅支持本地歌曲：宿主 /tags 对非 local 类型直接 400，搜了也写不进去（批量中计为跳过）
    const songType = (song as any).type || 'local';
    if (songType !== 'local') {
@@ -1111,7 +1131,7 @@ index 0257a15..c4eff93 100644
      songloft.log.info(`[scraper] 跳过非本地歌曲: songId=${songId} (type=${songType})`);
      return null;
    }
-@@ -85,11 +88,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -85,11 +89,8 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    }
  
    const candidate = candidates[0];
@@ -1121,19 +1141,23 @@ index 0257a15..c4eff93 100644
 -    return null;
 -  }
 +  let fingerprintCandidate: ScrapeResult | null = null;
++  let fingerprintConflict = false;
  
    // 缓存字段辅助：entry 带 enriched 标记，避免「源本来就没有 genre」时每次命中都重跑 enrich
    const toCacheEntry = (r: { artist: string; title: string; album: string; cover_url?: string; lyrics?: string; genre?: string; year?: string; track?: string; source: string; score: number }) => ({
-@@ -101,7 +100,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -101,9 +102,9 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    });
  
    // 检查缓存（强制刮削跳过读取，但仍会写入覆盖旧缓存）
 -  if (!opts?.skipCache) {
 +  if (candidate.title && !opts?.skipCache) {
      const cached = await cacheGet<SearchResult & { enriched?: boolean }>(candidate.artist, candidate.title);
-     if (cached && cached.score >= cfg.score_threshold) {
+-    if (cached && cached.score >= cfg.score_threshold) {
++    if (cached && cached.score >= cfg.score_threshold && !(cached.source === 'acoustid' && fingerprintConflicts(candidates, cached))) {
        songloft.log.info(`[scraper] 缓存命中: ${cached.artist} - ${cached.title} (${cached.score.toFixed(2)})`);
-@@ -123,12 +122,14 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+       // 旧缓存（无 enriched 标记）补跑一次 enrich 并回写，此后命中不再重复请求
+       if (!cached.enriched) {
+@@ -123,20 +124,26 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    if (!cfg.enable_acoustid) {
      songloft.log.info(`[scraper] AcoustID 未启用 (cfg.enable_acoustid=${cfg.enable_acoustid})`);
    } else if (!song.fingerprint) {
@@ -1145,11 +1169,16 @@ index 0257a15..c4eff93 100644
 +    const acoustidResults = await searchAcoustid(song.fingerprint, song.fingerprint_duration || song.duration || 0, cfg.acoustid_api_key, opts?.onDiagnostic);
      if (acoustidResults.length > 0) {
        const best = acoustidResults.reduce((a, b) => a.score > b.score ? a : b);
-+      if (opts?.allowLowScore) fingerprintCandidate = buildResult(songId, best, candidate, {});
-       if (best.score > cfg.score_threshold) {
+-      if (best.score > cfg.score_threshold) {
++      fingerprintConflict = best.score >= cfg.score_threshold && fingerprintConflicts(candidates, best);
++      if (fingerprintConflict) {
++        opts?.onDiagnostic?.(`音频指纹冲突：指纹相似度 ${Math.round(best.score * 100)} / 100，关联标签为“${best.artist}－${best.title}”，与当前歌曲名或文件名明显不符。该分数不是标签正确率；继续文字搜索，请核对原音频与候选，尚未保存。`);
++      }
++      if (opts?.allowLowScore && !fingerprintConflict) fingerprintCandidate = buildResult(songId, best, candidate, {});
++      if (best.score > cfg.score_threshold && !fingerprintConflict) {
          songloft.log.info(`[scraper] 声纹匹配成功: ${best.artist} - ${best.title} (${best.score.toFixed(2)})`);
  
-@@ -136,7 +137,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+         best.artist = toSimplified(best.artist);
          best.title = toSimplified(best.title);
          best.album = toSimplified(best.album);
  
@@ -1158,7 +1187,7 @@ index 0257a15..c4eff93 100644
          if (enrich.cover_url) {
            best.cover_url = enrich.cover_url;
            songloft.log.info(`[scraper] 封面来自 ${enrich.source}: ${enrich.cover_url.substring(0, 60)}...`);
-@@ -147,15 +148,24 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -147,15 +154,24 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
          if (enrich.track) best.track = enrich.track;
  
          const result = buildResult(songId, best, candidate, {});
@@ -1186,7 +1215,7 @@ index 0257a15..c4eff93 100644
  
    for (let ci = 0; ci < candidates.length; ci++) {
      const c = candidates[ci];
-@@ -173,6 +183,9 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -173,6 +189,9 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
          if (s > srcBestScore) srcBestScore = s;
        }
        sourceScores[sourceName] = srcBestScore;
@@ -1196,7 +1225,7 @@ index 0257a15..c4eff93 100644
        allResults.push(...results);
      };
  
-@@ -180,16 +193,28 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -180,16 +199,28 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
  
      const searchWithCircuit = async (fn: (kw: string, url: string) => Promise<SearchResult[]>, url: string, source: string) => {
        if (circuitIsOpen(source)) {
@@ -1226,7 +1255,7 @@ index 0257a15..c4eff93 100644
          throw e;
        }
      };
-@@ -210,6 +235,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -210,6 +241,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
        tasks.push(searchWithCircuit(searchKuWo, '', 'kuwo'));
      }
  
@@ -1234,7 +1263,7 @@ index 0257a15..c4eff93 100644
      const settled = await Promise.allSettled(tasks);
      for (const s of settled) {
        if (s.status === 'fulfilled') {
-@@ -240,8 +266,10 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -240,8 +272,16 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    }
  
    if (!bestResult || bestScore < cfg.score_threshold) {
@@ -1244,11 +1273,17 @@ index 0257a15..c4eff93 100644
 +    if (bestResult) opts?.onDiagnostic?.(`最佳候选来自${sourceLabel(bestResult.source)}，得分 ${bestScore.toFixed(2)}；${opts?.allowLowScore ? '仅供预览，请人工核对，尚未保存' : '未采用，未保存'}`);
 +    songloft.log.info(`[scraper] 最佳得分 ${bestScore.toFixed(2)} 低于阈值 ${cfg.score_threshold}，${opts?.allowLowScore && bestResult ? '返回人工预览' : '刮削失败'}`);
 +    return opts?.allowLowScore ? bestResult : null;
++  }
++
++  if (fingerprintConflict) {
++    // A strong fingerprint/text disagreement is ambiguous. Manual previews can
++    // show text candidates with the conflict, but batches must never write them.
++    return opts?.allowLowScore ? bestResult : null;
    }
  
    // 写入缓存（文本搜索结果自带 genre/year/track，视为已补全）
 diff --git a/src/sources.ts b/src/sources.ts
-index 1a5a8f9..a314d69 100644
+index 1a5a8f9..63b02dc 100644
 --- a/src/sources.ts
 +++ b/src/sources.ts
 @@ -1,4 +1,5 @@
@@ -1351,7 +1386,15 @@ index 1a5a8f9..a314d69 100644
      track: s.FileSort ? String(s.FileSort) : '',
      score: 0,
      source: 'kugou',
-@@ -439,8 +429,8 @@ export async function searchMiGu(keyword: string): Promise<SearchResult[]> {
+@@ -435,12 +425,15 @@ export async function searchMiGu(keyword: string): Promise<SearchResult[]> {
+     artist: (s.singers || []).map((si: any) => si.name).join(',') || '',
+     title: s.name || '',
+     album: (s.albums || []).map((a: any) => a.name).join(',') || s.album || '',
+-    cover_url: s.imgItems?.[s.imgItems.length - 1]?.img ? `https://d.musicapp.migu.cn${s.imgItems[s.imgItems.length - 1].img}` : undefined,
++    cover_url: s.imgItems?.[s.imgItems.length - 1]?.img
++      ? (/^https?:\/\//i.test(s.imgItems[s.imgItems.length - 1].img) ? s.imgItems[s.imgItems.length - 1].img
++        : `https:${s.imgItems[s.imgItems.length - 1].img.startsWith('//') ? '' : '//d.musicapp.migu.cn'}${s.imgItems[s.imgItems.length - 1].img}`)
++      : undefined,
      sourceId: s.contentId ? String(s.contentId) : undefined,
      release_date: undefined,
      genre: s.tagNames || '',
@@ -1362,7 +1405,7 @@ index 1a5a8f9..a314d69 100644
      score: 0,
      source: 'migu',
    }));
-@@ -806,77 +796,7 @@ export async function enrichFromChineseSources(
+@@ -806,77 +799,7 @@ export async function enrichFromChineseSources(
    };
  }
  
@@ -2007,12 +2050,72 @@ index 0000000..e99c856
 + await h.w.saveCfg();assert.match(h.w.document.getElementById('cfgSaveError').textContent,/network unavailable/);
 + assert.equal(h.w.document.getElementById('cfgSaveBtn').disabled,false);
 +});
+diff --git a/tests/fingerprint-conflict.test.mjs b/tests/fingerprint-conflict.test.mjs
+new file mode 100644
+index 0000000..f42e70e
+--- /dev/null
++++ b/tests/fingerprint-conflict.test.mjs
+@@ -0,0 +1,54 @@
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import vm from 'node:vm';
++import test from 'node:test';
++import ts from 'typescript';
++
++function load(name, dependencies = {}, globals = {}) {
++  const context = vm.createContext({ exports: {}, Error, ...globals, require: name => dependencies[name] || {} });
++  vm.runInContext(ts.transpileModule(readFileSync(new URL(`../src/${name}.ts`, import.meta.url), 'utf8'),
++    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, context);
++  return context.exports;
++}
++const scoring = load('scoring');
++const conflicts = load('fingerprint-match', { './scoring': scoring });
++const original = { artist: '孙楠', title: '风往北吹' };
++const wrong = { artist: 'Connirae Andreas, PH.D.', title: 'Track 16', album: 'Advanced Language Patterns', score: 0.99, source: 'acoustid' };
++
++test('fingerprint confidence cannot override complete disagreement with known labels', () => {
++  assert.equal(conflicts.fingerprintConflicts([original], wrong), true);
++  assert.equal(conflicts.fingerprintConflicts([original], original), false);
++  assert.equal(conflicts.fingerprintConflicts([{ artist: '', title: '' }], wrong), false);
++});
++
++async function run({ manual = true, cached = null } = {}) {
++  const reasons = []; let textQueries = 0, writes = 0;
++  const scraper = load('scraper', {
++    './fingerprint-match': conflicts, './scoring': scoring, './scrape-diagnostics': load('scrape-diagnostics'),
++    './sources': { extractCandidates: () => [original], searchAcoustid: async () => [wrong],
++      searchQQMusic: async () => { textQueries++; return [{ ...original, source: 'qqmusic', score: 0 }]; },
++      enrichFromChineseSources: () => assert.fail('conflicting fingerprint must not be enriched') },
++    './t2s': { toSimplified: s => s }, './cache': { cacheGet: async () => cached, cacheSet: async () => { writes++; } },
++    './ratelimit': { rateLimitWait: async () => {} }, './circuit': { circuitIsOpen: () => false, circuitFailure() {}, circuitSuccess() {} },
++  }, { songloft: { songs: { getById: async () => ({ type: 'local', fingerprint: 'test', duration: 292 }) }, log: { info() {}, warn() {} } } });
++  const result = await scraper.doScrape(42, { enable_acoustid: true, enable_qqmusic: true, qqmusic_api_url: 'https://example.test', score_threshold: 0.7 },
++    { allowLowScore: manual, onDiagnostic: s => reasons.push(s) });
++  return { result, reasons, textQueries, writes };
++}
++
++test('manual conflict previews continue text search and disclose both sides, without caching', async () => {
++  const { result, reasons, textQueries, writes } = await run();
++  assert.equal(result.title, original.title); assert.equal(result.source, 'qqmusic');
++  assert.equal(textQueries, 1); assert.equal(writes, 0);
++  assert.match(reasons.join('\n'), /指纹相似度 99.*Track 16.*不是标签正确率/);
++});
++
++test('automatic scraping abstains on strong fingerprint/text conflicts even with high text score', async () => {
++  const { result, writes } = await run({ manual: false });
++  assert.equal(result, null); assert.equal(writes, 0);
++});
++
++test('old high-score conflicting AcoustID caches are bypassed', async () => {
++  const { result, textQueries } = await run({ cached: wrong });
++  assert.equal(result.title, original.title); assert.equal(textQueries, 1);
++});
 diff --git a/tests/fingerprint-without-title.test.mjs b/tests/fingerprint-without-title.test.mjs
 new file mode 100644
-index 0000000..379bbd3
+index 0000000..718f169
 --- /dev/null
 +++ b/tests/fingerprint-without-title.test.mjs
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,73 @@
 +import assert from 'node:assert/strict';
 +import { readFileSync } from 'node:fs';
 +import vm from 'node:vm';
@@ -2037,6 +2140,7 @@ index 0000000..379bbd3
 +        searchNetease: async () => { calls.text++; return []; },
 +      },
 +      './t2s': { toSimplified: value => value },
++      './fingerprint-match': { fingerprintConflicts: () => false },
 +      './cache': { cacheGet: async () => { calls.cache++; return null; },
 +        cacheSet: async () => { calls.cache++; } },
 +      './ratelimit': { rateLimitWait: async () => {} },
@@ -2364,10 +2468,10 @@ index 0000000..1f9cfd5
 +});
 diff --git a/tests/source-metadata.test.mjs b/tests/source-metadata.test.mjs
 new file mode 100644
-index 0000000..b7c9d7d
+index 0000000..86b3c17
 --- /dev/null
 +++ b/tests/source-metadata.test.mjs
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,41 @@
 +import assert from 'node:assert/strict';
 +import { readFileSync } from 'node:fs';
 +import vm from 'node:vm';
@@ -2398,4 +2502,14 @@ index 0000000..b7c9d7d
 +  const api = sources(async () => ({ ok: true, json: async () => ({ data: { lists: [{ SongName: 'Song', SingerName: 'Artist', Chapter: '1' }] } }) }));
 +  const [result] = await api.searchKuGou('Song', 'https://example.test/search');
 +  assert.equal(result.year, '');
++});
++
++test('Migu absolute cover URLs are not prefixed with the host a second time', async () => {
++  const api = sources(async () => ({ ok: true, json: async () => ({ songResultData: { result: [
++    { name: 'Song', imgItems: [{ img: 'https://d.musicapp.migu.cn/cover.jpg' }] },
++    { name: 'Song', imgItems: [{ img: '/cover.jpg' }] },
++    { name: 'Song', imgItems: [{ img: '//d.musicapp.migu.cn/cover.jpg' }] },
++  ] } }) }));
++  const result = await api.searchMiGu('Song');
++  assert.ok(result.every(s => s.cover_url === 'https://d.musicapp.migu.cn/cover.jpg'));
 +});
