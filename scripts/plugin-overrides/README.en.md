@@ -1,6 +1,6 @@
 # Roomtone plugin fixes for large libraries
 
-The patches target `charce526/songloft-library-plus` at `2fefd1afb1ac342820a17560c619c615e47a7ae2` and `songloft-org/songloft-plugin-tag` at `bf97f7db5a96e0db0aafb6f3165e95b2379281b1`. Permissions and settings are preserved. Local versions are `0.2.16+roomtone.1` for Plus and `2.3.1+roomtone.5` for Tag. The host automatically updates only to higher versions, ignoring equal-version build metadata. Reapply and verify patches when upgrading upstream code.
+The patches target `charce526/songloft-library-plus` at `2fefd1afb1ac342820a17560c619c615e47a7ae2` and `songloft-org/songloft-plugin-tag` at `bf97f7db5a96e0db0aafb6f3165e95b2379281b1`. Permissions and settings are preserved. Local versions are `0.2.16+roomtone.1` for Plus and `2.3.1+roomtone.6` for Tag. The host automatically updates only to higher versions, ignoring equal-version build metadata. Reapply and verify patches when upgrading upstream code.
 
 The host adds opt-in `songs.list({omitFingerprint:true})`, excluding fingerprint columns in SQL while preserving default lists and single-track fingerprints. Plus reads 1000 songs per batch, builds a background directory index with progress, yields during indexing, and caches metadata for 15 minutes. Writes invalidate the cache; external changes can be refreshed manually.
 
@@ -24,3 +24,7 @@ Prerequisite host verification: metadata bridge tests pass. Two existing Windows
 Configuration saves now check HTTP status and response data, retaining inputs and reporting errors on failure. The QQ field explicitly requires an API URL. All 18 plugin regressions pass.
 
 Untitled songs now attempt fingerprint recognition before requiring text keywords. Empty keyword cache keys are skipped, and enrichment uses the identified artist/title. All 22 plugin regressions and typechecking pass; no playback or real audio tag writes were performed.
+
+Search fixes clean track numbers, quality labels and download promotion, recognize spaced underscores and long dashes, and retain Live/Remix versions and valid tags. Scores normalize over available input fields. Known legacy official QQ URLs use the musicu search protocol; business errors and response schemas are checked, while custom service parameters are preserved. Failure diagnostics distinguish per-source API errors, empty results and best scores. All 37 regressions and typechecking pass. On leonFN, the old endpoint returned business code 500001 while the new endpoint returned songs.
+
+Live verification: plugin `3392ca1` / `2.3.1+roomtone.6` matched songs 18455 (0.95) and 60781 (about 0.90) from QQ through read-only leonFN previews. Metadata and audio modification times stayed unchanged. AcoustID lookup has a four-second timeout with no retry; failures are reported separately before falling back to text search, preventing rejected credentials or network delays from exhausting the plugin call.

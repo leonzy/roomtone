@@ -686,14 +686,14 @@ index bf2341f..5b52d9c 100644
    },
    "dependencies": {
 diff --git a/plugin.json b/plugin.json
-index 554b672..1a8423e 100644
+index 554b672..f83ea26 100644
 --- a/plugin.json
 +++ b/plugin.json
 @@ -1,6 +1,6 @@
  {
    "name": "标签刮削",
 -  "version": "2.3.1",
-+  "version": "2.3.1+roomtone.5",
++  "version": "2.3.1+roomtone.6",
    "description": "智能刮削音乐标签：多源并发搜索 + 多级目录浏览，自动修正标题/艺术家/专辑，下载封面并写入音频文件",
    "author": "Songloft Team",
    "entryPath": "tag",
@@ -822,6 +822,58 @@ index 0000000..3c771b1
 +    } catch (e: any) { return jsonResponse({ error: e.message || String(e) }, 500); }
 +  });
 +}
+diff --git a/src/candidates.ts b/src/candidates.ts
+new file mode 100644
+index 0000000..09f63fe
+--- /dev/null
++++ b/src/candidates.ts
+@@ -0,0 +1,46 @@
++export interface Candidate { artist: string; title: string }
++
++const GARBAGE_TITLE = /^(?:trad\s*\d*|track\s*\d*|unknown|audio\s*track\s*\d*|cd\s*track\s*\d*|data\s*track\s*\d*|未知|未命名|\d+)$/i;
++const GARBAGE_ARTIST = /^(?:unknown|various(?: artists)?|未知(?:歌手)?|佚名)$/i;
++
++/** Remove release/download noise, preserving meaningful versions such as Live/Remix. */
++export function cleanFilenameNoise(value: string): string {
++  return value
++    .replace(/[【\[]\s*(?:FLAC|MP3|WAV|APE|WMA|OGG|DSF|320k?(?:bps)?|128k?(?:bps)?|192k?(?:bps)?|256k?(?:bps)?|HQ|SQ|Hi[-\s]?Res|无损|高音质|MV)\s*[】\]]/gi, '')
++    .replace(/[【\[(（](?:抖音|快手|公众号|微信公众号|下载地址|音乐下载|更多音乐)\s*[:：][^\]】)）]*[\]】)）]/gi, '')
++    .replace(/\s+(?:抖音|快手|公众号)\s*[:：].*$/i, '')
++    .replace(/\s+/g, ' ').trim();
++}
++
++function stripTrack(value: string, paired: boolean): string {
++  let result = value.replace(/^(?:(?:CD|DISC)\s*\d+\s*[-_. ]\s*)?(?:\d{1,3}[.、)]\s*|(?:track|曲目)\s*\d+\s*[-_. ]\s*)(?=\D)/i, '');
++  // A bare numeric prefix is ambiguous (e.g. “21 Guns”); strip only in a paired filename.
++  if (paired) result = result.replace(/^\d{1,2}\s+(?=\D)/, '');
++  return result.trim();
++}
++
++function usableTitle(value: string): string { return GARBAGE_TITLE.test(value) ? '' : value; }
++
++export function extractCandidates(filePath: string, tags?: { artist?: string; title?: string }): Candidate[] {
++  const artist = cleanFilenameNoise(tags?.artist || '');
++  const title = cleanFilenameNoise(tags?.title || '');
++  if (artist && title && !GARBAGE_ARTIST.test(artist) && (!GARBAGE_TITLE.test(title) || /^\d+$/.test(title))) {
++    return [{ artist, title }];
++  }
++  const filename = cleanFilenameNoise(filePath.replace(/^.*[/\\]/, '').replace(/\.[^.]+$/, ''));
++  // Underscores within artist names remain intact; a spaced underscore is a separator.
++  const split = filename.match(/^(.+?)(?:\s+[-–—_]\s+|\s*[–—]\s*)(.+)$/)
++    || filename.match(/^(.+?)\s*-\s*(.+)$/);
++  if (split) {
++    const a = stripTrack(split[1], true), b = stripTrack(split[2], false);
++    const candidates = [{ artist: a, title: usableTitle(b) }, { artist: b, title: usableTitle(a) }]
++      .filter(c => c.artist && c.title);
++    if (candidates.length) return candidates.filter((c, i) => !i || c.artist !== candidates[0].artist || c.title !== candidates[0].title);
++  }
++  const fallback = usableTitle(stripTrack(usableTitle(title) || filename, false));
++  return [{ artist: GARBAGE_ARTIST.test(artist) ? '' : artist, title: fallback }];
++}
++
++export function extractCandidate(filePath: string, tags?: { artist?: string; title?: string }): Candidate {
++  return extractCandidates(filePath, tags)[0];
++}
 diff --git a/src/main.ts b/src/main.ts
 index fffc677..b3723d2 100644
 --- a/src/main.ts
@@ -904,11 +956,112 @@ index 0000000..d68974b
 +    }
 +  });
 +}
+diff --git a/src/qq-search.ts b/src/qq-search.ts
+new file mode 100644
+index 0000000..c27819e
+--- /dev/null
++++ b/src/qq-search.ts
+@@ -0,0 +1,56 @@
++import type { SearchResult } from './sources';
++
++const MODERN_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
++const SERVICE = 'music.search.SearchCgiService';
++
++function checkCode(data: any, label: string): void {
++  if (data?.code !== undefined && String(data.code) !== '0' && String(data.code) !== '200') {
++    // Do not echo arbitrary upstream messages: they may contain configured secrets.
++    const code = String(data.code).replace(/[^\w-]/g, '').slice(0, 24);
++    throw new Error(`QQ音乐${label}业务错误码 ${code}，不是“无匹配结果”`);
++  }
++}
++
++/** Preserve configured authentication/query parameters, replacing only search parameters. */
++function searchUrl(apiUrl: string, keyword: string): string {
++  const [base, query = ''] = apiUrl.split('#')[0].split('?');
++  const retained = query.split('&').filter(p => p && !/^(?:w|format|n)=/.test(p));
++  return base + '?' + [...retained, `w=${encodeURIComponent(keyword)}`, 'format=json', 'n=10'].join('&');
++}
++
++export async function searchQQ(keyword: string, apiUrl: string, request: (url: string, init?: any) => Promise<any>): Promise<SearchResult[]> {
++  // Only migrate the known official legacy search routes; custom service URLs stay untouched.
++  const legacy = /^https?:\/\/c\.y\.qq\.com\/soso\/fcgi-bin\/(?:search_for_qq_cp|client_search_cp)(?:[?#]|$)/i.test(apiUrl);
++  const modern = /^https?:\/\/u\.y\.qq\.com\/cgi-bin\/musicu\.fcg(?:[?#]|$)/i.test(apiUrl);
++  const headers = { Referer: 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0', 'Content-Type': 'application/json' };
++  let data: any;
++  try {
++    const resp = await request(legacy ? MODERN_URL : modern ? apiUrl : searchUrl(apiUrl, keyword),
++      modern || legacy ? { method: 'POST', headers, body: JSON.stringify({
++        comm: { ct: 19, cv: 1859, uin: 0 },
++        search: { module: SERVICE, method: 'DoSearchForQQMusicDesktop', param: {
++          search_type: 0, query: keyword, page_num: 1, num_per_page: 10,
++        } },
++      }) } : { headers });
++    data = await resp.json();
++  } catch (error) {
++    if (error instanceof SyntaxError) throw new Error('QQ音乐响应不是有效 JSON，请检查 API 地址');
++    throw error;
++  }
++  checkCode(data, '');
++  const envelope = data?.search || data?.[SERVICE] || data?.req_0;
++  if (envelope) checkCode(envelope, '搜索');
++  const payload = envelope?.data || data?.data || data;
++  checkCode(payload, '数据');
++  const songs = payload?.body?.song?.list ?? payload?.song?.list ?? payload?.list;
++  if (!Array.isArray(songs)) throw new Error('QQ音乐响应缺少歌曲列表，API 响应格式不兼容');
++  return songs.map((s: any) => ({
++    artist: (s.singer || []).map((a: any) => a.name).filter(Boolean).join(' / '),
++    title: s.name || s.songname || '', album: s.album?.name || s.albumname || '',
++    cover_url: (s.album?.mid || s.albummid) ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${s.album?.mid || s.albummid}.jpg` : undefined,
++    sourceId: s.mid || s.songmid || undefined,
++    duration: Number(s.interval) > 0 ? Number(s.interval) : undefined,
++    genre: '', year: s.time_public?.slice(0, 4) || '', track: s.index_album ? String(s.index_album) : s.index ? String(s.index) : '',
++    score: 0, source: 'qqmusic',
++  })).filter((s: SearchResult) => s.artist && s.title);
++}
+diff --git a/src/scoring.ts b/src/scoring.ts
+index 699be36..124a353 100644
+--- a/src/scoring.ts
++++ b/src/scoring.ts
+@@ -173,7 +173,10 @@ export function scoreMatch(
+ 
+   const artistSim = sequenceSimilarity(artistCand, artistRes);
+   const titleSim = sequenceSimilarity(titleCand, titleRes);
+-  let rawScore = W_ARTIST * artistSim + W_TITLE * titleSim;
++  // Missing input fields are unknown, not mismatches.
++  const availableWeight = (artistCand ? W_ARTIST : 0) + (titleCand ? W_TITLE : 0);
++  if (!availableWeight) return 0;
++  let rawScore = ((artistCand ? W_ARTIST * artistSim : 0) + (titleCand ? W_TITLE * titleSim : 0)) / availableWeight;
+   const weight = SOURCE_WEIGHTS[result.source] || 0.8;
+   let score = rawScore * weight;
+ 
+diff --git a/src/scrape-diagnostics.ts b/src/scrape-diagnostics.ts
+new file mode 100644
+index 0000000..a836906
+--- /dev/null
++++ b/src/scrape-diagnostics.ts
+@@ -0,0 +1,9 @@
++export interface SourceDiagnostic { count: number; score: number; error?: string }
++const LABELS: Record<string, string> = { qqmusic: 'QQ音乐', migu: '咪咕', netease: '网易云', kugou: '酷狗', kuwo: '酷我', acoustid: '音频指纹' };
++export function sourceLabel(source: string): string { return LABELS[source] || source; }
++export function formatSourceDiagnostic(source: string, value: SourceDiagnostic, threshold: number): string {
++  const prefix = sourceLabel(source) + '：';
++  if (!value.count) return prefix + (value.error ? `接口失败（${value.error}）` : '搜索成功，但没有候选歌曲');
++  return prefix + `候选最高得分 ${value.score.toFixed(2)}，${value.score >= threshold ? '达到' : '低于'}阈值 ${threshold.toFixed(2)}`
++    + (value.error ? '；部分搜索请求失败' : '');
++}
 diff --git a/src/scraper.ts b/src/scraper.ts
-index 0257a15..64fba25 100644
+index 0257a15..a82dc85 100644
 --- a/src/scraper.ts
 +++ b/src/scraper.ts
-@@ -44,7 +44,7 @@ export interface ScrapeResult {
+@@ -22,6 +22,7 @@ import { toSimplified } from './t2s';
+ import { cacheGet, cacheSet } from './cache';
+ import { rateLimitWait } from './ratelimit';
+ import { circuitFailure, circuitSuccess, circuitIsOpen } from './circuit';
++import { formatSourceDiagnostic, sourceLabel, type SourceDiagnostic } from './scrape-diagnostics';
+ 
+ export interface ScrapeResult {
+   songId: number;
+@@ -44,7 +45,7 @@ export interface ScrapeResult {
  /**
   * 单曲刮削（写入模式）
   */
@@ -917,7 +1070,7 @@ index 0257a15..64fba25 100644
    const cfg = config || await loadConfig();
    const result = await doScrape(songId, cfg, opts);
    if (!result) return null;
-@@ -59,10 +59,11 @@ export async function scrapeSong(songId: number, config?: ScraperConfig, opts?:
+@@ -59,10 +60,11 @@ export async function scrapeSong(songId: number, config?: ScraperConfig, opts?:
  // 内部实现
  // ============================================================
  
@@ -930,7 +1083,7 @@ index 0257a15..64fba25 100644
      songloft.log.warn(`[scraper] 歌曲不存在: ${songId}`);
      return null;
    }
-@@ -70,6 +71,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -70,6 +72,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    // 仅支持本地歌曲：宿主 /tags 对非 local 类型直接 400，搜了也写不进去（批量中计为跳过）
    const songType = (song as any).type || 'local';
    if (songType !== 'local') {
@@ -938,7 +1091,7 @@ index 0257a15..64fba25 100644
      songloft.log.info(`[scraper] 跳过非本地歌曲: songId=${songId} (type=${songType})`);
      return null;
    }
-@@ -86,11 +88,6 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -86,11 +89,6 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
  
    const candidate = candidates[0];
  
@@ -950,7 +1103,7 @@ index 0257a15..64fba25 100644
    // 缓存字段辅助：entry 带 enriched 标记，避免「源本来就没有 genre」时每次命中都重跑 enrich
    const toCacheEntry = (r: { artist: string; title: string; album: string; cover_url?: string; lyrics?: string; genre?: string; year?: string; track?: string; source: string; score: number }) => ({
      artist: r.artist, title: r.title, album: r.album,
-@@ -101,7 +98,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -101,7 +99,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    });
  
    // 检查缓存（强制刮削跳过读取，但仍会写入覆盖旧缓存）
@@ -959,7 +1112,7 @@ index 0257a15..64fba25 100644
      const cached = await cacheGet<SearchResult & { enriched?: boolean }>(candidate.artist, candidate.title);
      if (cached && cached.score >= cfg.score_threshold) {
        songloft.log.info(`[scraper] 缓存命中: ${cached.artist} - ${cached.title} (${cached.score.toFixed(2)})`);
-@@ -123,6 +120,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -123,10 +121,11 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    if (!cfg.enable_acoustid) {
      songloft.log.info(`[scraper] AcoustID 未启用 (cfg.enable_acoustid=${cfg.enable_acoustid})`);
    } else if (!song.fingerprint) {
@@ -967,7 +1120,12 @@ index 0257a15..64fba25 100644
      songloft.log.info(`[scraper] AcoustID 跳过: 歌曲无指纹 (主程序扫描后异步计算，请稍后重试)`);
    } else {
      await rateLimitWait('acoustid');
-@@ -136,7 +134,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+-    const acoustidResults = await searchAcoustid(song.fingerprint, song.fingerprint_duration || song.duration || 0, cfg.acoustid_api_key);
++    const acoustidResults = await searchAcoustid(song.fingerprint, song.fingerprint_duration || song.duration || 0, cfg.acoustid_api_key, opts?.onDiagnostic);
+     if (acoustidResults.length > 0) {
+       const best = acoustidResults.reduce((a, b) => a.score > b.score ? a : b);
+       if (best.score > cfg.score_threshold) {
+@@ -136,7 +135,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
          best.title = toSimplified(best.title);
          best.album = toSimplified(best.album);
  
@@ -976,7 +1134,7 @@ index 0257a15..64fba25 100644
          if (enrich.cover_url) {
            best.cover_url = enrich.cover_url;
            songloft.log.info(`[scraper] 封面来自 ${enrich.source}: ${enrich.cover_url.substring(0, 60)}...`);
-@@ -147,13 +145,20 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -147,15 +146,23 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
          if (enrich.track) best.track = enrich.track;
  
          const result = buildResult(songId, best, candidate, {});
@@ -997,28 +1155,37 @@ index 0257a15..64fba25 100644
 +
    let bestResult: ScrapeResult | null = null;
    let bestScore = -1;
++  const diagnostics: Record<string, SourceDiagnostic> = {};
  
-@@ -180,6 +185,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+   for (let ci = 0; ci < candidates.length; ci++) {
+     const c = candidates[ci];
+@@ -173,6 +180,9 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+         if (s > srcBestScore) srcBestScore = s;
+       }
+       sourceScores[sourceName] = srcBestScore;
++      const previous = diagnostics[sourceName];
++      diagnostics[sourceName] = { count: Math.max(previous?.count || 0, results.length),
++        score: Math.max(previous?.score || 0, srcBestScore), error: previous?.error };
+       allResults.push(...results);
+     };
+ 
+@@ -180,6 +190,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
  
      const searchWithCircuit = async (fn: (kw: string, url: string) => Promise<SearchResult[]>, url: string, source: string) => {
        if (circuitIsOpen(source)) {
-+        opts?.onDiagnostic?.(`${source} 暂因连续失败而停用，请稍后重试`);
++        diagnostics[source] = { ...(diagnostics[source] || { count: 0, score: 0 }), error: '因连续失败暂时停用，请稍后重试' };
          songloft.log.info(`[scraper] ${source} 熔断中，跳过`);
          return { results: [], source };
        }
-@@ -187,9 +193,11 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
-         await rateLimitWait(source);
-         const r = await fn(keyword, url);
-         circuitSuccess(source);
-+        if (!r.length) opts?.onDiagnostic?.(`${source} 未找到匹配结果`);
+@@ -190,6 +201,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
          return { results: r, source };
        } catch (e) {
          circuitFailure(source);
-+        opts?.onDiagnostic?.(`${source}: ${e instanceof Error ? e.message : String(e)}`);
++        diagnostics[source] = { ...(diagnostics[source] || { count: 0, score: 0 }), error: e instanceof Error ? e.message : String(e) };
          throw e;
        }
      };
-@@ -210,6 +218,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -210,6 +222,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
        tasks.push(searchWithCircuit(searchKuWo, '', 'kuwo'));
      }
  
@@ -1026,16 +1193,180 @@ index 0257a15..64fba25 100644
      const settled = await Promise.allSettled(tasks);
      for (const s of settled) {
        if (s.status === 'fulfilled') {
-@@ -240,6 +249,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -240,6 +253,8 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    }
  
    if (!bestResult || bestScore < cfg.score_threshold) {
-+    if (bestResult) opts?.onDiagnostic?.(`最佳匹配得分 ${bestScore.toFixed(2)} 低于配置阈值 ${cfg.score_threshold}`);
++    for (const [source, value] of Object.entries(diagnostics)) opts?.onDiagnostic?.(formatSourceDiagnostic(source, value, cfg.score_threshold));
++    if (bestResult) opts?.onDiagnostic?.(`最佳候选来自${sourceLabel(bestResult.source)}，得分 ${bestScore.toFixed(2)}；未采用，未保存`);
      songloft.log.info(`[scraper] 最佳得分 ${bestScore.toFixed(2)} 低于阈值 ${cfg.score_threshold}，刮削失败`);
      return null;
    }
+diff --git a/src/sources.ts b/src/sources.ts
+index 1a5a8f9..9dff488 100644
+--- a/src/sources.ts
++++ b/src/sources.ts
+@@ -1,4 +1,5 @@
+ /// <reference types="@songloft/plugin-sdk" />
++import { searchQQ } from './qq-search';
+ import { rateLimitWait } from './ratelimit';
+ import { circuitIsOpen, circuitSuccess, circuitFailure } from './circuit';
+ 
+@@ -160,7 +161,7 @@ export interface SearchResult {
+ 
+ // ---- AcoustID / MusicBrainz ----
+ // 使用主程序已计算的 Chromaprint fingerprint，无需插件自行安装 fpcalc。
+-export async function searchAcoustid(fingerprint: string, duration: number, apiKey: string): Promise<SearchResult[]> {
++export async function searchAcoustid(fingerprint: string, duration: number, apiKey: string, onDiagnostic?: (reason: string) => void): Promise<SearchResult[]> {
+   if (!fingerprint) {
+     songloft.log.warn('[acoustid] 歌曲无指纹，降级到文本搜索');
+     return [];
+@@ -175,12 +176,17 @@ export async function searchAcoustid(fingerprint: string, duration: number, apiK
+       headers: {
+         'Content-Type': 'application/x-www-form-urlencoded',
+         'User-Agent': 'songloft-plugin-tag/1.0',
++        'X-Fetch-Timeout-Ms': '4000',
+       },
+       body,
+-    });
++    }, 0);
+ 
+     const data = await resp.json();
+-    if (data.status !== 'ok') return [];
++    if (data.status !== 'ok') {
++      const code = Number(data.error?.code);
++      onDiagnostic?.(`音频指纹：AcoustID 请求失败${Number.isFinite(code) ? `（业务错误码 ${code}${code === 4 ? '：API Key 无效' : ''}）` : ''}`);
++      return [];
++    }
+ 
+     const results: SearchResult[] = [];
+     for (const result of (data.results || []).slice(0, 3)) {
+@@ -201,6 +207,7 @@ export async function searchAcoustid(fingerprint: string, duration: number, apiK
+     }
+     return results;
+   } catch (e: any) {
++    onDiagnostic?.(`音频指纹：AcoustID 接口失败（${e.message || e}${/HTTP 400/.test(e.message || '') ? '；请检查 AcoustID Key' : ''}），继续文字搜索`);
+     songloft.log.warn(`[acoustid] 搜索失败: ${e.message || e}`);
+     return [];
+   }
+@@ -356,32 +363,10 @@ export async function searchNetease(keyword: string, apiUrl: string): Promise<Se
+ 
+ // ---- QQ 音乐 ----
+ export async function searchQQMusic(keyword: string, apiUrl: string): Promise<SearchResult[]> {
+-  if (!apiUrl || !isHostnameAllowed(apiUrl)) return [];
+-  const resp = await fetchWithRetry(
+-    `${apiUrl}?w=${encodeURIComponent(keyword)}&format=json&n=3`,
+-    {
+-      headers: {
+-        'Referer': 'https://y.qq.com',
+-        'User-Agent': 'Mozilla/5.0',
+-      },
+-    }
+-  );
+-
+-  const data = await resp.json();
+-  const songs = data?.data?.song?.list || [];
+-  return songs.map((s: any) => ({
+-    artist: s.singer?.[0]?.name || '',
+-    title: s.songname || '',
+-    album: s.albumname || '',
+-    cover_url: s.albummid ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${s.albummid}.jpg` : undefined,
+-    sourceId: s.songmid || undefined,
+-    release_date: undefined,
+-    genre: '',
+-    year: '',
+-    track: s.index ? String(s.index) : '',
+-    score: 0,
+-    source: 'qqmusic',
+-  }));
++  if (!apiUrl || !isHostnameAllowed(apiUrl)) throw new Error('QQ音乐 API 地址不可用');
++  return searchQQ(keyword, apiUrl, (url, init) => fetchWithRetry(url, {
++    ...init, headers: { ...init?.headers, 'X-Fetch-Timeout-Ms': '5000' },
++  }, 1));
+ }
+ 
+ // ---- 酷狗音乐 ----
+@@ -806,77 +791,7 @@ export async function enrichFromChineseSources(
+   };
+ }
+ 
+-// ---- 辅助：从文件名提取候选标签 ----
+-// CD 翻录歌曲常见垃圾元数据：优先用文件名
+-const GARBAGE_TITLE = /^(?:trad|track|unknown|audio\s*track|cd\s*track|data\s*track|\d+)$/i;
+-const GARBAGE_ARTIST = /^(?:unknown|various|未知|佚名)$/i;
+-
+-export function extractCandidate(filePath: string, existingTags?: { artist?: string; title?: string }): { artist: string; title: string } {
+-  // 清洗 DB 元数据
+-  if (existingTags?.artist && existingTags?.title) {
+-    const art = cleanFilenameNoise(existingTags.artist);
+-    const tit = cleanFilenameNoise(existingTags.title);
+-    // CD 翻录的垃圾元数据（如标题是"Track 01"、"trad 1"），退回到文件名提取
+-    if (!GARBAGE_TITLE.test(tit) && !GARBAGE_ARTIST.test(art)) {
+-      return { artist: art, title: tit };
+-    }
+-  }
+-
+-  // 从文件名提取 "艺术家 - 歌名" 或 "歌名 - 艺术家" 模式
+-  const fileName = cleanFilenameNoise(
+-    filePath.replace(/^.*[/\\]/, '').replace(/\.[^.]+$/, '')
+-  );
+-
+-  const match = fileName.match(/^(.+?)\s*-\s*(.+?)(?:\s*\(.*?\))?\s*$/);
+-  if (match) {
+-    return { artist: cleanFilenameNoise(match[1]), title: cleanFilenameNoise(match[2]) };
+-  }
+-
+-  return { artist: '', title: fileName };
+-}
+-
+-/**
+- * 返回文件名的两种候选排序（artist-title 和 title-artist），
+- * 供 doScrape 在得分不佳时尝试反向排序。
+- * 若文件名不含分隔符或无 DB 元数据，则只返回一种。
+- */
+-export function extractCandidates(filePath: string, existingTags?: { artist?: string; title?: string }): { artist: string; title: string }[] {
+-  // 有有效 DB 元数据时只返回一种
+-  if (existingTags?.artist && existingTags?.title) {
+-    const art = cleanFilenameNoise(existingTags.artist);
+-    const tit = cleanFilenameNoise(existingTags.title);
+-    if (!GARBAGE_TITLE.test(tit) && !GARBAGE_ARTIST.test(art)) {
+-      return [{ artist: art, title: tit }];
+-    }
+-  }
+-
+-  const fileName = cleanFilenameNoise(
+-    filePath.replace(/^.*[/\\]/, '').replace(/\.[^.]+$/, '')
+-  );
+-
+-  const match = fileName.match(/^(.+?)\s*-\s*(.+?)(?:\s*\(.*?\))?\s*$/);
+-  if (match) {
+-    const a = cleanFilenameNoise(match[1]);
+-    const b = cleanFilenameNoise(match[2]);
+-    // 两种排序：正常 (a - b) 和反向 (b - a)，去重
+-    const primary = { artist: a, title: b };
+-    const reversed = { artist: b, title: a };
+-    if (a === b) return [primary];
+-    return [primary, reversed];
+-  }
+-
+-  return [{ artist: '', title: fileName }];
+-}
+-
+-/** 剥离音质/版本标签，提高搜索匹配率 */
+-function cleanFilenameNoise(s: string): string {
+-  return s
+-    .replace(/\[(?:FLAC|MP3|WAV|APE|WMA|OGG|320k?|128k?|192k?|256k?|HQ|SQ|Hi[-\s]?Res|无损|高音质|MV)\]/gi, '')
+-    .replace(/\((?:Live|Remix|Cover|伴奏|纯音乐|Instrumental|Acoustic|Demo|Bonus\s?Track)\)/gi, '')
+-    .replace(/\s*(?:feat\.?|ft\.?)\s*.+?(?:\s*[-–—]\s*|$)/gi, '')
+-    .replace(/\s+/g, ' ')
+-    .trim();
+-}
++export { extractCandidate, extractCandidates } from './candidates';
+ 
+ // ---- 从配置读取/保存 ----
+ const CONFIG_KEY = 'scraper_config';
 diff --git a/static/index.html b/static/index.html
-index c9aa41f..5dfd59d 100644
+index c9aa41f..fe49e6d 100644
 --- a/static/index.html
 +++ b/static/index.html
 @@ -370,7 +370,7 @@ body{background:var(--bg);color:var(--tx);font-size:14px;line-height:1.65;overfl
@@ -1068,7 +1399,7 @@ index c9aa41f..5dfd59d 100644
        <div id="src-acoustid" class="src-panel" style="display:block"><div class="cfg"><label>AcoustID Key</label><input id="cfg_ak" placeholder="输入你的 Key" aria-label="AcoustID Key"><span class="eg">获取地址：acoustid.org/webservice</span></div></div>
        <div id="src-netease" class="src-panel" style="display:none"><div class="cfg"><label>网易云 URL</label><input id="cfg_nu" placeholder="输入 API URL" aria-label="网易云 API URL"><span class="eg">示例：https://interface.music.163.com/eapi/api/cloudsearch/pc</span></div></div>
 -      <div id="src-qqmusic" class="src-panel" style="display:none"><div class="cfg"><label>QQ音乐 URL</label><input id="cfg_qu" placeholder="输入 API URL" aria-label="QQ音乐 API URL"><span class="eg">示例：https://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp</span></div></div>
-+      <div id="src-qqmusic" class="src-panel" style="display:none"><div class="cfg"><label>QQ音乐 URL</label><input id="cfg_qu" placeholder="输入 API URL" aria-label="QQ音乐 API URL"><span class="eg">这里填写完整 API 地址，不是 API Key。示例：https://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp</span></div></div>
++      <div id="src-qqmusic" class="src-panel" style="display:none"><div class="cfg"><label>QQ音乐 URL</label><input id="cfg_qu" placeholder="输入 API URL" aria-label="QQ音乐 API URL"><span class="eg">这里填写完整 API 地址，不是 API Key。QQ 官方搜索：https://u.y.qq.com/cgi-bin/musicu.fcg（自动兼容旧版官方搜索地址）</span></div></div>
        <div id="src-kugou" class="src-panel" style="display:none"><div class="cfg"><label>酷狗 URL</label><input id="cfg_ku" placeholder="输入 API URL" aria-label="酷狗 API URL"><span class="eg">示例：https://songsearch.kugou.com/song_search_v2</span></div></div>
        <div id="src-kuwo" class="src-panel" style="display:none"><div class="cfg"><label>酷我 URL</label><input id="cfg_kw" placeholder="输入 API URL" aria-label="酷我 API URL"><span class="eg">示例：https://kuwo.cn</span></div></div>
        <div id="src-migu" class="src-panel" style="display:none"><div class="cfg"><label>咪咕</label><span class="eg">咪咕音乐无需配置 API URL，直接使用公开接口</span><div style="margin-top:8px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="cfg_migu" style="width:16px;height:16px"> 启用咪咕音乐</label></div></div></div>
@@ -1419,6 +1750,44 @@ index c9aa41f..5dfd59d 100644
      var target=getTargetPath(s);
      var mp=S._musicPrefix||"";
      var relPath=(s.file_path||"").replace(/^\//,"").substring(mp.length);
+diff --git a/tests/acoustid-fallback.test.mjs b/tests/acoustid-fallback.test.mjs
+new file mode 100644
+index 0000000..2df4013
+--- /dev/null
++++ b/tests/acoustid-fallback.test.mjs
+@@ -0,0 +1,32 @@
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import vm from 'node:vm';
++import test from 'node:test';
++import ts from 'typescript';
++
++function load(fetch) {
++  const context = vm.createContext({ exports: {}, Error, fetch, encodeURIComponent,
++    require: () => ({}), songloft: { log: { warn() {}, info() {} } } });
++  vm.runInContext(ts.transpileModule(readFileSync(new URL('../src/sources.ts', import.meta.url), 'utf8'),
++    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, context);
++  return context.exports;
++}
++
++test('AcoustID uses a bounded timeout, makes one failed request and permits text fallback', async () => {
++  let requests = 0;
++  const reasons = [];
++  const sources = load(async (_url, options) => {
++    requests++; assert.equal(options.headers['X-Fetch-Timeout-Ms'], '4000');
++    throw new Error('request timed out');
++  });
++  assert.equal((await sources.searchAcoustid('fingerprint', 100, 'test', r => reasons.push(r))).length, 0);
++  assert.equal(requests, 1);
++  assert.match(reasons.join(' '), /音频指纹.*timed out.*继续文字搜索/);
++});
++
++test('AcoustID rejected credentials produce an actionable separate diagnostic', async () => {
++  const reasons = [];
++  const sources = load(async () => ({ ok: false, status: 400 }));
++  assert.equal((await sources.searchAcoustid('fingerprint', 100, 'test', r => reasons.push(r))).length, 0);
++  assert.match(reasons.join(' '), /HTTP 400.*检查 AcoustID Key/);
++});
 diff --git a/tests/browser-harness.mjs b/tests/browser-harness.mjs
 new file mode 100644
 index 0000000..3559d8f
@@ -1737,4 +2106,148 @@ index 0000000..a3ac28e
 + w.S._tab='failed';w.S._triage='red';await w.renderReview();assert.equal(w.S._reviewSongs.length,1);
 + assert.equal(w.document.getElementById('tr-cnt').textContent,'1');
 + w.S._tab='organize';await w.loadOrgSongs();assert.ok(w.document.querySelectorAll('#orgList .song-card').length<=100);
++});
+diff --git a/tests/search-matching.test.mjs b/tests/search-matching.test.mjs
+new file mode 100644
+index 0000000..e5fa3e3
+--- /dev/null
++++ b/tests/search-matching.test.mjs
+@@ -0,0 +1,86 @@
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import vm from 'node:vm';
++import test from 'node:test';
++import ts from 'typescript';
++
++function load(name) {
++  const context = vm.createContext({ exports: {}, Error, SyntaxError, Number, String });
++  vm.runInContext(ts.transpileModule(readFileSync(new URL(`../src/${name}.ts`, import.meta.url), 'utf8'),
++    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, context);
++  return context.exports;
++}
++const { extractCandidates } = load('candidates');
++const { scoreMatch } = load('scoring');
++const { searchQQ } = load('qq-search');
++const { formatSourceDiagnostic } = load('scrape-diagnostics');
++const candidates = (path, tags) => JSON.parse(JSON.stringify(extractCandidates(path, tags)));
++
++test('reported filename splits track number, spaced underscore, artist and title', () => {
++  assert.deepEqual(candidates('/music/07.Arnica Montana _ Sea, Sand And Sun.wav'), [
++    { artist: 'Arnica Montana', title: 'Sea, Sand And Sun' },
++    { artist: 'Sea, Sand And Sun', title: 'Arnica Montana' },
++  ]);
++});
++test('download promotion and track numbers are removed without damaging artist underscores', () => {
++  assert.deepEqual(candidates('08 Candy_Wind - 青空[抖音：小G音乐][FLAC].flac')[0], { artist: 'Candy_Wind', title: '青空' });
++  assert.deepEqual(candidates('221小伙伴 - 遥远的你 (正式版) 抖音：小G音乐.mp3')[0], { artist: '221小伙伴', title: '遥远的你 (正式版)' });
++});
++test('versions, meaningful numbers and hyphens are preserved', () => {
++  assert.equal(candidates('AC-DC - Thunderstruck (Live).flac')[0].artist, 'AC-DC');
++  assert.equal(candidates('Artist — Song (Remix).mp3')[0].title, 'Song (Remix)');
++  assert.equal(candidates('21 Guns.mp3')[0].title, '21 Guns');
++  assert.equal(candidates('1984.mp3', { artist: 'Artist', title: '1984' })[0].title, '1984');
++});
++test('valid tags take priority, garbage tags fall back to the filename, title-only tags work', () => {
++  assert.deepEqual(candidates('wrong-file.mp3', { artist: 'Queen', title: 'Bohemian Rhapsody' }), [{ artist: 'Queen', title: 'Bohemian Rhapsody' }]);
++  assert.equal(candidates('Sea And Sun.wav', { artist: 'Unknown', title: 'Track 01' })[0].title, 'Sea And Sun');
++  assert.equal(candidates('', { title: 'Sea And Sun' })[0].title, 'Sea And Sun');
++  assert.equal(candidates('Track 01.wav')[0].title, '');
++});
++test('missing artist no longer caps an exact title match below the configured threshold', () => {
++  assert.equal(scoreMatch({ artist: '', title: '晴天' }, { artist: '周杰伦', title: '晴天', source: 'qqmusic' }), 0.95);
++  assert.equal(scoreMatch({ artist: '', title: '' }, { artist: '周杰伦', title: '晴天', source: 'qqmusic' }), 0);
++});
++test('artist mismatch and duration mismatch still reduce the score', () => {
++  const result = { artist: 'Correct artist', title: 'Exact title', source: 'qqmusic', duration: 300 };
++  const exact = scoreMatch({ artist: result.artist, title: result.title, duration: 300 }, result);
++  assert.ok(scoreMatch({ artist: 'Other person', title: result.title, duration: 300 }, result) < exact);
++  assert.ok(scoreMatch({ artist: result.artist, title: result.title, duration: 100 }, result) < exact);
++});
++
++test('known legacy QQ URL uses the verified modern search protocol and response fields', async () => {
++  const result = await searchQQ('周杰伦 晴天', 'https://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp', async (url, init) => {
++    assert.equal(url, 'https://u.y.qq.com/cgi-bin/musicu.fcg');
++    assert.equal(init.method, 'POST');
++    const body = JSON.parse(init.body);
++    assert.equal(body.search.param.query, '周杰伦 晴天');
++    return { json: async () => ({ code: 0, search: { code: 0, data: { body: { song: { list: [
++      { name: '晴天', singer: [{ name: '周杰伦' }], album: { name: '叶惠美', mid: 'album-mid' }, mid: 'song-mid', interval: 269 },
++    ] } } } } }) };
++  });
++  assert.equal(result[0].title, '晴天'); assert.equal(result[0].artist, '周杰伦');
++  assert.equal(result[0].album, '叶惠美'); assert.equal(result[0].duration, 269); assert.equal(result[0].sourceId, 'song-mid');
++});
++test('custom QQ URLs retain authentication parameters and support the legacy result structure', async () => {
++  const result = await searchQQ('test song', 'https://api.example/search?key=example&w=old', async (url, init) => {
++    assert.match(url, /key=example/); assert.match(url, /w=test%20song/); assert.doesNotMatch(url, /w=old|\?[^?]*\?/);
++    assert.equal(init.method, undefined);
++    return { json: async () => ({ code: 0, data: { song: { list: [{ singer: [{ name: 'Artist' }], songname: 'Song', albumname: 'Album' }] } } }) };
++  });
++  assert.equal(result[0].album, 'Album');
++});
++test('QQ HTTP-success business errors are reported as errors, not empty search results', async () => {
++  await assert.rejects(searchQQ('song', 'https://api.example/search', async () => ({ json: async () => ({ code: 500001 }) })), /业务错误码 500001/);
++  await assert.rejects(searchQQ('song', 'https://u.y.qq.com/cgi-bin/musicu.fcg', async () => ({ json: async () => ({ code: 0, search: { code: 2000 } }) })), /搜索业务错误码 2000/);
++});
++test('QQ empty lists, invalid JSON and incompatible schemas remain distinguishable', async () => {
++  assert.equal((await searchQQ('song', 'https://api.example/search', async () => ({ json: async () => ({ data: { song: { list: [] } } }) }))).length, 0);
++  await assert.rejects(searchQQ('song', 'https://api.example/search', async () => ({ json: async () => ({ data: {} }) })), /响应格式不兼容/);
++  await assert.rejects(searchQQ('song', 'https://api.example/search', async () => ({ json: async () => { throw new SyntaxError('HTML'); } })), /不是有效 JSON/);
++});
++test('source-specific diagnostics distinguish failures, no results and low scores', () => {
++  assert.match(formatSourceDiagnostic('qqmusic', { count: 0, score: 0, error: '业务错误码 500001' }, 0.7), /QQ音乐：接口失败.*500001/);
++  assert.equal(formatSourceDiagnostic('qqmusic', { count: 0, score: 0 }, 0.7), 'QQ音乐：搜索成功，但没有候选歌曲');
++  assert.equal(formatSourceDiagnostic('migu', { count: 3, score: 0.26 }, 0.7), '咪咕：候选最高得分 0.26，低于阈值 0.70');
++});
+diff --git a/tests/source-diagnostics-engine.test.mjs b/tests/source-diagnostics-engine.test.mjs
+new file mode 100644
+index 0000000..09e9465
+--- /dev/null
++++ b/tests/source-diagnostics-engine.test.mjs
+@@ -0,0 +1,46 @@
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import vm from 'node:vm';
++import test from 'node:test';
++import ts from 'typescript';
++
++function module(name, dependencies = {}, globals = {}) {
++  const context = vm.createContext({ exports: {}, Error, ...globals, require: name => dependencies[name] || {} });
++  vm.runInContext(ts.transpileModule(readFileSync(new URL(`../src/${name}.ts`, import.meta.url), 'utf8'),
++    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, context);
++  return context.exports;
++}
++
++async function run(qq) {
++  const queries = [], reasons = [];
++  const scraper = module('scraper', {
++    './sources': { ...module('candidates'), searchQQMusic: async kw => { queries.push(kw); return qq(); },
++      searchMiGu: async () => [{ artist: 'Different artist', title: 'Different song', source: 'migu' }] },
++    './scoring': { scoreMatch: () => 0.26 },
++    './t2s': { toSimplified: s => s },
++    './cache': { cacheSet: async () => {} },
++    './ratelimit': { rateLimitWait: async () => {} },
++    './circuit': { circuitIsOpen: () => false, circuitSuccess() {}, circuitFailure() {} },
++    './scrape-diagnostics': module('scrape-diagnostics'),
++  }, { songloft: { songs: { getById: async () => ({ type: 'local', file_path: '07.Arnica Montana _ Sea, Sand And Sun.wav' }) }, log: { info() {}, warn() {} } } });
++  assert.equal(await scraper.doScrape(42, { enable_qqmusic: true, qqmusic_api_url: 'https://example.test', enable_migu: true, score_threshold: 0.7 },
++    { skipCache: true, onDiagnostic: r => reasons.push(r) }), null);
++  return { queries, reasons };
++}
++
++test('engine reports QQ failure and Migu score on separate lines across reversed queries', async () => {
++  const { queries, reasons } = await run(() => { throw new Error('QQ音乐业务错误码 500001'); });
++  assert.equal(queries[0], 'Arnica Montana Sea, Sand And Sun');
++  assert.equal(queries.length, 2);
++  assert.equal(reasons.filter(s => s.startsWith('QQ音乐：')).length, 1);
++  assert.match(reasons.join('\n'), /QQ音乐：接口失败.*500001/);
++  assert.match(reasons.join('\n'), /咪咕：候选最高得分 0.26，低于阈值 0.70/);
++  assert.match(reasons.join('\n'), /最佳候选来自咪咕/);
++});
++
++test('engine distinguishes an empty successful QQ search from low-scoring Migu candidates', async () => {
++  const { reasons } = await run(() => []);
++  assert.ok(reasons.includes('QQ音乐：搜索成功，但没有候选歌曲'));
++  assert.ok(reasons.some(r => r.startsWith('咪咕：候选最高得分')));
++  assert.ok(!reasons.some(r => r.includes('接口失败')));
 +});
