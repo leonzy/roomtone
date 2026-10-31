@@ -33,7 +33,7 @@
 	url = https://github.com/songloft-org/songloft-plugin-downloader.git
 [submodule "plugins/src/songloft-plugin-lyrics"]
 	path = plugins/src/songloft-plugin-lyrics
-	url = https://github.com/songloft-org/songloft-plugin-lyrics.git
+	url = https://github.com/leonzy/roomtone-plugin-lyrics.git
 [submodule "plugins/src/songloft-plugin-radio"]
 	path = plugins/src/songloft-plugin-radio
 	url = https://github.com/songloft-org/songloft-plugin-radio.git

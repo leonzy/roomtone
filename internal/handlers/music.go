@@ -2653,8 +2653,8 @@ func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, so
 // @Param id path int true "歌曲 ID"
 // @Param refresh query bool false "为 true 时绕过缓存强制重新抓取歌词（重跑歌词搜索插件，不覆盖 file/embedded/manual 歌词）"
 // @Success 200 {object} map[string]any "LyricPayload"
-// @Failure 404 {string} string "歌曲或歌词不存在"
-// @Failure 502 {string} string "歌词获取失败"
+// @Failure 404 {object} map[string]string "歌曲不存在，或所有歌词来源均无匹配；歌词失败包含 detail"
+// @Failure 502 {object} map[string]string "歌词来源不可用，detail 包含分来源失败原因"
 // @Security BearerAuth
 // @Router /songs/{id}/lyric [get]
 func (h *SongHandler) GetSongLyric(w http.ResponseWriter, r *http.Request) {
@@ -2712,8 +2712,16 @@ func (h *SongHandler) GetSongLyric(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 歌词为空时（或手动刷新且非权威来源时），尝试从已注册的歌词提供者插件获取
+	if payload.IsEmpty() && !refresh {
+		if existing := h.songService.ExistingAudioLyric(ctx, song); existing != nil {
+			payload = *existing
+		}
+	}
+	var searchErr error
 	if payload.IsEmpty() && h.lyricSearcher != nil {
-		if found, err := h.lyricSearcher.SearchLyrics(ctx, song.Title, song.Artist, song.Album, song.Duration, song.Fingerprint, song.ISRC); err == nil && found != nil && !found.IsEmpty() {
+		found, err := h.lyricSearcher.SearchLyrics(ctx, song.Title, song.Artist, song.Album, song.Duration, song.Fingerprint, song.ISRC)
+		searchErr = err
+		if err == nil && found != nil && !found.IsEmpty() {
 			go h.songService.UpdateLyrics(context.Background(), song.ID, found.MarshalString(), models.LyricSourceScraped, "")
 			payload = *found
 		}
@@ -2726,7 +2734,16 @@ func (h *SongHandler) GetSongLyric(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if payload.IsEmpty() {
-		http.NotFound(w, r)
+		status := http.StatusNotFound
+		var failure *models.LyricSearchError
+		if errors.As(searchErr, &failure) {
+			status = failure.Status
+		}
+		if searchErr == nil {
+			searchErr = errors.New("本地没有歌词，且没有可用的歌词搜索结果；请检查歌词搜索插件配置")
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		respondError(w, status, "歌词获取失败", searchErr)
 		return
 	}
 

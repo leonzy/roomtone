@@ -641,6 +641,8 @@ func (m *Manager) SearchLyrics(ctx context.Context, title, artist, album string,
 	}
 
 	var result *models.LyricPayload
+	var reasons []string
+	failureStatus := http.StatusNotFound
 	m.lyricProviders.Range(func(key, _ interface{}) bool {
 		entryPath := key.(string)
 		searchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -653,9 +655,30 @@ func (m *Manager) SearchLyrics(ctx context.Context, title, artist, album string,
 				m.lyricProviders.Delete(entryPath)
 			}
 			slog.Debug("lyric search failed", "plugin", entryPath, "error", err)
+			reasons = append(reasons, entryPath+"：歌词插件请求失败或超时")
+			failureStatus = http.StatusBadGateway
 			return true
 		}
 		if statusCode != http.StatusOK || len(body) == 0 {
+			var detail struct {
+				Error  string `json:"error"`
+				Detail string `json:"detail"`
+			}
+			_ = json.Unmarshal(body, &detail)
+			reason := detail.Detail
+			if reason == "" {
+				reason = detail.Error
+			}
+			if reason == "" {
+				reason = fmt.Sprintf("歌词插件返回 HTTP %d", statusCode)
+			}
+			if len(reason) > 2048 {
+				reason = reason[:2048]
+			}
+			reasons = append(reasons, reason)
+			if statusCode != http.StatusNotFound {
+				failureStatus = http.StatusBadGateway
+			}
 			return true
 		}
 
@@ -670,7 +693,10 @@ func (m *Manager) SearchLyrics(ctx context.Context, title, artist, album string,
 	if result != nil {
 		return result, nil
 	}
-	return nil, errors.New("no lyrics found from any provider")
+	if len(reasons) == 0 {
+		reasons = []string{"未找到歌词；请确认已启用歌词搜索来源"}
+	}
+	return nil, &models.LyricSearchError{Status: failureStatus, Reasons: reasons}
 }
 
 // HasLyricProvider 报告当前是否存在已知的歌词提供者插件。

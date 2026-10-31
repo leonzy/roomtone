@@ -19,9 +19,12 @@ type ConfigFilter struct {
 type SongFilter struct {
 	// OmitFingerprint avoids loading bulk fingerprint payloads for metadata-only indexes.
 	OmitFingerprint bool
-	Type            string
-	Keyword         string
-	PathPrefix      string
+	// Internal exact-audio lookup for reusing existing lyrics, never a title-only match.
+	Fingerprint string
+	WithLyrics  bool
+	Type        string
+	Keyword     string
+	PathPrefix  string
 	// 标签分类精确过滤（空字符串表示不过滤该维度）。
 	Genre    string
 	Artist   string

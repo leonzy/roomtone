@@ -9249,13 +9249,17 @@ paths:
             additionalProperties: true
             type: object
         "404":
-          description: 歌曲或歌词不存在
+          description: 歌曲不存在，或所有歌词来源均无匹配；歌词失败包含 detail
           schema:
-            type: string
+            additionalProperties:
+              type: string
+            type: object
         "502":
-          description: 歌词获取失败
+          description: 歌词来源不可用，detail 包含分来源失败原因
           schema:
-            type: string
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取歌曲歌词

@@ -1,5 +1,9 @@
 # Development Lessons
 
+## LYR-002: Preserve provider diagnostics through plugin, host and client
+
+On 2026-10-31 provider errors/non-200 responses/no match were all collapsed to 404 and the client retained only loadFailed. Promotional metadata also polluted searches. Typed lyric errors and JSON detail now preserve per-source reasons; the client clears previous-song errors. Existing lyrics may be reused only for an exact complete fingerprint with duration within one second, never by title alone; explicit refresh bypasses reuse. Real SQLite and QuickJS regressions cover error propagation and safe reuse; 111 related client tests pass. Actual leonFN queries returned QQ and NetEase lyrics while independently reporting the LRCLIB network failure. No audio or tag writes were initiated.
+
 Evidence-backed lessons for the parent and public host contracts; see the [AI workflow](docs/en/ai-development.md). Subsequent sessions read applicable entries before work. Client, plugin, and device lessons belong in their own repositories.
 
 ## Recording and Promotion

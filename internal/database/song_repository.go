@@ -673,6 +673,12 @@ func songSelectBuilder(omitFingerprint ...bool) sq.SelectBuilder {
 }
 
 func applySongFilter(sb sq.SelectBuilder, filter *SongFilter) sq.SelectBuilder {
+	if filter.Fingerprint != "" {
+		sb = sb.Where(sq.Eq{"fingerprint": filter.Fingerprint})
+	}
+	if filter.WithLyrics {
+		sb = sb.Where(sq.NotEq{"lyric": ""})
+	}
 	if filter.Type != "" {
 		sb = sb.Where(sq.Eq{"type": filter.Type})
 	}
