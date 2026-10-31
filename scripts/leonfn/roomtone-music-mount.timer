@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Roomtone music disk and container binding
+
+[Timer]
+OnBootSec=20s
+OnUnitInactiveSec=30s
+AccuracySec=5s
+Unit=roomtone-music-mount.service
+
+[Install]
+WantedBy=timers.target

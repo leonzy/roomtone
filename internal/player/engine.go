@@ -1387,6 +1387,8 @@ func (e *Engine) fail(ctx context.Context, err error) {
 	}
 	e.lastErr = err
 	e.transport.Fail(err)
+	// A failed decoder must release its sessions, budget and metadata goroutine.
+	e.stopLocked()
 	e.mu.Unlock()
 	if e.deps.Bus != nil {
 		e.deps.Bus.Publish(Event{

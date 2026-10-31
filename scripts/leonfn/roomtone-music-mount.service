@@ -1,0 +1,9 @@
+[Unit]
+Description=Restore Roomtone music binding after NAS disk mounts
+After=docker.service
+ConditionPathExists=/etc/roomtone/music-mount.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/libexec/roomtone/music_mount_guard.py --config /etc/roomtone/music-mount.json
+TimeoutStartSec=240

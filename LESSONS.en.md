@@ -232,3 +232,12 @@ Status: lesson / promotion candidate / promoted (authoritative destination)
 - Fix: natural engine completion broadcasts the existing plugin `finish` contract through a dependency callback shared by group and party engines. Lynx reports local completion after actual playback starts; server-owned sessions report from the engine. Cancellation, errors and manual skips are not completions.
 - Validation: `internal/player/completion_test.go` covers two-device groups, automatic advance, final tracks, errors, cancellation and delegated playback. Lynx queue/API tests cover duplicate completion and request parameters. Fixtures do not replace speaker acceptance; no speaker playback was started during this work.
 - Seen 1× (2026-10-29).
+
+### NAS-001: Host file availability does not prove the container binding is current
+
+- Scope: leonFN external music disk, container playback and logs, 2026-10-31.
+- Evidence: the song existed on the host while `/app/music` inside Docker was empty. AirPlay negotiated successfully but sent zero samples; FFmpeg reported a missing file. Recreating the binding restored silent decoding of the same song. Later broken-pipe errors were secondary symptoms.
+- Fix: `scripts/leonfn/music_mount_guard.py` compares host/container device and inode identities and rebinds after the actual disk is mounted. It pauses on disk loss to protect library records and resumes only guard-paused instances, preserving manual stops. A boot-enabled systemd timer checks every 30 seconds. Playback failure closes sessions and cancels metadata updates.
+- Logs: retain the 20 MiB per-file and seven-day policies while adding a 100 MiB aggregate limit, evicting chronological archives without unlinking active handles or unrelated files. Docker capture is separately limited to three 10 MiB files.
+- Validation: six guard policy tests plus logging/player regressions; site verification used binding checks and silent decoding only, with no initiated audio playback.
+- Seen 1× (2026-10-31).

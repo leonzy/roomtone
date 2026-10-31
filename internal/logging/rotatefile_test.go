@@ -8,6 +8,76 @@ import (
 	"time"
 )
 
+func TestRotateWriter_TotalBudgetOnStartup(t *testing.T) {
+	stamp := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	withFixedNow(t, stamp)
+	dir := t.TempDir()
+	for _, name := range []string{"songloft-2026-10-31.1.log", "songloft-2026-10-31.2.log", "songloft-2026-10-31.log"} {
+		f, err := os.Create(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Truncate(40 << 20); err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
+		if err := os.Chtimes(filepath.Join(dir, name), stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w, err := NewRotateWriter(dir, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if w.totalSize > DefaultMaxTotalBytes {
+		t.Fatalf("startup total=%d", w.totalSize)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "songloft-2026-10-31.1.log")); !os.IsNotExist(err) {
+		t.Fatal("oldest archive must be removed first")
+	}
+}
+
+func TestRotateWriter_TotalBudgetDuringWrites(t *testing.T) {
+	dir := t.TempDir()
+	other := filepath.Join(dir, "songloft-important.log")
+	if err := os.WriteFile(other, []byte("unrelated"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w, err := NewRotateWriter(dir, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	w.maxTotal = 30
+	for i := 0; i < 15; i++ {
+		if _, err := w.Write([]byte("12345678\n")); err != nil {
+			t.Fatal(err)
+		}
+		var total int64
+		files, _ := ListLogFiles(dir)
+		for _, file := range files {
+			if _, _, valid := parseLogFileOrder(filepath.Base(file)); !valid {
+				continue
+			}
+			info, err := os.Stat(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			total += info.Size()
+		}
+		if total > w.maxTotal {
+			t.Fatalf("write %d: total=%d > %d", i, total, w.maxTotal)
+		}
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatal("unrelated file was removed", err)
+	}
+	if _, err := os.Stat(w.file.Name()); err != nil {
+		t.Fatal("active log was unlinked", err)
+	}
+}
+
 // withFixedNow 临时替换 nowFunc，返回恢复函数。
 func withFixedNow(t *testing.T, ts time.Time) {
 	t.Helper()

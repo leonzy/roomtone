@@ -101,3 +101,34 @@ func TestTrackCompletionDelegated(t *testing.T) {
 		})
 	}
 }
+
+func TestPlaybackFailureClosesSessionAndCancelsMetadata(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e := NewEngine("group", "failed", EngineDeps{})
+	target := fake.New("speaker")
+	if err := e.SetTargets(ctx, []sink.Target{{PlayerID: "speaker", Sink: target}}); err != nil {
+		t.Fatal(err)
+	}
+	released := 0
+	e.runCtx, e.cancel, e.running = ctx, cancel, true
+	e.release = func() { released++ }
+	failure := errors.New("audio file unavailable")
+	e.fail(ctx, failure)
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("metadata/keepalive goroutines were left running")
+	}
+	if e.running || released != 1 || !target.IsStopped() {
+		t.Fatal("failed session still holds playback resources")
+	}
+	if e.Status().State != StateError || e.Status().Error != failure.Error() {
+		t.Fatal("failure detail must remain visible")
+	}
+	// A late failure from the canceled run cannot stop a newer session.
+	e.fail(ctx, failure)
+	if released != 1 {
+		t.Fatal("budget released twice")
+	}
+}

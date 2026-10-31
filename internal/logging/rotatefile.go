@@ -31,6 +31,8 @@ const (
 	DefaultMaxSizeBytes int64 = 20 << 20 // 20 MiB
 	// DefaultRetentionDays 日志保留天数，超期文件在启动与轮转时清理。
 	DefaultRetentionDays = 7
+	// DefaultMaxTotalBytes bounds all current and archived application logs together.
+	DefaultMaxTotalBytes int64 = 100 << 20
 )
 
 // RotateWriter 是并发安全的按天 + 按大小轮转的日志文件 writer，实现 io.Writer。
@@ -40,11 +42,13 @@ const (
 //   - 跨天（日期变化）时切换到新日期的主文件。
 //   - 当天主文件超过 maxSize 时，将其重命名为 songloft-YYYY-MM-DD.<seq>.log 归档，
 //     再新建空的主文件继续写。
-//   - 每次轮转与初始化时清理修改时间早于 retentionDays 的本包日志文件。
+//   - 每次轮转与初始化时清理超期文件，并按时间从旧到新淘汰，所有文件合计不超过 100 MiB。
 type RotateWriter struct {
 	dir           string
 	maxSize       int64
 	retentionDays int
+	maxTotal      int64
+	totalSize     int64
 
 	mu       sync.Mutex
 	file     *os.File
@@ -70,6 +74,7 @@ func NewRotateWriter(dir string, maxSize int64, retentionDays int) (*RotateWrite
 		dir:           dir,
 		maxSize:       maxSize,
 		retentionDays: retentionDays,
+		maxTotal:      DefaultMaxTotalBytes,
 	}
 	w.cleanOld()
 	return w, nil
@@ -102,6 +107,10 @@ func (w *RotateWriter) Write(p []byte) (int, error) {
 
 	n, err := w.file.Write(p)
 	w.curSize += int64(n)
+	w.totalSize += int64(n)
+	if w.totalSize > w.maxTotal {
+		w.cleanOld()
+	}
 	if err != nil {
 		return len(p), nil
 	}
@@ -187,21 +196,48 @@ func (w *RotateWriter) rotateBySize() {
 
 // cleanOld 删除修改时间早于 retentionDays 的本包日志文件。调用方需持有 mu。
 func (w *RotateWriter) cleanOld() {
-	entries, err := os.ReadDir(w.dir)
+	paths, err := ListLogFiles(w.dir)
 	if err != nil {
 		return
 	}
 	cutoff := nowFunc().AddDate(0, 0, -w.retentionDays)
-	for _, e := range entries {
-		if e.IsDir() || !isLogFile(e.Name()) {
+	type logEntry struct {
+		path string
+		size int64
+	}
+	kept := make([]logEntry, 0, len(paths))
+	w.totalSize = 0
+	current := ""
+	if w.file != nil {
+		current = w.file.Name()
+	}
+	for _, path := range paths {
+		if _, _, valid := parseLogFileOrder(filepath.Base(path)); !valid {
 			continue
 		}
-		info, err := e.Info()
+		info, err := os.Stat(path)
 		if err != nil {
 			continue
 		}
-		if info.ModTime().Before(cutoff) {
-			_ = os.Remove(filepath.Join(w.dir, e.Name()))
+		if path != current && info.ModTime().Before(cutoff) {
+			if os.Remove(path) == nil {
+				continue
+			}
+		}
+		kept = append(kept, logEntry{path, info.Size()})
+		w.totalSize += info.Size()
+	}
+	// ListLogFiles orders archives chronologically, including .2 before .10.
+	// Never unlink the active file: writes to an unlinked handle would be lost.
+	for _, entry := range kept {
+		if w.totalSize <= w.maxTotal {
+			break
+		}
+		if entry.path == current {
+			continue
+		}
+		if os.Remove(entry.path) == nil {
+			w.totalSize -= entry.size
 		}
 	}
 }
