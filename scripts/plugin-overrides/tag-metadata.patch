@@ -686,14 +686,14 @@ index bf2341f..5b52d9c 100644
    },
    "dependencies": {
 diff --git a/plugin.json b/plugin.json
-index 554b672..f797bdc 100644
+index 554b672..7b1b7cd 100644
 --- a/plugin.json
 +++ b/plugin.json
 @@ -1,6 +1,6 @@
  {
    "name": "标签刮削",
 -  "version": "2.3.1",
-+  "version": "2.3.1+roomtone.8",
++  "version": "2.3.1+roomtone.9",
    "description": "智能刮削音乐标签：多源并发搜索 + 多级目录浏览，自动修正标题/艺术家/专辑，下载封面并写入音频文件",
    "author": "Songloft Team",
    "entryPath": "tag",
@@ -824,19 +824,21 @@ index 0000000..3c771b1
 +}
 diff --git a/src/candidates.ts b/src/candidates.ts
 new file mode 100644
-index 0000000..09f63fe
+index 0000000..0426fda
 --- /dev/null
 +++ b/src/candidates.ts
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,49 @@
 +export interface Candidate { artist: string; title: string }
 +
 +const GARBAGE_TITLE = /^(?:trad\s*\d*|track\s*\d*|unknown|audio\s*track\s*\d*|cd\s*track\s*\d*|data\s*track\s*\d*|未知|未命名|\d+)$/i;
 +const GARBAGE_ARTIST = /^(?:unknown|various(?: artists)?|未知(?:歌手)?|佚名)$/i;
++const PROMOTIONAL_ARTIST = /(?:车载音乐|正版车载|无损音乐合集|发烧试音|[微Ww][信Xx]\s*[:：])/;
 +
 +/** Remove release/download noise, preserving meaningful versions such as Live/Remix. */
 +export function cleanFilenameNoise(value: string): string {
 +  return value
 +    .replace(/[【\[]\s*(?:FLAC|MP3|WAV|APE|WMA|OGG|DSF|320k?(?:bps)?|128k?(?:bps)?|192k?(?:bps)?|256k?(?:bps)?|HQ|SQ|Hi[-\s]?Res|无损|高音质|MV)\s*[】\]]/gi, '')
++    .replace(/[【\[][^】\]\r\n]{0,80}(?:无损音质|高品质音质|无损下载)[^】\]\r\n]*[】\]]/gi, '')
 +    .replace(/[【\[(（](?:抖音|快手|公众号|微信公众号|下载地址|音乐下载|更多音乐)\s*[:：][^\]】)）]*[\]】)）]/gi, '')
 +    .replace(/\s+(?:抖音|快手|公众号)\s*[:：].*$/i, '')
 +    .replace(/\s+/g, ' ').trim();
@@ -852,7 +854,8 @@ index 0000000..09f63fe
 +function usableTitle(value: string): string { return GARBAGE_TITLE.test(value) ? '' : value; }
 +
 +export function extractCandidates(filePath: string, tags?: { artist?: string; title?: string }): Candidate[] {
-+  const artist = cleanFilenameNoise(tags?.artist || '');
++  const cleanedArtist = cleanFilenameNoise(tags?.artist || '');
++  const artist = PROMOTIONAL_ARTIST.test(cleanedArtist) ? '' : cleanedArtist;
 +  const title = cleanFilenameNoise(tags?.title || '');
 +  if (artist && title && !GARBAGE_ARTIST.test(artist) && (!GARBAGE_TITLE.test(title) || /^\d+$/.test(title))) {
 +    return [{ artist, title }];
@@ -1245,7 +1248,7 @@ index 0257a15..c4eff93 100644
  
    // 写入缓存（文本搜索结果自带 genre/year/track，视为已补全）
 diff --git a/src/sources.ts b/src/sources.ts
-index 1a5a8f9..f26ec49 100644
+index 1a5a8f9..a314d69 100644
 --- a/src/sources.ts
 +++ b/src/sources.ts
 @@ -1,4 +1,5 @@
@@ -1339,6 +1342,26 @@ index 1a5a8f9..f26ec49 100644
  }
  
  // ---- 酷狗音乐 ----
+@@ -403,7 +393,7 @@ export async function searchKuGou(keyword: string, apiUrl: string): Promise<Sear
+     sourceId: s.Hash || s.FileHash || undefined,
+     release_date: undefined,
+     genre: '',
+-    year: s.Chapter || '',
++    year: '', // Chapter is not a release year.
+     track: s.FileSort ? String(s.FileSort) : '',
+     score: 0,
+     source: 'kugou',
+@@ -439,8 +429,8 @@ export async function searchMiGu(keyword: string): Promise<SearchResult[]> {
+     sourceId: s.contentId ? String(s.contentId) : undefined,
+     release_date: undefined,
+     genre: s.tagNames || '',
+-    year: s.copyright ? String(s.copyright) : '',
+-    track: s.songId || '',
++    year: '', // copyright is an availability flag, not a release year.
++    track: '', // songId is a service ID, not the album track number.
+     score: 0,
+     source: 'migu',
+   }));
 @@ -806,77 +796,7 @@ export async function enrichFromChineseSources(
    };
  }
@@ -2174,10 +2197,10 @@ index 0000000..a3ac28e
 +});
 diff --git a/tests/search-matching.test.mjs b/tests/search-matching.test.mjs
 new file mode 100644
-index 0000000..e5fa3e3
+index 0000000..cb2fb50
 --- /dev/null
 +++ b/tests/search-matching.test.mjs
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,92 @@
 +import assert from 'node:assert/strict';
 +import { readFileSync } from 'node:fs';
 +import vm from 'node:vm';
@@ -2201,6 +2224,12 @@ index 0000000..e5fa3e3
 +    { artist: 'Arnica Montana', title: 'Sea, Sand And Sun' },
 +    { artist: 'Sea, Sand And Sun', title: 'Arnica Montana' },
 +  ]);
++});
++
++test('promotional artist tags cannot override the artist and title in the reported filename', () => {
++  assert.deepEqual(candidates('058.宋祖英-浏阳河【玄音Music 无损音质】.flac', {
++    title: '宋祖英-浏阳河', artist: '惠普正版车载音乐',
++  })[0], { artist: '宋祖英', title: '浏阳河' });
 +});
 +test('download promotion and track numbers are removed without damaging artist underscores', () => {
 +  assert.deepEqual(candidates('08 Candy_Wind - 青空[抖音：小G音乐][FLAC].flac')[0], { artist: 'Candy_Wind', title: '青空' });
@@ -2332,4 +2361,41 @@ index 0000000..1f9cfd5
 +  assert.ok(reasons.includes('QQ音乐：搜索成功，但没有候选歌曲'));
 +  assert.ok(reasons.some(r => r.startsWith('咪咕：候选最高得分')));
 +  assert.ok(!reasons.some(r => r.includes('接口失败')));
++});
+diff --git a/tests/source-metadata.test.mjs b/tests/source-metadata.test.mjs
+new file mode 100644
+index 0000000..b7c9d7d
+--- /dev/null
++++ b/tests/source-metadata.test.mjs
+@@ -0,0 +1,31 @@
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import vm from 'node:vm';
++import test from 'node:test';
++import ts from 'typescript';
++
++function sources(fetch) {
++  const context = vm.createContext({ exports: {}, fetch, encodeURIComponent, require: () => ({}),
++    songloft: { log: { warn() {}, info() {} } } });
++  vm.runInContext(ts.transpileModule(readFileSync(new URL('../src/sources.ts', import.meta.url), 'utf8'),
++    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, context);
++  return context.exports;
++}
++
++test('Migu copyright status and service song ID are never published as year or track', async () => {
++  const api = sources(async url => {
++    assert.match(decodeURIComponent(url), /text=宋祖英 浏阳河/);
++    return { ok: true, json: async () => ({ songResultData: { result: [{ name: '浏阳河', singers: [{ name: '宋祖英' }], copyright: '1', songId: '600000123' }] } }) };
++  });
++  const [result] = await api.searchMiGu('宋祖英 浏阳河');
++  assert.equal(result.artist, '宋祖英');
++  assert.equal(result.title, '浏阳河');
++  assert.equal(result.year, '');
++  assert.equal(result.track, '');
++});
++
++test('Kugou chapter metadata is never mistaken for a release year', async () => {
++  const api = sources(async () => ({ ok: true, json: async () => ({ data: { lists: [{ SongName: 'Song', SingerName: 'Artist', Chapter: '1' }] } }) }));
++  const [result] = await api.searchKuGou('Song', 'https://example.test/search');
++  assert.equal(result.year, '');
 +});
