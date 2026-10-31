@@ -686,14 +686,14 @@ index bf2341f..5b52d9c 100644
    },
    "dependencies": {
 diff --git a/plugin.json b/plugin.json
-index 554b672..672968a 100644
+index 554b672..f797bdc 100644
 --- a/plugin.json
 +++ b/plugin.json
 @@ -1,6 +1,6 @@
  {
    "name": "标签刮削",
 -  "version": "2.3.1",
-+  "version": "2.3.1+roomtone.7",
++  "version": "2.3.1+roomtone.8",
    "description": "智能刮削音乐标签：多源并发搜索 + 多级目录浏览，自动修正标题/艺术家/专辑，下载封面并写入音频文件",
    "author": "Songloft Team",
    "entryPath": "tag",
@@ -875,7 +875,7 @@ index 0000000..09f63fe
 +  return extractCandidates(filePath, tags)[0];
 +}
 diff --git a/src/main.ts b/src/main.ts
-index fffc677..b3723d2 100644
+index fffc677..db15d56 100644
 --- a/src/main.ts
 +++ b/src/main.ts
 @@ -1,6 +1,8 @@
@@ -910,7 +910,21 @@ index fffc677..b3723d2 100644
      // 自动推导开关：有 Key/URL 则开启，清空则关闭
      merged.enable_acoustid = !!(merged.acoustid_api_key);
      merged.enable_netease  = !!(merged.netease_api_url);
-@@ -1254,6 +1265,7 @@ async function onDeinit(): Promise<void> {
+@@ -244,9 +255,10 @@ router.get('/config/status', async (_req) => {
+   if (cfg.acoustid_api_key) {
+     probes.push((async () => {
+       try {
+-        const resp = await fetch(
+-          `https://api.acoustid.org/v2/lookup?client=${cfg.acoustid_api_key}&duration=1&fingerprint=AQAAzJg8U&meta=recordingids`
+-        );
++        const resp = await fetch('https://api.acoustid.org/v2/lookup', {
++          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Fetch-Timeout-Ms': '4000' },
++          body: `client=${encodeURIComponent(cfg.acoustid_api_key)}&duration=1&fingerprint=AQAAzJg8U&meta=recordingids`,
++        });
+         const data = await resp.json();
+         // status='ok' → 正常；error.code=3(指纹无效,返回400) → key 有效
+         result['acoustid'] = data?.status === 'ok' || data?.error?.code === 3;
+@@ -1254,6 +1266,7 @@ async function onDeinit(): Promise<void> {
  }
  
  async function onHTTPRequest(req: HTTPRequest): Promise<HTTPResponse> {
@@ -1231,7 +1245,7 @@ index 0257a15..c4eff93 100644
  
    // 写入缓存（文本搜索结果自带 genre/year/track，视为已补全）
 diff --git a/src/sources.ts b/src/sources.ts
-index 1a5a8f9..9dff488 100644
+index 1a5a8f9..f26ec49 100644
 --- a/src/sources.ts
 +++ b/src/sources.ts
 @@ -1,4 +1,5 @@
@@ -1249,27 +1263,38 @@ index 1a5a8f9..9dff488 100644
    if (!fingerprint) {
      songloft.log.warn('[acoustid] 歌曲无指纹，降级到文本搜索');
      return [];
-@@ -175,12 +176,17 @@ export async function searchAcoustid(fingerprint: string, duration: number, apiK
+@@ -170,17 +171,27 @@ export async function searchAcoustid(fingerprint: string, duration: number, apiK
+     // 使用 POST 避免指纹过长导致 URL 414（Chromaprint base64 指纹长度与歌曲时长成正比）
+     const body = `client=${encodeURIComponent(apiKey)}&duration=${Math.round(duration)}&fingerprint=${encodeURIComponent(fingerprint)}&meta=recordingids`;
+ 
+-    const resp = await fetchWithRetry('https://api.acoustid.org/v2/lookup', {
++    const resp = await fetch('https://api.acoustid.org/v2/lookup', {
+       method: 'POST',
        headers: {
          'Content-Type': 'application/x-www-form-urlencoded',
          'User-Agent': 'songloft-plugin-tag/1.0',
 +        'X-Fetch-Timeout-Ms': '4000',
        },
        body,
--    });
-+    }, 0);
+     });
  
-     const data = await resp.json();
+-    const data = await resp.json();
 -    if (data.status !== 'ok') return [];
++    let data: any;
++    try { data = await resp.json(); }
++    catch { throw new Error(`HTTP ${resp.status}，服务未返回有效 JSON`); }
 +    if (data.status !== 'ok') {
 +      const code = Number(data.error?.code);
-+      onDiagnostic?.(`音频指纹：AcoustID 请求失败${Number.isFinite(code) ? `（业务错误码 ${code}${code === 4 ? '：API Key 无效' : ''}）` : ''}`);
++      onDiagnostic?.(code === 4
++        ? '音频指纹：AcoustID 应用 API Key 无效（错误码 4）。请填写注册应用获得的 Application API Key，不是账户的 User API Key；继续文字搜索'
++        : `音频指纹：AcoustID 请求失败（HTTP ${resp.status}${Number.isFinite(code) ? `，业务错误码 ${code}` : ''}），继续文字搜索`);
 +      return [];
 +    }
++    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
  
      const results: SearchResult[] = [];
      for (const result of (data.results || []).slice(0, 3)) {
-@@ -201,6 +207,7 @@ export async function searchAcoustid(fingerprint: string, duration: number, apiK
+@@ -201,6 +212,7 @@ export async function searchAcoustid(fingerprint: string, duration: number, apiK
      }
      return results;
    } catch (e: any) {
@@ -1277,7 +1302,7 @@ index 1a5a8f9..9dff488 100644
      songloft.log.warn(`[acoustid] 搜索失败: ${e.message || e}`);
      return [];
    }
-@@ -356,32 +363,10 @@ export async function searchNetease(keyword: string, apiUrl: string): Promise<Se
+@@ -356,32 +368,10 @@ export async function searchNetease(keyword: string, apiUrl: string): Promise<Se
  
  // ---- QQ 音乐 ----
  export async function searchQQMusic(keyword: string, apiUrl: string): Promise<SearchResult[]> {
@@ -1314,7 +1339,7 @@ index 1a5a8f9..9dff488 100644
  }
  
  // ---- 酷狗音乐 ----
-@@ -806,77 +791,7 @@ export async function enrichFromChineseSources(
+@@ -806,77 +796,7 @@ export async function enrichFromChineseSources(
    };
  }
  
@@ -1394,7 +1419,7 @@ index 1a5a8f9..9dff488 100644
  // ---- 从配置读取/保存 ----
  const CONFIG_KEY = 'scraper_config';
 diff --git a/static/index.html b/static/index.html
-index c9aa41f..fe49e6d 100644
+index c9aa41f..891c907 100644
 --- a/static/index.html
 +++ b/static/index.html
 @@ -370,7 +370,7 @@ body{background:var(--bg);color:var(--tx);font-size:14px;line-height:1.65;overfl
@@ -1422,9 +1447,12 @@ index c9aa41f..fe49e6d 100644
        <div class="songs-area" id="songList"></div>
        <div class="review-panel" id="failedPanel" style="display:none">
          <div class="triage-bar">
-@@ -491,12 +492,13 @@ body{background:var(--bg);color:var(--tx);font-size:14px;line-height:1.65;overfl
+@@ -489,14 +490,15 @@ body{background:var(--bg);color:var(--tx);font-size:14px;line-height:1.65;overfl
+     </div>
+     <div class="cfg-sec"><h4>刮削源</h4>
        <div class="chips" id="srcChips" style="margin-bottom:10px"><div class="chip on" onclick="showSrc('src-acoustid')" aria-pressed="true">AcoustID</div><div class="chip" onclick="showSrc('src-netease')" aria-pressed="false">网易云</div><div class="chip" onclick="showSrc('src-qqmusic')" aria-pressed="false">QQ音乐</div><div class="chip" onclick="showSrc('src-kugou')" aria-pressed="false">酷狗</div><div class="chip" onclick="showSrc('src-kuwo')" aria-pressed="false">酷我</div><div class="chip" onclick="showSrc('src-migu')" aria-pressed="false">咪咕</div></div>
-       <div id="src-acoustid" class="src-panel" style="display:block"><div class="cfg"><label>AcoustID Key</label><input id="cfg_ak" placeholder="输入你的 Key" aria-label="AcoustID Key"><span class="eg">获取地址：acoustid.org/webservice</span></div></div>
+-      <div id="src-acoustid" class="src-panel" style="display:block"><div class="cfg"><label>AcoustID Key</label><input id="cfg_ak" placeholder="输入你的 Key" aria-label="AcoustID Key"><span class="eg">获取地址：acoustid.org/webservice</span></div></div>
++      <div id="src-acoustid" class="src-panel" style="display:block"><div class="cfg"><label>AcoustID 应用 API Key</label><input id="cfg_ak" placeholder="填写 Application API Key" aria-label="AcoustID Key"><span class="eg">需要注册应用获得的 Application API Key，不是账户的 User API Key。获取说明：acoustid.org/webservice</span></div></div>
        <div id="src-netease" class="src-panel" style="display:none"><div class="cfg"><label>网易云 URL</label><input id="cfg_nu" placeholder="输入 API URL" aria-label="网易云 API URL"><span class="eg">示例：https://interface.music.163.com/eapi/api/cloudsearch/pc</span></div></div>
 -      <div id="src-qqmusic" class="src-panel" style="display:none"><div class="cfg"><label>QQ音乐 URL</label><input id="cfg_qu" placeholder="输入 API URL" aria-label="QQ音乐 API URL"><span class="eg">示例：https://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp</span></div></div>
 +      <div id="src-qqmusic" class="src-panel" style="display:none"><div class="cfg"><label>QQ音乐 URL</label><input id="cfg_qu" placeholder="输入 API URL" aria-label="QQ音乐 API URL"><span class="eg">这里填写完整 API 地址，不是 API Key。QQ 官方搜索：https://u.y.qq.com/cgi-bin/musicu.fcg（自动兼容旧版官方搜索地址）</span></div></div>
@@ -1780,10 +1808,10 @@ index c9aa41f..fe49e6d 100644
      var relPath=(s.file_path||"").replace(/^\//,"").substring(mp.length);
 diff --git a/tests/acoustid-fallback.test.mjs b/tests/acoustid-fallback.test.mjs
 new file mode 100644
-index 0000000..2df4013
+index 0000000..6eb6a28
 --- /dev/null
 +++ b/tests/acoustid-fallback.test.mjs
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,40 @@
 +import assert from 'node:assert/strict';
 +import { readFileSync } from 'node:fs';
 +import vm from 'node:vm';
@@ -1812,9 +1840,17 @@ index 0000000..2df4013
 +
 +test('AcoustID rejected credentials produce an actionable separate diagnostic', async () => {
 +  const reasons = [];
-+  const sources = load(async () => ({ ok: false, status: 400 }));
++  const sources = load(async () => ({ ok: false, status: 400, json: async () => ({ status: 'error', error: { code: 4, message: 'invalid API key' } }) }));
 +  assert.equal((await sources.searchAcoustid('fingerprint', 100, 'test', r => reasons.push(r))).length, 0);
-+  assert.match(reasons.join(' '), /HTTP 400.*检查 AcoustID Key/);
++  assert.match(reasons.join(' '), /应用 API Key 无效.*错误码 4.*Application API Key.*User API Key/);
++});
++
++test('AcoustID malformed input errors remain distinct from invalid credentials', async () => {
++  const reasons = [];
++  const sources = load(async () => ({ ok: false, status: 400, json: async () => ({ status: 'error', error: { code: 3 } }) }));
++  await sources.searchAcoustid('fingerprint', 100, 'test', r => reasons.push(r));
++  assert.match(reasons.join(' '), /HTTP 400，业务错误码 3/);
++  assert.doesNotMatch(reasons.join(' '), /Key 无效/);
 +});
 diff --git a/tests/browser-harness.mjs b/tests/browser-harness.mjs
 new file mode 100644
