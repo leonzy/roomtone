@@ -686,14 +686,14 @@ index bf2341f..5b52d9c 100644
    },
    "dependencies": {
 diff --git a/plugin.json b/plugin.json
-index 554b672..f83ea26 100644
+index 554b672..672968a 100644
 --- a/plugin.json
 +++ b/plugin.json
 @@ -1,6 +1,6 @@
  {
    "name": "标签刮削",
 -  "version": "2.3.1",
-+  "version": "2.3.1+roomtone.6",
++  "version": "2.3.1+roomtone.7",
    "description": "智能刮削音乐标签：多源并发搜索 + 多级目录浏览，自动修正标题/艺术家/专辑，下载封面并写入音频文件",
    "author": "Songloft Team",
    "entryPath": "tag",
@@ -920,10 +920,10 @@ index fffc677..b3723d2 100644
  
 diff --git a/src/manual-scrape.ts b/src/manual-scrape.ts
 new file mode 100644
-index 0000000..d68974b
+index 0000000..357348c
 --- /dev/null
 +++ b/src/manual-scrape.ts
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,35 @@
 +import { jsonResponse } from '@songloft/plugin-sdk';
 +import { doScrape } from './scraper';
 +import { loadConfig } from './sources';
@@ -943,14 +943,17 @@ index 0000000..d68974b
 +    if (!Number.isSafeInteger(id) || id <= 0) return jsonResponse({ error: '无效的歌曲 ID' }, 400);
 +    const reasons: string[] = [];
 +    try {
-+      const result = await doScrape(id, await loadConfig(), {
++      const config = await loadConfig();
++      const result = await doScrape(id, config, {
 +        skipCache: true,
++        allowLowScore: true,
 +        onDiagnostic: reason => reasons.push(safeScrapeReason(reason)),
 +      });
 +      if (!result) {
 +        return jsonResponse({ error: '刮削未成功', detail: [...new Set(reasons)].join('\n') || '所有已启用的刮削源均无匹配结果' }, 422);
 +      }
-+      return jsonResponse({ result });
++      return jsonResponse({ result: { ...result, score_threshold: config.score_threshold,
++        below_threshold: result.score < config.score_threshold, diagnostics: [...new Set(reasons)] } });
 +    } catch (error) {
 +      return jsonResponse({ error: '刮削失败', detail: safeScrapeReason(error) }, 502);
 +    }
@@ -1050,7 +1053,7 @@ index 0000000..a836906
 +    + (value.error ? '；部分搜索请求失败' : '');
 +}
 diff --git a/src/scraper.ts b/src/scraper.ts
-index 0257a15..a82dc85 100644
+index 0257a15..c4eff93 100644
 --- a/src/scraper.ts
 +++ b/src/scraper.ts
 @@ -22,6 +22,7 @@ import { toSimplified } from './t2s';
@@ -1075,7 +1078,7 @@ index 0257a15..a82dc85 100644
  // ============================================================
  
 -export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skipCache?: boolean }): Promise<ScrapeResult | null> {
-+export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skipCache?: boolean; onDiagnostic?: (reason: string) => void }): Promise<ScrapeResult | null> {
++export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skipCache?: boolean; allowLowScore?: boolean; onDiagnostic?: (reason: string) => void }): Promise<ScrapeResult | null> {
    // 1. 获取歌曲信息
    const song = await songloft.songs.getById(songId);
    if (!song) {
@@ -1091,19 +1094,20 @@ index 0257a15..a82dc85 100644
      songloft.log.info(`[scraper] 跳过非本地歌曲: songId=${songId} (type=${songType})`);
      return null;
    }
-@@ -86,11 +89,6 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -85,11 +88,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+   }
  
    const candidate = candidates[0];
- 
+-
 -  if (!candidate.title) {
 -    songloft.log.warn(`[scraper] 无法确定搜索关键词: ${songId}`);
 -    return null;
 -  }
--
++  let fingerprintCandidate: ScrapeResult | null = null;
+ 
    // 缓存字段辅助：entry 带 enriched 标记，避免「源本来就没有 genre」时每次命中都重跑 enrich
    const toCacheEntry = (r: { artist: string; title: string; album: string; cover_url?: string; lyrics?: string; genre?: string; year?: string; track?: string; source: string; score: number }) => ({
-     artist: r.artist, title: r.title, album: r.album,
-@@ -101,7 +99,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -101,7 +100,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    });
  
    // 检查缓存（强制刮削跳过读取，但仍会写入覆盖旧缓存）
@@ -1112,7 +1116,7 @@ index 0257a15..a82dc85 100644
      const cached = await cacheGet<SearchResult & { enriched?: boolean }>(candidate.artist, candidate.title);
      if (cached && cached.score >= cfg.score_threshold) {
        songloft.log.info(`[scraper] 缓存命中: ${cached.artist} - ${cached.title} (${cached.score.toFixed(2)})`);
-@@ -123,10 +121,11 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -123,12 +122,14 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    if (!cfg.enable_acoustid) {
      songloft.log.info(`[scraper] AcoustID 未启用 (cfg.enable_acoustid=${cfg.enable_acoustid})`);
    } else if (!song.fingerprint) {
@@ -1124,8 +1128,11 @@ index 0257a15..a82dc85 100644
 +    const acoustidResults = await searchAcoustid(song.fingerprint, song.fingerprint_duration || song.duration || 0, cfg.acoustid_api_key, opts?.onDiagnostic);
      if (acoustidResults.length > 0) {
        const best = acoustidResults.reduce((a, b) => a.score > b.score ? a : b);
++      if (opts?.allowLowScore) fingerprintCandidate = buildResult(songId, best, candidate, {});
        if (best.score > cfg.score_threshold) {
-@@ -136,7 +135,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+         songloft.log.info(`[scraper] 声纹匹配成功: ${best.artist} - ${best.title} (${best.score.toFixed(2)})`);
+ 
+@@ -136,7 +137,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
          best.title = toSimplified(best.title);
          best.album = toSimplified(best.album);
  
@@ -1134,7 +1141,7 @@ index 0257a15..a82dc85 100644
          if (enrich.cover_url) {
            best.cover_url = enrich.cover_url;
            songloft.log.info(`[scraper] 封面来自 ${enrich.source}: ${enrich.cover_url.substring(0, 60)}...`);
-@@ -147,15 +146,23 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -147,15 +148,24 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
          if (enrich.track) best.track = enrich.track;
  
          const result = buildResult(songId, best, candidate, {});
@@ -1147,19 +1154,22 @@ index 0257a15..a82dc85 100644
    }
  
    // 3. 文本搜索兜底（多源并发）：先用第一个候选词搜索，若得分不佳且有反向候选则重试
+-  let bestResult: ScrapeResult | null = null;
+-  let bestScore = -1;
 +  if (!candidate.title) {
++    if (fingerprintCandidate) return fingerprintCandidate;
 +    opts?.onDiagnostic?.("音频指纹未能识别，且无法从歌曲信息或文件名确定搜索关键词");
 +    songloft.log.warn(`[scraper] 无法确定搜索关键词: ${songId}`);
 +    return null;
 +  }
 +
-   let bestResult: ScrapeResult | null = null;
-   let bestScore = -1;
++  let bestResult: ScrapeResult | null = fingerprintCandidate;
++  let bestScore = fingerprintCandidate?.score ?? -1;
 +  const diagnostics: Record<string, SourceDiagnostic> = {};
  
    for (let ci = 0; ci < candidates.length; ci++) {
      const c = candidates[ci];
-@@ -173,6 +180,9 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -173,6 +183,9 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
          if (s > srcBestScore) srcBestScore = s;
        }
        sourceScores[sourceName] = srcBestScore;
@@ -1169,7 +1179,7 @@ index 0257a15..a82dc85 100644
        allResults.push(...results);
      };
  
-@@ -180,6 +190,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -180,16 +193,28 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
  
      const searchWithCircuit = async (fn: (kw: string, url: string) => Promise<SearchResult[]>, url: string, source: string) => {
        if (circuitIsOpen(source)) {
@@ -1177,7 +1187,21 @@ index 0257a15..a82dc85 100644
          songloft.log.info(`[scraper] ${source} 熔断中，跳过`);
          return { results: [], source };
        }
-@@ -190,6 +201,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+       try {
+         await rateLimitWait(source);
+-        const r = await fn(keyword, url);
++        let r: SearchResult[];
++        try {
++          r = await fn(keyword, url);
++        } catch (error) {
++          // QQ may reject a combined query (e.g. damaged artist tags). Retry
++          // once with the title; retain the original artist for match scoring.
++          if (source !== 'qqmusic' || !/业务错误码 2001\b/.test(error instanceof Error ? error.message : String(error)) || !c.title || keyword === c.title) throw error;
++          opts?.onDiagnostic?.('QQ音乐：组合搜索返回业务错误码 2001，已改用歌名重试');
++          await rateLimitWait(source);
++          r = await fn(c.title, url);
++        }
+         circuitSuccess(source);
          return { results: r, source };
        } catch (e) {
          circuitFailure(source);
@@ -1185,7 +1209,7 @@ index 0257a15..a82dc85 100644
          throw e;
        }
      };
-@@ -210,6 +222,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -210,6 +235,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
        tasks.push(searchWithCircuit(searchKuWo, '', 'kuwo'));
      }
  
@@ -1193,15 +1217,19 @@ index 0257a15..a82dc85 100644
      const settled = await Promise.allSettled(tasks);
      for (const s of settled) {
        if (s.status === 'fulfilled') {
-@@ -240,6 +253,8 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -240,8 +266,10 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    }
  
    if (!bestResult || bestScore < cfg.score_threshold) {
+-    songloft.log.info(`[scraper] 最佳得分 ${bestScore.toFixed(2)} 低于阈值 ${cfg.score_threshold}，刮削失败`);
+-    return null;
 +    for (const [source, value] of Object.entries(diagnostics)) opts?.onDiagnostic?.(formatSourceDiagnostic(source, value, cfg.score_threshold));
-+    if (bestResult) opts?.onDiagnostic?.(`最佳候选来自${sourceLabel(bestResult.source)}，得分 ${bestScore.toFixed(2)}；未采用，未保存`);
-     songloft.log.info(`[scraper] 最佳得分 ${bestScore.toFixed(2)} 低于阈值 ${cfg.score_threshold}，刮削失败`);
-     return null;
++    if (bestResult) opts?.onDiagnostic?.(`最佳候选来自${sourceLabel(bestResult.source)}，得分 ${bestScore.toFixed(2)}；${opts?.allowLowScore ? '仅供预览，请人工核对，尚未保存' : '未采用，未保存'}`);
++    songloft.log.info(`[scraper] 最佳得分 ${bestScore.toFixed(2)} 低于阈值 ${cfg.score_threshold}，${opts?.allowLowScore && bestResult ? '返回人工预览' : '刮削失败'}`);
++    return opts?.allowLowScore ? bestResult : null;
    }
+ 
+   // 写入缓存（文本搜索结果自带 genre/year/track，视为已补全）
 diff --git a/src/sources.ts b/src/sources.ts
 index 1a5a8f9..9dff488 100644
 --- a/src/sources.ts
@@ -2000,10 +2028,10 @@ index 0000000..379bbd3
 +});
 diff --git a/tests/manual-scrape.test.mjs b/tests/manual-scrape.test.mjs
 new file mode 100644
-index 0000000..53ad427
+index 0000000..114c9a0
 --- /dev/null
 +++ b/tests/manual-scrape.test.mjs
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,52 @@
 +import assert from 'node:assert/strict';
 +import { readFileSync } from 'node:fs';
 +import vm from 'node:vm';
@@ -2024,14 +2052,15 @@ index 0000000..53ad427
 +}
 +
 +test('prepare calls read-only engine and returns result without auto-save', async () => {
-+  const preview = { songId: 42, title: 'match' };
++  const preview = { songId: 42, title: 'match', score: 0.49 };
 +  const run = harness(async (id, cfg, opts) => {
 +    assert.equal(id, 42); assert.equal(cfg.score_threshold, 0.8); assert.equal(opts.skipCache, true);
++    assert.equal(opts.allowLowScore, true);
 +    return preview;
 +  });
 +  const response = await run(42);
 +  assert.equal(response.statusCode, 200);
-+  assert.deepEqual(JSON.parse(response.body), { result: preview });
++  assert.deepEqual(JSON.parse(response.body), { result: { ...preview, score_threshold: 0.8, below_threshold: true, diagnostics: [] } });
 +});
 +
 +test('failed scrape preserves source reasons and removes credentials', async () => {
@@ -2201,10 +2230,10 @@ index 0000000..e5fa3e3
 +});
 diff --git a/tests/source-diagnostics-engine.test.mjs b/tests/source-diagnostics-engine.test.mjs
 new file mode 100644
-index 0000000..09e9465
+index 0000000..1f9cfd5
 --- /dev/null
 +++ b/tests/source-diagnostics-engine.test.mjs
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,63 @@
 +import assert from 'node:assert/strict';
 +import { readFileSync } from 'node:fs';
 +import vm from 'node:vm';
@@ -2218,10 +2247,10 @@ index 0000000..09e9465
 +  return context.exports;
 +}
 +
-+async function run(qq) {
++async function run(qq, allowLowScore = false) {
 +  const queries = [], reasons = [];
 +  const scraper = module('scraper', {
-+    './sources': { ...module('candidates'), searchQQMusic: async kw => { queries.push(kw); return qq(); },
++    './sources': { ...module('candidates'), searchQQMusic: async kw => { queries.push(kw); return qq(kw); },
 +      searchMiGu: async () => [{ artist: 'Different artist', title: 'Different song', source: 'migu' }] },
 +    './scoring': { scoreMatch: () => 0.26 },
 +    './t2s': { toSimplified: s => s },
@@ -2230,9 +2259,10 @@ index 0000000..09e9465
 +    './circuit': { circuitIsOpen: () => false, circuitSuccess() {}, circuitFailure() {} },
 +    './scrape-diagnostics': module('scrape-diagnostics'),
 +  }, { songloft: { songs: { getById: async () => ({ type: 'local', file_path: '07.Arnica Montana _ Sea, Sand And Sun.wav' }) }, log: { info() {}, warn() {} } } });
-+  assert.equal(await scraper.doScrape(42, { enable_qqmusic: true, qqmusic_api_url: 'https://example.test', enable_migu: true, score_threshold: 0.7 },
-+    { skipCache: true, onDiagnostic: r => reasons.push(r) }), null);
-+  return { queries, reasons };
++  const result = await scraper.doScrape(42, { enable_qqmusic: true, qqmusic_api_url: 'https://example.test', enable_migu: true, score_threshold: 0.7 },
++    { skipCache: true, allowLowScore, onDiagnostic: r => reasons.push(r) });
++  if (!allowLowScore) assert.equal(result, null);
++  return { queries, reasons, result };
 +}
 +
 +test('engine reports QQ failure and Migu score on separate lines across reversed queries', async () => {
@@ -2243,6 +2273,22 @@ index 0000000..09e9465
 +  assert.match(reasons.join('\n'), /QQ音乐：接口失败.*500001/);
 +  assert.match(reasons.join('\n'), /咪咕：候选最高得分 0.26，低于阈值 0.70/);
 +  assert.match(reasons.join('\n'), /最佳候选来自咪咕/);
++});
++
++test('manual preview returns low-score candidates while automatic scraping still rejects them', async () => {
++  const { result } = await run(() => [], true);
++  assert.equal(result.score, 0.26);
++  assert.equal(result.source, 'migu');
++  assert.equal((await run(() => [])).result, null);
++});
++
++test('QQ business error 2001 retries once with title while preserving diagnostics', async () => {
++  const { queries, reasons } = await run(kw => {
++    if (kw.includes('Arnica Montana ') || kw.startsWith('Sea, Sand And Sun ')) throw new Error('QQ音乐搜索业务错误码 2001');
++    return [];
++  });
++  assert.deepEqual(queries.slice(0, 2), ['Arnica Montana Sea, Sand And Sun', 'Sea, Sand And Sun']);
++  assert.ok(reasons.some(r => r.includes('已改用歌名重试')));
 +});
 +
 +test('engine distinguishes an empty successful QQ search from low-scoring Migu candidates', async () => {
