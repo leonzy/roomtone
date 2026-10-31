@@ -686,14 +686,14 @@ index bf2341f..5b52d9c 100644
    },
    "dependencies": {
 diff --git a/plugin.json b/plugin.json
-index 554b672..e7ce7f5 100644
+index 554b672..1a8423e 100644
 --- a/plugin.json
 +++ b/plugin.json
 @@ -1,6 +1,6 @@
  {
    "name": "标签刮削",
 -  "version": "2.3.1",
-+  "version": "2.3.1+roomtone.4",
++  "version": "2.3.1+roomtone.5",
    "description": "智能刮削音乐标签：多源并发搜索 + 多级目录浏览，自动修正标题/艺术家/专辑，下载封面并写入音频文件",
    "author": "Songloft Team",
    "entryPath": "tag",
@@ -905,7 +905,7 @@ index 0000000..d68974b
 +  });
 +}
 diff --git a/src/scraper.ts b/src/scraper.ts
-index 0257a15..04a389f 100644
+index 0257a15..64fba25 100644
 --- a/src/scraper.ts
 +++ b/src/scraper.ts
 @@ -44,7 +44,7 @@ export interface ScrapeResult {
@@ -938,15 +938,28 @@ index 0257a15..04a389f 100644
      songloft.log.info(`[scraper] 跳过非本地歌曲: songId=${songId} (type=${songType})`);
      return null;
    }
-@@ -87,6 +89,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -86,11 +88,6 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+ 
    const candidate = candidates[0];
  
-   if (!candidate.title) {
-+    opts?.onDiagnostic?.("无法从歌曲信息或文件名确定搜索关键词");
-     songloft.log.warn(`[scraper] 无法确定搜索关键词: ${songId}`);
-     return null;
-   }
-@@ -123,6 +126,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+-  if (!candidate.title) {
+-    songloft.log.warn(`[scraper] 无法确定搜索关键词: ${songId}`);
+-    return null;
+-  }
+-
+   // 缓存字段辅助：entry 带 enriched 标记，避免「源本来就没有 genre」时每次命中都重跑 enrich
+   const toCacheEntry = (r: { artist: string; title: string; album: string; cover_url?: string; lyrics?: string; genre?: string; year?: string; track?: string; source: string; score: number }) => ({
+     artist: r.artist, title: r.title, album: r.album,
+@@ -101,7 +98,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+   });
+ 
+   // 检查缓存（强制刮削跳过读取，但仍会写入覆盖旧缓存）
+-  if (!opts?.skipCache) {
++  if (candidate.title && !opts?.skipCache) {
+     const cached = await cacheGet<SearchResult & { enriched?: boolean }>(candidate.artist, candidate.title);
+     if (cached && cached.score >= cfg.score_threshold) {
+       songloft.log.info(`[scraper] 缓存命中: ${cached.artist} - ${cached.title} (${cached.score.toFixed(2)})`);
+@@ -123,6 +120,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    if (!cfg.enable_acoustid) {
      songloft.log.info(`[scraper] AcoustID 未启用 (cfg.enable_acoustid=${cfg.enable_acoustid})`);
    } else if (!song.fingerprint) {
@@ -954,7 +967,38 @@ index 0257a15..04a389f 100644
      songloft.log.info(`[scraper] AcoustID 跳过: 歌曲无指纹 (主程序扫描后异步计算，请稍后重试)`);
    } else {
      await rateLimitWait('acoustid');
-@@ -180,6 +184,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -136,7 +134,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+         best.title = toSimplified(best.title);
+         best.album = toSimplified(best.album);
+ 
+-        const enrich = await enrichFromChineseSources(best.artist, best.title, candidate, cfg);
++        const enrich = await enrichFromChineseSources(best.artist, best.title, best, cfg);
+         if (enrich.cover_url) {
+           best.cover_url = enrich.cover_url;
+           songloft.log.info(`[scraper] 封面来自 ${enrich.source}: ${enrich.cover_url.substring(0, 60)}...`);
+@@ -147,13 +145,20 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+         if (enrich.track) best.track = enrich.track;
+ 
+         const result = buildResult(songId, best, candidate, {});
+-        await cacheSet(candidate.artist, candidate.title, toCacheEntry(result));
++        // 无文字关键词时不能共享空键缓存，避免不同未知歌曲串用识别结果。
++        if (candidate.title) await cacheSet(candidate.artist, candidate.title, toCacheEntry(result));
+         return result;
+       }
+     }
+   }
+ 
+   // 3. 文本搜索兜底（多源并发）：先用第一个候选词搜索，若得分不佳且有反向候选则重试
++  if (!candidate.title) {
++    opts?.onDiagnostic?.("音频指纹未能识别，且无法从歌曲信息或文件名确定搜索关键词");
++    songloft.log.warn(`[scraper] 无法确定搜索关键词: ${songId}`);
++    return null;
++  }
++
+   let bestResult: ScrapeResult | null = null;
+   let bestScore = -1;
+ 
+@@ -180,6 +185,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
  
      const searchWithCircuit = async (fn: (kw: string, url: string) => Promise<SearchResult[]>, url: string, source: string) => {
        if (circuitIsOpen(source)) {
@@ -962,7 +1006,7 @@ index 0257a15..04a389f 100644
          songloft.log.info(`[scraper] ${source} 熔断中，跳过`);
          return { results: [], source };
        }
-@@ -187,9 +192,11 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -187,9 +193,11 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
          await rateLimitWait(source);
          const r = await fn(keyword, url);
          circuitSuccess(source);
@@ -974,7 +1018,7 @@ index 0257a15..04a389f 100644
          throw e;
        }
      };
-@@ -210,6 +217,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -210,6 +218,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
        tasks.push(searchWithCircuit(searchKuWo, '', 'kuwo'));
      }
  
@@ -982,7 +1026,7 @@ index 0257a15..04a389f 100644
      const settled = await Promise.allSettled(tasks);
      for (const s of settled) {
        if (s.status === 'fulfilled') {
-@@ -240,6 +248,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+@@ -240,6 +249,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
    }
  
    if (!bestResult || bestScore < cfg.score_threshold) {
@@ -1506,6 +1550,84 @@ index 0000000..e99c856
 + const h=setup(t,()=>{throw new Error('network unavailable')});
 + await h.w.saveCfg();assert.match(h.w.document.getElementById('cfgSaveError').textContent,/network unavailable/);
 + assert.equal(h.w.document.getElementById('cfgSaveBtn').disabled,false);
++});
+diff --git a/tests/fingerprint-without-title.test.mjs b/tests/fingerprint-without-title.test.mjs
+new file mode 100644
+index 0000000..379bbd3
+--- /dev/null
++++ b/tests/fingerprint-without-title.test.mjs
+@@ -0,0 +1,72 @@
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import vm from 'node:vm';
++import test from 'node:test';
++import ts from 'typescript';
++
++function harness({ title = '', fingerprint = 'audio-fingerprint', matches = [] } = {}) {
++  const calls = { lookup: 0, cache: 0, text: 0, reasons: [] };
++  const source = readFileSync(new URL('../src/scraper.ts', import.meta.url), 'utf8');
++  const context = vm.createContext({ exports: {},
++    songloft: { songs: { getById: async () => ({ type: 'local', fingerprint, duration: 123 }) },
++      log: { info() {}, warn() {} } },
++    require: name => ({
++      './sources': {
++        extractCandidates: () => [{ artist: '', title }],
++        searchAcoustid: async (fp, duration) => {
++          calls.lookup++; assert.equal(fp, fingerprint); assert.equal(duration, 123); return matches;
++        },
++        enrichFromChineseSources: async (_artist, _title, candidate) => {
++          assert.equal(candidate.title, 'Identified song'); return {};
++        },
++        searchNetease: async () => { calls.text++; return []; },
++      },
++      './t2s': { toSimplified: value => value },
++      './cache': { cacheGet: async () => { calls.cache++; return null; },
++        cacheSet: async () => { calls.cache++; } },
++      './ratelimit': { rateLimitWait: async () => {} },
++      './circuit': { circuitIsOpen: () => false, circuitSuccess() {}, circuitFailure() {} },
++    }[name] || {}),
++  });
++  vm.runInContext(ts.transpileModule(source, { compilerOptions: {
++    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
++  } }).outputText, context);
++  return { calls, run: () => context.exports.doScrape(42,
++    { enable_acoustid: true, acoustid_api_key: 'test', score_threshold: 0.7, enable_netease: true },
++    { onDiagnostic: reason => calls.reasons.push(reason) }) };
++}
++
++const match = { artist: 'Identified artist', title: 'Identified song', album: 'Album', source: 'acoustid', score: 0.95 };
++
++test('fingerprint identifies a song without any textual keyword, without empty-key caching', async () => {
++  const { run, calls } = harness({ matches: [match] });
++  const result = await run();
++  assert.equal(result.title, match.title);
++  assert.equal(calls.lookup, 1);
++  assert.equal(calls.cache, 0);
++  assert.equal(calls.text, 0);
++});
++
++test('unrecognized untitled audio reports failure after attempting fingerprint', async () => {
++  const { run, calls } = harness();
++  assert.equal(await run(), null);
++  assert.equal(calls.lookup, 1);
++  assert.equal(calls.cache, 0);
++  assert.equal(calls.text, 0);
++  assert.match(calls.reasons.join(' '), /音频指纹未能识别.*搜索关键词/);
++});
++
++test('missing fingerprint and missing keywords report both prerequisites', async () => {
++  const { run, calls } = harness({ fingerprint: '' });
++  assert.equal(await run(), null);
++  assert.equal(calls.lookup, 0);
++  assert.match(calls.reasons.join(' '), /尚无音频指纹/);
++  assert.match(calls.reasons.join(' '), /搜索关键词/);
++});
++
++test('named songs retain fingerprint recognition and keyword cache behavior', async () => {
++  const { run, calls } = harness({ title: 'Original title', matches: [match] });
++  assert.equal((await run()).title, match.title);
++  assert.equal(calls.lookup, 1);
++  assert.equal(calls.cache, 2);
 +});
 diff --git a/tests/manual-scrape.test.mjs b/tests/manual-scrape.test.mjs
 new file mode 100644
