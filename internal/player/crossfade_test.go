@@ -21,14 +21,13 @@ func sampleAt(b []byte, frame int) int16 {
 	return int16(binary.LittleEndian.Uint16(b[frame*4:]))
 }
 
-// TestCrossfadeReaderOverlap 校验：输出长度 = 两曲之和 - 淡化窗，
-// 交界前保持原声、交界后完全切到下一曲、中间等功率单调过渡。
+// One reader owns only the current track; the engine owns the next track.
 func TestCrossfadeReaderOverlap(t *testing.T) {
 	const curFrames, nextFrames, fadeFrames = 100, 100, 20
 	cur := bytes.NewReader(tone(curFrames, 1000))
 	next := io.NopCloser(bytes.NewReader(tone(nextFrames, 3000)))
 
-	xf := newCrossfadeReader(cur, fadeFrames*4, 4, func() (io.ReadCloser, error) {
+	xf := newCrossfadeReader(cur, fadeFrames, 4, func() (io.ReadCloser, error) {
 		return next, nil
 	})
 	out, err := io.ReadAll(xf)
@@ -39,7 +38,7 @@ func TestCrossfadeReaderOverlap(t *testing.T) {
 		t.Fatal("应标记为已混合")
 	}
 
-	wantFrames := curFrames + nextFrames - fadeFrames
+	wantFrames := curFrames
 	if got := len(out) / 4; got != wantFrames {
 		t.Fatalf("输出帧数 %d，期望 %d", got, wantFrames)
 	}
@@ -70,11 +69,9 @@ func TestCrossfadeReaderOverlap(t *testing.T) {
 	if mid < 2700 || mid > 2950 {
 		t.Fatalf("淡化中点应在 ~2828 附近，实际 %d", mid)
 	}
-	// 淡化窗之后完全是下一曲。
-	for i := curFrames; i < wantFrames; i++ {
-		if v := sampleAt(out, i); v != 3000 {
-			t.Fatalf("第 %d 帧应已是下一曲 3000，实际 %d", i, v)
-		}
+	remaining, err := io.ReadAll(next)
+	if err != nil || len(remaining)/4 != nextFrames-fadeFrames {
+		t.Fatalf("next track was consumed beyond overlap: remaining=%d err=%v", len(remaining)/4, err)
 	}
 }
 
@@ -83,25 +80,26 @@ func TestCrossfadeReaderShortTrack(t *testing.T) {
 	const fadeFrames = 50
 	cur := bytes.NewReader(tone(10, 1000))
 	next := io.NopCloser(bytes.NewReader(tone(60, 3000)))
-	xf := newCrossfadeReader(cur, fadeFrames*4, 4, func() (io.ReadCloser, error) {
+	xf := newCrossfadeReader(cur, fadeFrames, 4, func() (io.ReadCloser, error) {
 		return next, nil
 	})
 	out, err := io.ReadAll(xf)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if got, want := len(out)/4, 10+60-10; got != want {
+	if got, want := len(out)/4, 10; got != want {
 		t.Fatalf("短曲输出帧数 %d，期望 %d", got, want)
 	}
-	if v := sampleAt(out, len(out)/4-1); v != 3000 {
-		t.Fatalf("结尾应是下一曲原声，实际 %d", v)
+	remaining, err := io.ReadAll(next)
+	if err != nil || len(remaining)/4 != 50 {
+		t.Fatalf("short track consumed wrong prefix: remaining=%d err=%v", len(remaining)/4, err)
 	}
 }
 
 // TestCrossfadeReaderNoNext 没有下一曲时退化为直读。
 func TestCrossfadeReaderNoNext(t *testing.T) {
 	src := tone(20, 500)
-	xf := newCrossfadeReader(bytes.NewReader(src), 8*4, 4, nil)
+	xf := newCrossfadeReader(bytes.NewReader(src), 8, 4, nil)
 	out, err := io.ReadAll(xf)
 	if err != nil {
 		t.Fatalf("read: %v", err)
@@ -118,7 +116,7 @@ func TestCrossfadeReaderNoNext(t *testing.T) {
 func TestCrossfadeReaderClamps(t *testing.T) {
 	cur := bytes.NewReader(tone(40, 30000))
 	next := io.NopCloser(bytes.NewReader(tone(40, 30000)))
-	xf := newCrossfadeReader(cur, 20*4, 4, func() (io.ReadCloser, error) { return next, nil })
+	xf := newCrossfadeReader(cur, 20, 4, func() (io.ReadCloser, error) { return next, nil })
 	out, err := io.ReadAll(xf)
 	if err != nil {
 		t.Fatalf("read: %v", err)
@@ -126,6 +124,47 @@ func TestCrossfadeReaderClamps(t *testing.T) {
 	for i := 0; i < len(out)/4; i++ {
 		if v := sampleAt(out, i); v < 0 {
 			t.Fatalf("第 %d 帧溢出成负数 %d", i, v)
+		}
+	}
+}
+
+type dataWithEOF struct{ *bytes.Reader }
+
+func (r dataWithEOF) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if r.Len() == 0 {
+		err = io.EOF
+	}
+	return n, err
+}
+
+func TestCrossfadeDataWithEOFOnlyMixesTail(t *testing.T) {
+	next := bytes.NewReader(tone(100, 3000))
+	xf := newCrossfadeReader(dataWithEOF{bytes.NewReader(tone(100, 1000))}, 20, 4,
+		func() (io.ReadCloser, error) { return io.NopCloser(next), nil })
+	out, err := io.ReadAll(xf)
+	if err != nil || len(out) != 400 || next.Len() != 320 || xf.ConsumedNextFrames() != 20 {
+		t.Fatalf("incorrect EOF boundary: bytes=%d remaining=%d consumed=%d err=%v", len(out), next.Len(), xf.ConsumedNextFrames(), err)
+	}
+	for i := 0; i < 80; i++ {
+		if sampleAt(out, i) != 1000 {
+			t.Fatalf("mixed before tail at frame %d", i)
+		}
+	}
+}
+
+func TestCrossfadeShortNextTracksActualConsumption(t *testing.T) {
+	for _, frames := range []int{0, 5} {
+		xf := newCrossfadeReader(bytes.NewReader(tone(40, 1000)), 20, 4,
+			func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(tone(frames, 3000))), nil })
+		out, err := io.ReadAll(xf)
+		if err != nil || len(out) != 160 || xf.ConsumedNextFrames() != frames || xf.Mixed() != (frames > 0) {
+			t.Fatalf("short next: bytes=%d consumed=%d mixed=%v err=%v", len(out), xf.ConsumedNextFrames(), xf.Mixed(), err)
+		}
+		for i := 20 + frames; i < 40; i++ {
+			if sampleAt(out, i) != 1000 {
+				t.Fatalf("lost original tail at frame %d", i)
+			}
 		}
 	}
 }

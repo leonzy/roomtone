@@ -19,7 +19,7 @@ Sources for the comparison:
 |---|---|
 | **Better than LMS** | Output protocol coverage (RAOP + DLNA + local client; LMS needs plugin bridges that cannot sync), explicit sync-tier modelling with degradation hints, per-speaker server-side EQ, party mode (coarse sync across groups), REST + WebSocket event contract |
 | **On par with LMS** | Single-decode-source fan-out, sync groups (master/members/per-device delay compensation), gapless, queue and resume, format negotiation and transcoding, seek, group volume |
-| **Still behind** | nothing (crossfade / fade is implemented with the documented gapless trade-off, see §4.1) |
+| **Still behind** | Outputs without continuous-stream support must reopen at track boundaries; see §4 |
 | **Deliberately not done** | AirPlay 2 (no usable open-source sender), accurate DLNA sync (protocol has no shared clock) |
 
 **Verdict: the core sync chain (fan-out → timeline → correction loop → per-device compensation → gapless / crossfade → resume → ReplayGain → scheduled alarms) meets the bar; every compared item is on par with or better than LMS.**
@@ -63,7 +63,7 @@ Legend: ✅ on par or better / ⚠️ gap but acceptable / ❌ not implemented /
 |---|---|---|---|
 | gapless (continuous albums) | ✅ player keeps the decoder open (`strm` flag `0x40`) | ✅ `GaplessSink.Continue`, continuous sample index, 3s prefetch window | ✅ |
 | Next-track pre-open | ✅ server sends it ahead of time | ✅ `prefetch.go`, opens the next decoder when <3s remain | ✅ |
-| crossfade | ✅ `strm`'s `trans_type` 1–4 + `trans_period`, done player-side | ✅ server-side equal-power mixing (`crossfadeReader`, `/settings/crossfade`); enabling it gives up gapless continuation | ✅ |
+| crossfade | ✅ `strm`'s `trans_type` 1–4 + `trans_period`, done player-side | ✅ server-side equal-power mixing (`crossfadeReader`, `/settings/crossfade`); capable outputs retain continuous transport | ✅ |
 | fade in/out | ✅ same (`trans_type` 2/3) | ❌ not implemented | ❌ |
 | Underrun handling | ✅ `STMu`/`STMo` reports + rebuffer | ✅ ring buffer + silence fill + `underruns` metric | ✅ |
 
@@ -114,19 +114,14 @@ Legend: ✅ on par or better / ⚠️ gap but acceptable / ❌ not implemented /
 
 ## 4. Known gaps (not counted as passing)
 
-Every compared item is now closed (implementation notes for ReplayGain / alarms / crossfade in §4.1). One **product trade-off** remains, and users should know about it:
-
-| Gap | How LMS does it | What we lack | Path to close | Cost |
-|---|---|---|---|---|
-| **crossfade / fade** | `strm` sends `trans_type` + `trans_period` and the **player** performs the fade; RAOP/DLNA devices ignore the field | no crossfade mixer in the server-side decode path | add a 200ms linear / equal-power mixer in the PCM stage of `pipeline/distribute.go`, open the next track one fade window early on queue advance; the whole group must share one fade duration | small (~3 person-days), but gapless and crossfade become mutually exclusive — needs a product decision |
-**Why v1.0 can ship with crossfade open**: LMS implements crossfade **player-side** (`trans_type` in `strm`), while our primary outputs are RAOP / DLNA devices that ignore the field; doing it server-side also makes it mutually exclusive with gapless. Therefore it does not make the sync capability "fail".
+Crossfade mixes PCM on the server and keeps capable `GaplessSink.Continue` transports open. Outputs without continuation still reopen and can interrupt the boundary. The previous mutual exclusion was corrected on 2026-10-31: closing AirPlay discards mixed audio still buffered by the receiver, so reopening a decoder does not imply reopening the transport. Device listening and synchronization acceptance still follow section 5.
 
 ### 4.1 How the closed items are implemented
 
 | Capability | Where | Trade-off |
 |---|---|---|
 | ReplayGain | `internal/player/replaygain.go` (gain computation / scaling), `pipeline/distribute.go` (`Gain`/`SetGain`), `internal/app/replaygain.go` (ffprobe reads `REPLAYGAIN_*` + cache), `/settings/replaygain` | Tags are read **the first time a track plays** and then cached, instead of being written at scan time: existing libraries work right after the upgrade with no full rescan; the prefetch path warms the cache so the few dozen milliseconds of ffprobe land inside the 3s prefetch window and the gapless boundary is unaffected |
-| crossfade | `internal/player/crossfade.go` (`crossfadeReader` equal-power mixing), `engine.go` (wiring at the boundary + skipping the consumed head), `/settings/crossfade` | The last `fade` seconds of the current track are held back and mixed with the head of the next track at EOF; output length = both tracks minus the fade window; the next track resumes at `position=fade`. `GaplessSink.Continue` is skipped while enabled |
+| crossfade | `internal/player/crossfade.go` (`crossfadeReader` equal-power mixing), `engine.go` (wiring at the boundary + skipping the consumed head), `/settings/crossfade` | Hold the last `fade` seconds and mix with the next track's head at EOF. The reader emits only the current track's remaining length, then the engine updates the queue and track identity. Resume the next track at the actual consumed sample-frame offset; short tracks must not skip the full configured window. Capable outputs use `GaplessSink.Continue` to preserve the session and buffered audio |
 | Server-side alarm | `0042_alarms.sql`, `internal/database/alarm_repository.go`, `internal/app/alarms.go`, `/alarms` | 15s polling plus `last_fired_at` minute-level de-duplication (no catch-up after a restart, no double fire within a minute); `time_of_day` stores a local `HH:MM` rather than an absolute time to avoid DST drift; fade-in is done by stepping the group volume, so the engine needs no extra gain curve |
 
 ## 5. Verification record

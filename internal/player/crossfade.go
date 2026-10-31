@@ -9,16 +9,15 @@ import (
 // CrossfadeDefaultSeconds 默认淡化时长（秒）。0 表示关闭。
 const CrossfadeDefaultSeconds = 0.0
 
-// crossfadeReader 把"当前曲 + 下一曲"混成一条连续的 PCM 流。
+// crossfadeReader 只输出当前曲，将它的尾部与下一曲的开头混合。
 //
 // 做法：读取当前曲时始终扣住最后 fadeBytes 字节不输出，到 EOF 时把这段尾巴
-// 与下一曲的开头按等功率曲线（cos/sin）交叉混合，再接着吐下一曲的剩余部分。
-// 因此输出长度 = 当前曲 + 下一曲 - 淡化窗，正是"提前 fade 秒进入下一曲"，
-// 中间没有任何空洞——这点对同步组很重要，时间轴不会因为交叉淡化出现断层。
+// 与下一曲的开头按等功率曲线（cos/sin）交叉混合，然后返回 EOF。
+// 下一曲的剩余部分由引擎在更新队列、曲目信息和时间轴后播放；否则整首下一曲
+// 都会挂在上一曲名下，之后还会重复播放。输出长度等于当前曲剩余长度。
 //
-// 已知取舍（产品决策）：开启 crossfade 时放弃 gapless 的"解码器接续"，
-// 交界处按普通路径重新 Open 一次；分发器有 2s 缓冲，重新打开解码器的
-// 几十毫秒被缓冲吃掉，不会在设备侧听到断音。
+// 引擎重新打开下一曲解码器，但支持 Continue 的输出保持同一传输会话，
+// 避免关闭会话时丢掉设备中尚未播放的混合音频。
 type crossfadeReader struct {
 	cur  io.Reader
 	next func() (io.ReadCloser, error)
@@ -30,20 +29,22 @@ type crossfadeReader struct {
 	// pending 是混合后待输出的字节。
 	pending []byte
 
-	nextR    io.ReadCloser
-	mixing   bool
-	mixed    bool
-	finished bool
+	nextR              io.ReadCloser
+	curEnded           bool
+	mixing             bool
+	mixed              bool
+	finished           bool
+	consumedNextFrames int
 }
 
 // newCrossfadeReader 构造交叉淡化读取器。fade <= 0 或帧参数非法时退化为直读。
-func newCrossfadeReader(cur io.Reader, fade int, frameBytes int, next func() (io.ReadCloser, error)) *crossfadeReader {
+func newCrossfadeReader(cur io.Reader, fadeFrames int, frameBytes int, next func() (io.ReadCloser, error)) *crossfadeReader {
 	if frameBytes <= 0 {
 		frameBytes = 4
 	}
-	fadeBytes := fade / frameBytes * frameBytes // 对齐到整帧，避免半个采样
-	if fadeBytes < frameBytes {
-		fadeBytes = 0
+	fadeBytes := 0
+	if fadeFrames > 0 {
+		fadeBytes = fadeFrames * frameBytes
 	}
 	return &crossfadeReader{
 		cur:        cur,
@@ -55,6 +56,9 @@ func newCrossfadeReader(cur io.Reader, fade int, frameBytes int, next func() (io
 
 // Mixed 是否真的做过混合（用于决定下一曲是否跳过已消耗的头部）。
 func (r *crossfadeReader) Mixed() bool { return r.mixed }
+
+// ConsumedNextFrames is the actual prefix mixed, including short-track cases.
+func (r *crossfadeReader) ConsumedNextFrames() int { return r.consumedNextFrames }
 
 // Read 实现 io.Reader。
 func (r *crossfadeReader) Read(p []byte) (int, error) {
@@ -70,7 +74,8 @@ func (r *crossfadeReader) Read(p []byte) (int, error) {
 		return n, nil
 	}
 	if r.mixing {
-		return r.readNext(p)
+		r.finished = true
+		return 0, io.EOF
 	}
 	return r.readCur(p)
 }
@@ -90,22 +95,21 @@ func (r *crossfadeReader) readCur(p []byte) (int, error) {
 			r.hold = r.hold[n:]
 			return n, nil
 		}
+		if r.curEnded {
+			if err := r.startMix(); err != nil {
+				return 0, err
+			}
+			return r.Read(p)
+		}
 		tmp := make([]byte, len(p))
 		n, err := r.cur.Read(tmp)
 		if n > 0 {
 			r.hold = append(r.hold, tmp[:n]...)
 		}
 		if err == io.EOF {
-			// 当前曲结束：把扣住的尾巴与下一曲开头混合。
-			if err := r.startMix(); err != nil {
-				return 0, err
-			}
-			if len(r.pending) > 0 {
-				out := copy(p, r.pending)
-				r.pending = r.pending[out:]
-				return out, nil
-			}
-			return r.readNext(p)
+			// Read may return data and EOF together: drain the non-overlap prefix first.
+			r.curEnded = true
+			continue
 		}
 		if err != nil {
 			return 0, err
@@ -141,36 +145,15 @@ func (r *crossfadeReader) startMix() error {
 	head := make([]byte, len(tail))
 	// 下一曲比淡化窗还短：能读到多少混多少，没读到的部分按当前曲原声输出。
 	if n, _ := io.ReadFull(nc, head); n < len(head) {
-		head = head[:n]
+		head = head[:n/r.frameBytes*r.frameBytes]
 	}
-	mixed := make([]byte, len(tail))
-	totalFrames := r.fadeBytes / r.frameBytes
-	if totalFrames <= 0 {
-		totalFrames = len(tail) / r.frameBytes
-	}
-	startFrame := totalFrames - len(tail)/r.frameBytes
-	equalPowerMix(mixed, tail, head, startFrame, totalFrames)
+	r.consumedNextFrames = len(head) / r.frameBytes
+	mixed := append([]byte(nil), tail...)
+	equalPowerMix(mixed, tail, head, 0, len(tail)/r.frameBytes)
 	r.pending = mixed
-	r.mixed = true
+	r.mixed = r.consumedNextFrames > 0
 	r.mixing = true
 	return nil
-}
-
-// readNext 混合结束后直接读下一曲剩余部分。
-func (r *crossfadeReader) readNext(p []byte) (int, error) {
-	if r.nextR == nil {
-		r.finished = true
-		return 0, io.EOF
-	}
-	n, err := r.nextR.Read(p)
-	if err == io.EOF {
-		r.finished = true
-		if n > 0 {
-			return n, nil
-		}
-		return 0, io.EOF
-	}
-	return n, err
 }
 
 // Close 关掉交叉淡化的下一曲解码器（当前曲由引擎自己关）。

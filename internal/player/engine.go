@@ -103,8 +103,7 @@ type EngineDeps struct {
 	ReplayGain ReplayGainSource
 	// Crossfade 交叉淡化时长；返回 0 表示关闭。每次起播读一次，改设置下一曲生效。
 	//
-	// 与 gapless 互斥（产品决策）：开着 crossfade 时交界处按普通路径重新
-	// Open，不再走 GaplessSink.Continue。
+	// 支持连续传输的 sink 保持会话；下一曲解码器从实际重叠位置重新打开。
 	Crossfade func() time.Duration
 	// OnTrackFinished reports a natural completion once per engine, not per speaker.
 	// Pause, seek, stop and decoder failures must not invoke it.
@@ -914,9 +913,10 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		resume := e.sinksOpen
 		e.mu.Unlock()
 		targets, _ := e.targets.Snapshot()
-		// crossfade 开启时放弃 gapless 接续（产品决策）：两条路径都要改交界处的
-		// 样本，混在一起会让时间轴对不上，只能二选一。
-		if resume && canGapless(targets) && e.crossfadeDuration() == 0 {
+		// Mixing changes PCM, not the continuous sample timeline. Keep capable
+		// sinks open across crossfades too: TEARDOWN would discard the buffered
+		// overlap while the next decoder skips that same consumed prefix.
+		if resume && canGapless(targets) {
 			// 无缝接续：不重新握手、不重新 Start。RTP 时间戳由帧的
 			// SampleIndex 推导，跨曲本来就连着，所以这里只更新曲目信息。
 			for _, t := range targets {
@@ -1024,8 +1024,8 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			}
 			go loop.Run(ctx)
 		}
-		// 交叉淡化：把当前曲尾巴与下一曲开头等功率混合。混合后下一曲的
-		// 头部已经被消耗，循环下一轮从 position=fade 起播。
+		// 交叉淡化：把当前曲尾巴与下一曲开头等功率混合。
+		// 下一轮从实际混入的头部长度起播，短曲可能不足一个完整淡化窗。
 		fade := e.crossfadeDuration()
 		var src io.Reader = dec
 		var xf *crossfadeReader
@@ -1040,8 +1040,9 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			}
 		}
 		frames, runErr := runner.Run(ctx, src)
-		mixed := xf != nil && xf.Mixed()
+		consumedNext := time.Duration(0)
 		if xf != nil {
+			consumedNext = time.Duration(xf.ConsumedNextFrames()) * time.Second / time.Duration(format.SampleRate)
 			_ = xf.Close()
 		}
 		_ = dec.Close()
@@ -1068,11 +1069,8 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		}
 
 		// 自然播完：auto=true 时 repeat=one 原地重播。
-		// 做过交叉淡化时，下一曲已经播掉了 fade 秒的头部，从那里接着放。
-		position = 0
-		if mixed {
-			position = fade
-		}
+		// 做过交叉淡化时，下一曲只跳过已经混入的头部，不能跳过配置的固定时长。
+		position = consumedNext
 		e.mu.Lock()
 		advanced := e.queue.Next(true)
 		if advanced {
