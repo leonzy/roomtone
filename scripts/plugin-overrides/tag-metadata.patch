@@ -686,14 +686,14 @@ index bf2341f..5b52d9c 100644
    },
    "dependencies": {
 diff --git a/plugin.json b/plugin.json
-index 554b672..9ff08c6 100644
+index 554b672..87cf957 100644
 --- a/plugin.json
 +++ b/plugin.json
 @@ -1,6 +1,6 @@
  {
    "name": "标签刮削",
 -  "version": "2.3.1",
-+  "version": "2.3.1+roomtone.2",
++  "version": "2.3.1+roomtone.3",
    "description": "智能刮削音乐标签：多源并发搜索 + 多级目录浏览，自动修正标题/艺术家/专辑，下载封面并写入音频文件",
    "author": "Songloft Team",
    "entryPath": "tag",
@@ -823,26 +823,28 @@ index 0000000..3c771b1
 +  });
 +}
 diff --git a/src/main.ts b/src/main.ts
-index fffc677..460472d 100644
+index fffc677..a429326 100644
 --- a/src/main.ts
 +++ b/src/main.ts
-@@ -1,6 +1,7 @@
+@@ -1,6 +1,8 @@
  /// <reference types="@songloft/plugin-sdk" />
  import { jsonResponse, createRouter, type HTTPRequest, type HTTPResponse } from '@songloft/plugin-sdk';
  import { toSimplified } from './t2s';
 +import { registerBrowseRoutes, clearBrowseCache } from './browser';
++import { registerManualScrapeRoutes } from './manual-scrape';
  import { scrapeSong, doScrape, writeTags, clearCover, ensureBackup, type ScrapeResult } from './scraper';
  import { loadConfig, saveConfig, DEFAULT_CONFIG, searchNetease, searchQQMusic, searchKuGou, searchMiGu, searchKuWo, extractCandidates, type ScraperConfig, type SearchResult } from './sources';
  import { scoreMatch } from './scoring';
-@@ -10,6 +11,7 @@ import { cacheCount, cacheClear, cacheCleanup } from './cache';
+@@ -10,6 +12,8 @@ import { cacheCount, cacheClear, cacheCleanup } from './cache';
  import { createSemaphore } from './semaphore';
  
  const router = createRouter();
 +registerBrowseRoutes(router);
++registerManualScrapeRoutes(router);
  
  // ---- SSRF 防护：内网地址拦截 ----
  function isBadHost(url: string): boolean {
-@@ -1254,6 +1256,7 @@ async function onDeinit(): Promise<void> {
+@@ -1254,6 +1258,7 @@ async function onDeinit(): Promise<void> {
  }
  
  async function onHTTPRequest(req: HTTPRequest): Promise<HTTPResponse> {
@@ -850,6 +852,130 @@ index fffc677..460472d 100644
    return router.handle(req);
  }
  
+diff --git a/src/manual-scrape.ts b/src/manual-scrape.ts
+new file mode 100644
+index 0000000..d68974b
+--- /dev/null
++++ b/src/manual-scrape.ts
+@@ -0,0 +1,32 @@
++import { jsonResponse } from '@songloft/plugin-sdk';
++import { doScrape } from './scraper';
++import { loadConfig } from './sources';
++
++/** Error diagnostics must never disclose configured API addresses or keys. */
++export function safeScrapeReason(error: unknown): string {
++  return (error instanceof Error ? error.message : String(error))
++    .replace(/https?:\/\/[^\s"'<>]+/gi, '[服务地址]')
++    .replace(/((?:api[_-]?key|token|password|authorization)\s*[=:]\s*)[^\s,;]+/gi, '$1[已隐藏]')
++    .slice(0, 1200);
++}
++
++export function registerManualScrapeRoutes(router: { post: (path: string, handler: any) => void }): void {
++  // Unlike /scrape/:id, this never writes tags, backups, or completion markers.
++  router.post('/scrape/prepare/:id', async (_req: unknown, params: Record<string, string>) => {
++    const id = Number(params?.id);
++    if (!Number.isSafeInteger(id) || id <= 0) return jsonResponse({ error: '无效的歌曲 ID' }, 400);
++    const reasons: string[] = [];
++    try {
++      const result = await doScrape(id, await loadConfig(), {
++        skipCache: true,
++        onDiagnostic: reason => reasons.push(safeScrapeReason(reason)),
++      });
++      if (!result) {
++        return jsonResponse({ error: '刮削未成功', detail: [...new Set(reasons)].join('\n') || '所有已启用的刮削源均无匹配结果' }, 422);
++      }
++      return jsonResponse({ result });
++    } catch (error) {
++      return jsonResponse({ error: '刮削失败', detail: safeScrapeReason(error) }, 502);
++    }
++  });
++}
+diff --git a/src/scraper.ts b/src/scraper.ts
+index 0257a15..04a389f 100644
+--- a/src/scraper.ts
++++ b/src/scraper.ts
+@@ -44,7 +44,7 @@ export interface ScrapeResult {
+ /**
+  * 单曲刮削（写入模式）
+  */
+-export async function scrapeSong(songId: number, config?: ScraperConfig, opts?: { skipCache?: boolean }): Promise<ScrapeResult | null> {
++export async function scrapeSong(songId: number, config?: ScraperConfig, opts?: { skipCache?: boolean; onDiagnostic?: (reason: string) => void }): Promise<ScrapeResult | null> {
+   const cfg = config || await loadConfig();
+   const result = await doScrape(songId, cfg, opts);
+   if (!result) return null;
+@@ -59,10 +59,11 @@ export async function scrapeSong(songId: number, config?: ScraperConfig, opts?:
+ // 内部实现
+ // ============================================================
+ 
+-export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skipCache?: boolean }): Promise<ScrapeResult | null> {
++export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skipCache?: boolean; onDiagnostic?: (reason: string) => void }): Promise<ScrapeResult | null> {
+   // 1. 获取歌曲信息
+   const song = await songloft.songs.getById(songId);
+   if (!song) {
++    opts?.onDiagnostic?.("歌曲不存在");
+     songloft.log.warn(`[scraper] 歌曲不存在: ${songId}`);
+     return null;
+   }
+@@ -70,6 +71,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+   // 仅支持本地歌曲：宿主 /tags 对非 local 类型直接 400，搜了也写不进去（批量中计为跳过）
+   const songType = (song as any).type || 'local';
+   if (songType !== 'local') {
++    opts?.onDiagnostic?.('仅支持本地歌曲');
+     songloft.log.info(`[scraper] 跳过非本地歌曲: songId=${songId} (type=${songType})`);
+     return null;
+   }
+@@ -87,6 +89,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+   const candidate = candidates[0];
+ 
+   if (!candidate.title) {
++    opts?.onDiagnostic?.("无法从歌曲信息或文件名确定搜索关键词");
+     songloft.log.warn(`[scraper] 无法确定搜索关键词: ${songId}`);
+     return null;
+   }
+@@ -123,6 +126,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+   if (!cfg.enable_acoustid) {
+     songloft.log.info(`[scraper] AcoustID 未启用 (cfg.enable_acoustid=${cfg.enable_acoustid})`);
+   } else if (!song.fingerprint) {
++    opts?.onDiagnostic?.("尚无音频指纹，已尝试文本搜索");
+     songloft.log.info(`[scraper] AcoustID 跳过: 歌曲无指纹 (主程序扫描后异步计算，请稍后重试)`);
+   } else {
+     await rateLimitWait('acoustid');
+@@ -180,6 +184,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+ 
+     const searchWithCircuit = async (fn: (kw: string, url: string) => Promise<SearchResult[]>, url: string, source: string) => {
+       if (circuitIsOpen(source)) {
++        opts?.onDiagnostic?.(`${source} 暂因连续失败而停用，请稍后重试`);
+         songloft.log.info(`[scraper] ${source} 熔断中，跳过`);
+         return { results: [], source };
+       }
+@@ -187,9 +192,11 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+         await rateLimitWait(source);
+         const r = await fn(keyword, url);
+         circuitSuccess(source);
++        if (!r.length) opts?.onDiagnostic?.(`${source} 未找到匹配结果`);
+         return { results: r, source };
+       } catch (e) {
+         circuitFailure(source);
++        opts?.onDiagnostic?.(`${source}: ${e instanceof Error ? e.message : String(e)}`);
+         throw e;
+       }
+     };
+@@ -210,6 +217,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+       tasks.push(searchWithCircuit(searchKuWo, '', 'kuwo'));
+     }
+ 
++    if (!tasks.length) opts?.onDiagnostic?.("未启用可用的文本刮削源，请检查标签刮削插件的音源设置");
+     const settled = await Promise.allSettled(tasks);
+     for (const s of settled) {
+       if (s.status === 'fulfilled') {
+@@ -240,6 +248,7 @@ export async function doScrape(songId: number, cfg: ScraperConfig, opts?: { skip
+   }
+ 
+   if (!bestResult || bestScore < cfg.score_threshold) {
++    if (bestResult) opts?.onDiagnostic?.(`最佳匹配得分 ${bestScore.toFixed(2)} 低于配置阈值 ${cfg.score_threshold}`);
+     songloft.log.info(`[scraper] 最佳得分 ${bestScore.toFixed(2)} 低于阈值 ${cfg.score_threshold}，刮削失败`);
+     return null;
+   }
 diff --git a/static/index.html b/static/index.html
 index c9aa41f..a0a7e91 100644
 --- a/static/index.html
@@ -1274,6 +1400,63 @@ index 0000000..14d8386
 + assert.equal(h.calls.filter(u=>u.pathname.endsWith('/folders')).length,1);
 + h.clear();await h.request('/browse','offset=200');
 + assert.equal(h.calls.filter(u=>u.pathname.endsWith('/folders')).length,2);
++});
+diff --git a/tests/manual-scrape.test.mjs b/tests/manual-scrape.test.mjs
+new file mode 100644
+index 0000000..53ad427
+--- /dev/null
++++ b/tests/manual-scrape.test.mjs
+@@ -0,0 +1,51 @@
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import vm from 'node:vm';
++import test from 'node:test';
++import ts from 'typescript';
++
++function harness(scrape) {
++  const routes = new Map();
++  const source = readFileSync(new URL('../src/manual-scrape.ts', import.meta.url), 'utf8');
++  const context = vm.createContext({ exports: {}, Error, Set,
++    require: name => name === './scraper' ? { doScrape: scrape }
++      : name === './sources' ? { loadConfig: async () => ({ score_threshold: 0.8 }) }
++        : { jsonResponse: (data, statusCode = 200) => ({ statusCode, body: JSON.stringify(data) }) },
++  });
++  vm.runInContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, context);
++  context.exports.registerManualScrapeRoutes({ post: (path, handler) => routes.set(path, handler) });
++  return id => routes.get('/scrape/prepare/:id')({}, { id: String(id) });
++}
++
++test('prepare calls read-only engine and returns result without auto-save', async () => {
++  const preview = { songId: 42, title: 'match' };
++  const run = harness(async (id, cfg, opts) => {
++    assert.equal(id, 42); assert.equal(cfg.score_threshold, 0.8); assert.equal(opts.skipCache, true);
++    return preview;
++  });
++  const response = await run(42);
++  assert.equal(response.statusCode, 200);
++  assert.deepEqual(JSON.parse(response.body), { result: preview });
++});
++
++test('failed scrape preserves source reasons and removes credentials', async () => {
++  const run = harness(async (_id, _cfg, opts) => {
++    opts.onDiagnostic('netease: HTTP 503 https://api.test/search?token=secret');
++    return null;
++  });
++  const response = await run(42);
++  assert.equal(response.statusCode, 422);
++  assert.match(response.body, /HTTP 503/);
++  assert.doesNotMatch(response.body, /secret|api.test/);
++});
++
++test('unexpected provider failure is visible instead of a false success', async () => {
++  const response = await harness(async () => { throw new Error('request timed out'); })(42);
++  assert.equal(response.statusCode, 502);
++  assert.match(response.body, /request timed out/);
++});
++
++test('invalid song IDs never invoke a scraper', async () => {
++  const run = harness(() => assert.fail('must not scrape'));
++  assert.equal((await run('42oops')).statusCode, 400);
 +});
 diff --git a/tests/pagination.test.mjs b/tests/pagination.test.mjs
 new file mode 100644
