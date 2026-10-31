@@ -1,6 +1,6 @@
 # Roomtone plugin fixes for large libraries
 
-The patches target `charce526/songloft-library-plus` at `2fefd1afb1ac342820a17560c619c615e47a7ae2` and `songloft-org/songloft-plugin-tag` at `bf97f7db5a96e0db0aafb6f3165e95b2379281b1`. Permissions and settings are preserved. Local versions are `0.2.16+roomtone.1` for Plus and `2.3.1+roomtone.3` for Tag. The host automatically updates only to higher versions, ignoring equal-version build metadata. Reapply and verify patches when upgrading upstream code.
+The patches target `charce526/songloft-library-plus` at `2fefd1afb1ac342820a17560c619c615e47a7ae2` and `songloft-org/songloft-plugin-tag` at `bf97f7db5a96e0db0aafb6f3165e95b2379281b1`. Permissions and settings are preserved. Local versions are `0.2.16+roomtone.1` for Plus and `2.3.1+roomtone.4` for Tag. The host automatically updates only to higher versions, ignoring equal-version build metadata. Reapply and verify patches when upgrading upstream code.
 
 The host adds opt-in `songs.list({omitFingerprint:true})`, excluding fingerprint columns in SQL while preserving default lists and single-track fingerprints. Plus reads 1000 songs per batch, builds a background directory index with progress, yields during indexing, and caches metadata for 15 minutes. Writes invalidate the cache; external changes can be refreshed manually.
 
@@ -20,3 +20,5 @@ Update through `/api/v1/jsplugins/upload`, retaining old ZIPs for rollback. Do n
 Prerequisite host verification: metadata bridge tests pass. Two existing Windows path-fixture failures, together with the new test, pass in the leonFN Linux container. Isolated Plus indexing takes about 75 seconds and yields 5,421 directory nodes without 504 errors, with original music mounted read-only.
 
 2026-10-31: Tag adds `POST /scrape/prepare/:id`, reusing the fingerprint/text engine without writing tags, backups or scraped markers. Failures report provider/configuration/low-score reasons with service addresses and credentials removed. The song-info dialog writes tags only after user confirmation. Plugin tests (14), related client regressions and a real NAS read-only request passed; no real song tags or audio playback were changed.
+
+Configuration saves now check HTTP status and response data, retaining inputs and reporting errors on failure. The QQ field explicitly requires an API URL. All 18 plugin regressions pass.

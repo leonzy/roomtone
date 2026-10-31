@@ -686,14 +686,14 @@ index bf2341f..5b52d9c 100644
    },
    "dependencies": {
 diff --git a/plugin.json b/plugin.json
-index 554b672..87cf957 100644
+index 554b672..e7ce7f5 100644
 --- a/plugin.json
 +++ b/plugin.json
 @@ -1,6 +1,6 @@
  {
    "name": "标签刮削",
 -  "version": "2.3.1",
-+  "version": "2.3.1+roomtone.3",
++  "version": "2.3.1+roomtone.4",
    "description": "智能刮削音乐标签：多源并发搜索 + 多级目录浏览，自动修正标题/艺术家/专辑，下载封面并写入音频文件",
    "author": "Songloft Team",
    "entryPath": "tag",
@@ -823,7 +823,7 @@ index 0000000..3c771b1
 +  });
 +}
 diff --git a/src/main.ts b/src/main.ts
-index fffc677..a429326 100644
+index fffc677..b3723d2 100644
 --- a/src/main.ts
 +++ b/src/main.ts
 @@ -1,6 +1,8 @@
@@ -844,7 +844,21 @@ index fffc677..a429326 100644
  
  // ---- SSRF 防护：内网地址拦截 ----
  function isBadHost(url: string): boolean {
-@@ -1254,6 +1258,7 @@ async function onDeinit(): Promise<void> {
+@@ -173,6 +177,13 @@ router.put('/config', async (req) => {
+     const current = await loadConfig();
+     const merged = { ...current, ...updates };
+ 
++    for (const [key, label] of [['qqmusic_api_url', 'QQ音乐'], ['netease_api_url', '网易云'], ['kugou_api_url', '酷狗'], ['kuwo_api_url', '酷我']]) {
++      const value = merged[key];
++      if (value && (typeof value !== 'string' || !/^https?:\/\/[^\s/?#]+(?:[/?#]|$)/i.test(value))) {
++        return jsonResponse({ error: `${label}需要完整的 HTTP/HTTPS API 地址，不能填写 API Key` }, 400);
++      }
++    }
++
+     // 自动推导开关：有 Key/URL 则开启，清空则关闭
+     merged.enable_acoustid = !!(merged.acoustid_api_key);
+     merged.enable_netease  = !!(merged.netease_api_url);
+@@ -1254,6 +1265,7 @@ async function onDeinit(): Promise<void> {
  }
  
  async function onHTTPRequest(req: HTTPRequest): Promise<HTTPResponse> {
@@ -977,7 +991,7 @@ index 0257a15..04a389f 100644
      return null;
    }
 diff --git a/static/index.html b/static/index.html
-index c9aa41f..a0a7e91 100644
+index c9aa41f..5dfd59d 100644
 --- a/static/index.html
 +++ b/static/index.html
 @@ -370,7 +370,7 @@ body{background:var(--bg);color:var(--tx);font-size:14px;line-height:1.65;overfl
@@ -1005,7 +1019,23 @@ index c9aa41f..a0a7e91 100644
        <div class="songs-area" id="songList"></div>
        <div class="review-panel" id="failedPanel" style="display:none">
          <div class="triage-bar">
-@@ -549,7 +550,7 @@ function escH(s){var m={"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#3
+@@ -491,12 +492,13 @@ body{background:var(--bg);color:var(--tx);font-size:14px;line-height:1.65;overfl
+       <div class="chips" id="srcChips" style="margin-bottom:10px"><div class="chip on" onclick="showSrc('src-acoustid')" aria-pressed="true">AcoustID</div><div class="chip" onclick="showSrc('src-netease')" aria-pressed="false">网易云</div><div class="chip" onclick="showSrc('src-qqmusic')" aria-pressed="false">QQ音乐</div><div class="chip" onclick="showSrc('src-kugou')" aria-pressed="false">酷狗</div><div class="chip" onclick="showSrc('src-kuwo')" aria-pressed="false">酷我</div><div class="chip" onclick="showSrc('src-migu')" aria-pressed="false">咪咕</div></div>
+       <div id="src-acoustid" class="src-panel" style="display:block"><div class="cfg"><label>AcoustID Key</label><input id="cfg_ak" placeholder="输入你的 Key" aria-label="AcoustID Key"><span class="eg">获取地址：acoustid.org/webservice</span></div></div>
+       <div id="src-netease" class="src-panel" style="display:none"><div class="cfg"><label>网易云 URL</label><input id="cfg_nu" placeholder="输入 API URL" aria-label="网易云 API URL"><span class="eg">示例：https://interface.music.163.com/eapi/api/cloudsearch/pc</span></div></div>
+-      <div id="src-qqmusic" class="src-panel" style="display:none"><div class="cfg"><label>QQ音乐 URL</label><input id="cfg_qu" placeholder="输入 API URL" aria-label="QQ音乐 API URL"><span class="eg">示例：https://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp</span></div></div>
++      <div id="src-qqmusic" class="src-panel" style="display:none"><div class="cfg"><label>QQ音乐 URL</label><input id="cfg_qu" placeholder="输入 API URL" aria-label="QQ音乐 API URL"><span class="eg">这里填写完整 API 地址，不是 API Key。示例：https://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp</span></div></div>
+       <div id="src-kugou" class="src-panel" style="display:none"><div class="cfg"><label>酷狗 URL</label><input id="cfg_ku" placeholder="输入 API URL" aria-label="酷狗 API URL"><span class="eg">示例：https://songsearch.kugou.com/song_search_v2</span></div></div>
+       <div id="src-kuwo" class="src-panel" style="display:none"><div class="cfg"><label>酷我 URL</label><input id="cfg_kw" placeholder="输入 API URL" aria-label="酷我 API URL"><span class="eg">示例：https://kuwo.cn</span></div></div>
+       <div id="src-migu" class="src-panel" style="display:none"><div class="cfg"><label>咪咕</label><span class="eg">咪咕音乐无需配置 API URL，直接使用公开接口</span><div style="margin-top:8px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="cfg_migu" style="width:16px;height:16px"> 启用咪咕音乐</label></div></div></div>
+     </div>
+-    <button class="save-btn" onclick="saveCfg()">保存配置</button>
++    <div id="cfgSaveError" role="alert" style="display:none;color:var(--red,#d32f2f);margin:8px 0;white-space:pre-wrap"></div>
++    <button id="cfgSaveBtn" class="save-btn" onclick="saveCfg()">保存配置</button>
+     <div class="adv-cfg">
+       <h4>评分参数</h4>
+       <div class="adv-row"><label>评分阈值</label><div style="display:flex;align-items:center;gap:6px"><div class="slider" id="sl-th"><div class="fill" style="width:70%"></div><div class="th" style="left:66%"></div></div><span class="val" id="sl-th-v">0.70</span></div></div>
+@@ -549,7 +551,7 @@ function escH(s){var m={"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#3
  function fm(s){if(!s||s<=0)return"--:--";var m=Math.floor(s/60);return m+":"+String(Math.floor(s%60)).padStart(2,"0")}
  function toast(m){var e=E("toast");if(!e){e=document.createElement("div");e.className="toast";e.id="toast";document.body.appendChild(e)}e.textContent=m;e.style.display="block";e.style.opacity=1;setTimeout(function(){e.style.opacity=0;setTimeout(function(){e.style.display="none"},250)},1800)}
  function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
@@ -1014,7 +1044,32 @@ index c9aa41f..a0a7e91 100644
  function setP(s,p){var bar=E("pbar"),fill=E("pfill");if(bar)bar.style.display=s?"":"none";if(fill)fill.style.width=p+"%"}
  var logCount=0;
  function log(m,l){var c=E("logContent");if(!c)return;var d=document.createElement("div");d.className=l==="e"?"e":l==="ok"?"ok":"";d.textContent=new Date().toLocaleTimeString()+" "+(m||"");c.appendChild(d);c.scrollTop=c.scrollHeight;while(c.children.length>200)c.firstChild.remove();logCount++;var b=E("logBadge");if(b)b.textContent=logCount}
-@@ -577,52 +578,97 @@ function closeCfg(){E("cfgModal").classList.remove("open")}
+@@ -564,7 +566,23 @@ async function loadCfg(){for(var i=0;i<3;i++){try{var r=await af("./config"),t=a
+ function uiCfg(){var el;el=E("cfg_ak");if(el)el.value=S.cfg.acoustid_api_key||"";el=E("cfg_nu");if(el)el.value=S.cfg.netease_api_url||"";el=E("cfg_qu");if(el)el.value=S.cfg.qqmusic_api_url||"";el=E("cfg_ku");if(el)el.value=S.cfg.kugou_api_url||"";el=E("cfg_kw");if(el)el.value=S.cfg.kuwo_api_url||"";el=E("cfg_migu");if(el)el.checked=!!S.cfg.enable_migu;el=E("cfg_ad_kw");if(el)el.value=S.cfg.ad_filter_keywords||"";el=E("cfg_max_con");if(el){el.value=S.cfg.max_concurrency||2;var v=E("cfg_max_con_v");if(v)v.textContent=el.value}el=E("cfg_scan_int");if(el)el.value=S.cfg.auto_scan_interval||30;syncToggle("tog-ad",S.cfg.enable_ad_filter!==false);syncToggle("tog-scan",S.cfg.enable_auto_scan===true)}
+ function syncToggle(id,on){var el=E(id);if(!el)return;el.classList.toggle("on",on)}
+ function toggleCfg(key){S.cfg[key]=!S.cfg[key];var map={enable_ad_filter:"tog-ad",enable_auto_scan:"tog-scan"};syncToggle(map[key],S.cfg[key])}
+-async function saveCfg(){var el;S.cfg.acoustid_api_key=(el=E("cfg_ak"))?el.value.trim():"";S.cfg.netease_api_url=(el=E("cfg_nu"))?el.value.trim():"";S.cfg.qqmusic_api_url=(el=E("cfg_qu"))?el.value.trim():"";S.cfg.kugou_api_url=(el=E("cfg_ku"))?el.value.trim():"";S.cfg.kuwo_api_url=(el=E("cfg_kw"))?el.value.trim():"";S.cfg.enable_migu=(el=E("cfg_migu"))?el.checked:false;S.cfg.ad_filter_keywords=(el=E("cfg_ad_kw"))?el.value.trim():"";S.cfg.max_concurrency=(el=E("cfg_max_con"))?parseInt(el.value,10)||2:2;S.cfg.auto_scan_interval=(el=E("cfg_scan_int"))?parseInt(el.value,10)||30:30;await af("./config",{method:"PUT",body:JSON.stringify(S.cfg)});await loadCfg();toast("已保存");closeCfg()}
++async function saveCfg(){
++ if(S.cfgSaving)return;
++ var err=E("cfgSaveError"),btn=E("cfgSaveBtn");
++ if(err){err.textContent="";err.style.display="none"}
++ S.cfgSaving=true;if(btn){btn.disabled=true;btn.textContent="正在保存…"}
++ try{
++  var draft=Object.assign({},S.cfg);
++  var el;draft.acoustid_api_key=(el=E("cfg_ak"))?el.value.trim():"";draft.netease_api_url=(el=E("cfg_nu"))?el.value.trim():"";draft.qqmusic_api_url=(el=E("cfg_qu"))?el.value.trim():"";draft.kugou_api_url=(el=E("cfg_ku"))?el.value.trim():"";draft.kuwo_api_url=(el=E("cfg_kw"))?el.value.trim():"";draft.enable_migu=(el=E("cfg_migu"))?el.checked:false;draft.ad_filter_keywords=(el=E("cfg_ad_kw"))?el.value.trim():"";draft.max_concurrency=(el=E("cfg_max_con"))?parseInt(el.value,10)||2:2;draft.auto_scan_interval=(el=E("cfg_scan_int"))?parseInt(el.value,10)||30:30;
++  var sources=[["qqmusic_api_url","QQ音乐"],["netease_api_url","网易云"],["kugou_api_url","酷狗"],["kuwo_api_url","酷我"]];
++  sources.forEach(function(pair){var value=draft[pair[0]];if(value&&!/^https?:\/\/[^\s/?#]+(?:[/?#]|$)/i.test(value))throw new Error(pair[1]+"需要完整的 HTTP/HTTPS API 地址，不能填写 API Key")});
++  var response=await af("./config",{method:"PUT",body:JSON.stringify(draft)});
++  var result;try{result=await response.json()}catch(e){throw new Error("服务器返回的配置响应无法解析（HTTP "+response.status+"）")}
++  if(!response.ok||result.status!=="ok"||!result.config)throw new Error([result.error||("HTTP "+response.status),result.detail].filter(Boolean).join("："));
++  S.cfg=result.config;uiCfg();toast("已保存");closeCfg();
++ }catch(e){var message="保存失败："+(e.message||String(e));if(err){err.textContent=message;err.style.display="block"}toast(message)}
++ finally{S.cfgSaving=false;if(btn){btn.disabled=false;btn.textContent="保存配置"}}
++}
+ async function chkSources(){try{var r=await af("./config/status");if(r.ok){S.srcStatus=await r.json();syncChips()}}catch(e){}}
+ function syncChips(){var chips=document.querySelectorAll("#srcChips .chip");var srcs=["acoustid","netease","qqmusic","kugou","kuwo","migu"];chips.forEach(function(c,i){var key=srcs[i];var st=S.srcStatus[key];c.classList.remove("on","green","red");if(st===true)c.classList.add("on","green");else if(st===false)c.classList.add("red");else c.classList.add("on")})}
+ var _pluginTheme='light';
+@@ -577,52 +595,97 @@ function closeCfg(){E("cfgModal").classList.remove("open")}
  async function loadScraped(){try{var r=await af("./storage/scraped");if(r.ok){var d=await r.json();(d||[]).forEach(function(id){S._scraped.add(Number(id))})}}catch(e){}updStats();if(S._tab==="songs")render()}
  function markScraped(id){S._scraped.add(Number(id));updStats();if(S._tab==="songs")render()}
  
@@ -1142,7 +1197,7 @@ index c9aa41f..a0a7e91 100644
  
  function _sc(songId){return af("./scrape/"+songId,{method:"POST"}).then(function(r){return r.json()}).then(function(d){if(d.error){log("失败:"+d.error,"e");addFailed(songId,d.error);return null}log("ok "+d.artist+" - "+d.title+" | "+d.source+" | "+d.fileWriteStatus,"ok");if(d.fileWriteStatus==="failed"){addFailed(songId,d.fileWriteStatus)}else{S.failedSongs=S.failedSongs.filter(function(f){return f.id!==songId});updStats();if(S._tab==="failed")renderFailed();af("./storage/failed",{method:"POST",body:JSON.stringify(S.failedSongs)}).catch(function(){})}return d}).catch(function(e){log("错误:"+e.message,"e");return null})}
  async function doScrape(){var is=ids();if(!is.length)return;if(is.length===1){scrapeOne();return}batch()}
-@@ -643,7 +689,7 @@ async function doRetry(){var id=S.retryId;if(!id)return;var art=E("ra").value.tr
+@@ -643,7 +706,7 @@ async function doRetry(){var id=S.retryId;if(!id)return;var art=E("ra").value.tr
  async function applyR(el){var id=el.dataset.sid,art=el.dataset.art,tit=el.dataset.tit,alb=el.dataset.alb,gen=el.dataset.gen||"",yr=el.dataset.yr||"",tr=el.dataset.tr||"";closeRetry();S.busy=true;setP(true,0);try{var r=await af("./tags/"+id,{method:"PUT",body:JSON.stringify({title:tit,artist:art,album:alb,genre:gen,year:yr,track:tr})}),d=await r.json();if(d.error){log("写入失败:"+d.error,"e");toast("失败")}else{log("ok "+art+" - "+tit+" | "+d.file_write,"ok");toast("写入成功");S.failedSongs=S.failedSongs.filter(function(f){return String(f.id)!==String(id)});updStats();if(S._tab==="failed")renderFailed();try{await af("./storage/failed",{method:"POST",body:JSON.stringify(S.failedSongs)})}catch(e){}await loadSongs()}}catch(e){log("错误:"+e.message,"e")}S.busy=false;setP(false,100)}
  
  function syncEditor(){if(S.sel.size===1){var a=[];S.sel.forEach(function(id){a.push(id)});var id=a[0];if(S_editId!==id)selectEdit(id)}else{S_editId=0}}
@@ -1151,7 +1206,7 @@ index c9aa41f..a0a7e91 100644
  function closeSheet(){E("sheet").classList.remove("open");E("sheetOverlay").classList.remove("open");
    // 退出批量模式并还原被隐藏的行 / 刮削按钮 / 标题
    if(S._batchIds&&S._batchIds.length){S._batchIds=[];["fg_tit","fg_track","fg_lyr"].forEach(function(id){var e=E(id);if(e)e.style.display=""});var bh=E("fg_batchHint");if(bh)bh.style.display="none";var sc=E("btnSheetScrape");if(sc)sc.style.display="";var st=E("sheetTitle");if(st)st.textContent="编辑歌曲";["ef_art","ef_alb","ef_gen","ef_year"].forEach(function(id){var e=E(id);if(e)e.placeholder=""})}}
-@@ -670,7 +716,7 @@ function openBatchEdit(){
+@@ -670,7 +733,7 @@ function openBatchEdit(){
    var si=E("sheetInfo");if(si)si.textContent=names;
    // 封面区（初始占位；上传走与单曲一致的 onchange）
    var el=E("sheetCover");if(el)el.innerHTML='<div class="ph"><span class="mi">music_note</span></div><div class="upload-hint"><span class="mi" style="font-size:11px">photo_camera</span> 上传封面</div>';
@@ -1160,7 +1215,7 @@ index c9aa41f..a0a7e91 100644
    E("sheet").classList.add("open");E("sheetOverlay").classList.add("open");
  }
  async function saveBatchEdit(){
-@@ -710,13 +756,18 @@ function closeDoc(){E("docModal").classList.remove("open")}
+@@ -710,13 +773,18 @@ function closeDoc(){E("docModal").classList.remove("open")}
  function md2html(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/^### (.+)/gm,"<h4 style='margin:12px 0 4px'>$1</h4>").replace(/^## (.+)/gm,"<h3 style='margin:16px 0 6px;color:var(--accent)'>$1</h3>").replace(/^# (.+)/gm,"<h2 style='margin:20px 0 8px;color:var(--accent)'>$1</h2>").replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`([^`]+)`/g,"<code style='background:var(--bg-2);padding:1px 4px;border-radius:3px'>$1</code>").replace(/^- (.+)/gm,"<li style='margin-left:16px'>$1</li>").replace(/\[([^\]]+)\]\(([^)]+)\)/g,function(_,t,u){return u.match(/^https?:\/\//)?"<a href='"+u+"' target='_blank' style='color:var(--accent)'>"+t+"</a>":t}).replace(/\n\n/g,"<br><br>")}
  
  S._triage="green";S._reviewSongs=[];S._reviewIdx=-1;S._candIdx=0;S._selectedIds=new Set();S._previewResults=[];
@@ -1184,7 +1239,7 @@ index c9aa41f..a0a7e91 100644
    var list=S._triage==="green"?green:S._triage==="yellow"?yellow:red;
    S._reviewSongs=list;
    var lst=E("fpList");if(!lst)return;
-@@ -724,9 +775,9 @@ function renderReview(){
+@@ -724,9 +792,9 @@ function renderReview(){
    if(!list.length){lst.innerHTML='<div style="text-align:center;padding:40px;color:var(--tx-2);font-size:12px"><span class="mi" style="font-size:36px;display:block;margin-bottom:8px;opacity:.15">check_circle</span>'+(S._triage==="green"?"暂无已应用记录":S._triage==="yellow"?"暂无待校对歌曲":"暂无失败记录")+'</div>';E("rpDetail").innerHTML='<div style="text-align:center;padding:40px;color:var(--tx-2);font-size:12px"><span class="mi" style="font-size:36px;display:block;margin-bottom:8px;opacity:.15">touch_app</span>点击左侧歌曲查看详情</div>';return}
    if(S._triage==="yellow"){
      lst.style.display="block";lst.style.gridTemplateColumns="";lst.style.gap="";lst.style.padding="8px";lst.style.alignContent="";
@@ -1196,7 +1251,7 @@ index c9aa41f..a0a7e91 100644
        var coverStyle=hasCover?'background:transparent':'background:var(--bg-2)';
        return'<div class="song-card'+(S._reviewIdx===i?' sel':'')+'"><div class="ck-zone" onclick="event.stopPropagation();toggleSelect('+sid+')"><input type="checkbox" id="chk-'+sid+'"'+(S._selectedIds.has(sid)?' checked':'')+'></div><div class="cv-zone" onclick="selectReview('+i+')"><div class="cover" style="'+coverStyle+'">'+coverHtml+'</div><div class="meta"><div class="t"><span class="name">'+esc(s.title||"?")+'</span></div><div class="u">'+esc(s.artist||"?")+(s.album?" · "+esc(s.album):"")+"</div></div></div></div>"
      }).join("");
-@@ -734,7 +785,7 @@ function renderReview(){
+@@ -734,7 +802,7 @@ function renderReview(){
      lst.style.display="";lst.style.gridTemplateColumns="";lst.style.gap="";lst.style.padding="";lst.style.alignContent="";
      lst.innerHTML=list.map(function(s,i){
        var sid=Number(s.id);var hasCover=!!s.cover_url;
@@ -1205,7 +1260,7 @@ index c9aa41f..a0a7e91 100644
        var actionHtml='';
        if(S._triage==="green")actionHtml='<button class="undo-btn" onclick="event.stopPropagation();undoApply('+sid+')">撤销</button>';
        if(S._triage==="red")actionHtml='<button class="undo-btn" onclick="event.stopPropagation();retryFailed(0,'+sid+')">重试</button>';
-@@ -744,15 +795,15 @@ function renderReview(){
+@@ -744,15 +812,15 @@ function renderReview(){
    E("rpDetail").innerHTML='<div style="text-align:center;padding:40px;color:var(--tx-2);font-size:12px"><span class="mi" style="font-size:36px;display:block;margin-bottom:8px;opacity:.15">touch_app</span>点击左侧歌曲查看详情</div>';
  }
  function selectAllReview(){
@@ -1224,7 +1279,7 @@ index c9aa41f..a0a7e91 100644
    detail.innerHTML='<div style="padding:12px"><div style="display:flex;gap:12px;margin-bottom:12px">'+coverHtml+'<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(dt||"—")+'</div><div style="font-size:12px;color:var(--tx-2);margin-top:2px">'+esc(da||"—")+'</div>'+(al?'<div style="font-size:11px;color:var(--tx-2);margin-top:1px">'+esc(al)+'</div>':'')+'</div></div>'+
      '<div style="font-size:9px;color:var(--tx-2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">标签详情</div>'+
      '<div style="background:var(--bg-2);border-radius:6px;padding:8px;font-size:11px;line-height:1.8">'+
-@@ -774,30 +825,7 @@ function showRedDetail(s){
+@@ -774,30 +842,7 @@ function showRedDetail(s){
      '<div style="background:rgba(239,83,80,.08);border:1px solid rgba(239,83,80,.15);border-radius:6px;padding:8px;margin-bottom:12px"><div style="font-size:10px;color:var(--error);font-weight:500;margin-bottom:4px">失败原因</div><div style="font-size:11px;color:var(--tx-2)">'+esc(reason)+'</div>'+(time?'<div style="font-size:10px;color:var(--tx-3);margin-top:4px">'+esc(time)+'</div>':'')+'</div>'+
      '<div style="display:flex;gap:6px"><button class="ab pri" onclick="retryFailed(0,'+sid+')"><span class="mi">refresh</span>重试</button></div></div>';
  }
@@ -1256,7 +1311,7 @@ index c9aa41f..a0a7e91 100644
  function selectReviewFiltered(id){
    var idx=-1;S._reviewSongs.forEach(function(s,i){if(Number(s.id)===id)idx=i});
    if(idx>=0)selectReview(idx);
-@@ -839,7 +867,7 @@ function renderDiffDetail(s,results,selIdx){
+@@ -839,7 +884,7 @@ function renderDiffDetail(s,results,selIdx){
    var dt=s.title||"",da=s.artist||"",dc=s.cover_url||"",dg=s.genre||"",dy=s.year||"",dk=s.track||"";
    var rt=r.title||"",ra=r.artist||"",ra2=r.album||"未知专辑",rg=r.genre||"",ry=r.year||"",rk=r.track||"",rs=r.source||"",score=r.score?r.score.toFixed(2):"";
    var changed_t=rt!==dt,changed_a=ra!==da;
@@ -1265,7 +1320,7 @@ index c9aa41f..a0a7e91 100644
    var html='<div class="diff-wrap"><div class="diff-grid">'+
      '<div class="diff-side left"><div class="diff-lbl left">● 当前标签</div>'+
      '<div class="diff-f"><div class="fn">标题</div><div class="fv">'+esc(dt||"—")+'</div></div>'+
-@@ -848,7 +876,7 @@ function renderDiffDetail(s,results,selIdx){
+@@ -848,7 +893,7 @@ function renderDiffDetail(s,results,selIdx){
      (dg?'<div class="diff-f"><div class="fn">流派</div><div class="fv">'+esc(dg)+'</div></div>':'')+
      (dy?'<div class="diff-f"><div class="fn">年份</div><div class="fv">'+esc(dy)+'</div></div>':'')+
      (dk?'<div class="diff-f"><div class="fn">音轨号</div><div class="fv">'+esc(dk)+'</div></div>':'')+
@@ -1274,7 +1329,7 @@ index c9aa41f..a0a7e91 100644
      '<div class="diff-side right"><div class="diff-lbl right">● 系统推荐 ('+esc(rs)+' '+score+')</div>'+
      '<div class="diff-f"><div class="fn">标题</div><div class="fv'+(changed_t?' changed':'')+'">'+esc(rt||"—")+'</div></div>'+
      '<div class="diff-f"><div class="fn">艺术家</div><div class="fv'+(changed_a?' changed':'')+'">'+esc(ra||"—")+'</div></div>'+
-@@ -879,7 +907,7 @@ function loadCovers(s){
+@@ -879,7 +924,7 @@ function loadCovers(s){
      if(!covers.length&&s.cover_url){covers=[{url:s.cover_url,source:"本地"}]}
      var gallery=E("coverGallery");
      var covHtml='<div style="padding:4px 0 2px;font-size:9px;color:var(--tx-2);text-transform:uppercase;letter-spacing:.5px">封面画廊 ('+covers.length+')</div><div class="cover-grid">';
@@ -1283,7 +1338,7 @@ index c9aa41f..a0a7e91 100644
      covHtml+='</div><div style="padding:4px 0 8px;text-align:right"><button class="btn-d ok" onclick="applyCover('+sid+')" style="font-size:10px;padding:4px 12px">✓ 使用选中封面</button></div>';
      if(gallery){gallery.innerHTML=covHtml}
    }).catch(function(){})
-@@ -1029,6 +1057,7 @@ function orgUpdatePreview(){
+@@ -1029,6 +1074,7 @@ function orgUpdatePreview(){
    }
  }
  async function loadOrgSongs(){
@@ -1291,7 +1346,7 @@ index c9aa41f..a0a7e91 100644
    var lst=E("orgList");if(!lst)return;
    S._orgSel=new Set();S._orgPreview=null;
    var all=S._allSongs||[];
-@@ -1045,7 +1074,7 @@ async function loadOrgSongs(){
+@@ -1045,7 +1091,7 @@ async function loadOrgSongs(){
    renderOrgLevels("orgRenameLevels",S._orgRenameLevels,ORG_FILE_FIELDS,false);
    lst.innerHTML=pending.map(function(s,i){
      var sid=Number(s.id);var hasCover=!!s.cover_url;
@@ -1300,7 +1355,7 @@ index c9aa41f..a0a7e91 100644
      var target=getTargetPath(s);
      var mp=S._musicPrefix||"";
      var relPath=(s.file_path||"").replace(/^\//,"").substring(mp.length);
-@@ -1061,8 +1090,8 @@ function updOrgSel(el,id){
+@@ -1061,8 +1107,8 @@ function updOrgSel(el,id){
  }
  function updOrgCnt(){E("orgSelCnt").textContent="已选 "+S._orgSel.size+" / "+S._orgSongs.length}
  function toggleOrgSel(el,id){updOrgSel(el,id)}
@@ -1311,7 +1366,7 @@ index c9aa41f..a0a7e91 100644
  function getTargetPath(s){
    var fp=s.file_path||"";
    var base=fp.split("/").pop()||"";
-@@ -1112,7 +1141,7 @@ function loadOrgSongsWithPreview(){
+@@ -1112,7 +1158,7 @@ function loadOrgSongsWithPreview(){
    var lst=E("orgList");if(!lst)return;
    lst.innerHTML=S._orgSongs.map(function(s,i){
      var sid=Number(s.id);var hasCover=!!s.cover_url;
@@ -1400,6 +1455,57 @@ index 0000000..14d8386
 + assert.equal(h.calls.filter(u=>u.pathname.endsWith('/folders')).length,1);
 + h.clear();await h.request('/browse','offset=200');
 + assert.equal(h.calls.filter(u=>u.pathname.endsWith('/folders')).length,2);
++});
+diff --git a/tests/config-save.test.mjs b/tests/config-save.test.mjs
+new file mode 100644
+index 0000000..e99c856
+--- /dev/null
++++ b/tests/config-save.test.mjs
+@@ -0,0 +1,45 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { browserHarness } from './browser-harness.mjs';
++
++function setup(t, response) {
++ const h=browserHarness(async (url,options)=>url.pathname.endsWith('/config')&&options.method==='PUT'?response():null);
++ t.after(h.close);
++ h.w.S.cfg={qqmusic_api_url:'https://old.test/qq'};
++ h.w.uiCfg();h.w.document.getElementById('cfgModal').classList.add('open');
++ return h;
++}
++
++test('HTTP 400 keeps the entered URL and modal open, without a false saved toast',async t=>{
++ const h=setup(t,()=>({ok:false,status:400,json:async()=>({error:'URL 不允许：指向内网地址'})}));
++ const w=h.w;w.document.getElementById('cfg_qu').value='http://192.168.1.5/qq';
++ const notices=[];w.toast=m=>notices.push(m);let closed=false;w.closeCfg=()=>{closed=true};
++ await w.saveCfg();
++ assert.equal(closed,false);assert.equal(w.document.getElementById('cfg_qu').value,'http://192.168.1.5/qq');
++ assert.equal(w.S.cfg.qqmusic_api_url,'https://old.test/qq');
++ assert.match(w.document.getElementById('cfgSaveError').textContent,/内网地址/);
++ assert.ok(notices.every(m=>m!=='已保存'));
++ assert.equal(h.calls.filter(c=>c.options.method==='GET').length,0);
++});
++
++test('bare QQ API keys explain that an address is required and send no request',async t=>{
++ const h=setup(t,()=>assert.fail('must validate locally'));h.w.document.getElementById('cfg_qu').value='test-key-not-a-url';
++ await h.w.saveCfg();
++ assert.match(h.w.document.getElementById('cfgSaveError').textContent,/不能填写 API Key/);
++ assert.equal(h.calls.length,0);
++});
++
++test('successful save applies the server configuration and closes once',async t=>{
++ const config={qqmusic_api_url:'https://new.test/qq',enable_qqmusic:true};
++ const h=setup(t,()=>({ok:true,status:200,json:async()=>({status:'ok',config})}));
++ h.w.document.getElementById('cfg_qu').value=config.qqmusic_api_url;
++ let closed=0;h.w.closeCfg=()=>{closed++};await h.w.saveCfg();
++ assert.equal(h.w.S.cfg.enable_qqmusic,true);assert.equal(closed,1);
++ assert.equal(h.w.document.getElementById('cfgSaveBtn').disabled,false);
++});
++
++test('network failure preserves inputs and makes save retryable',async t=>{
++ const h=setup(t,()=>{throw new Error('network unavailable')});
++ await h.w.saveCfg();assert.match(h.w.document.getElementById('cfgSaveError').textContent,/network unavailable/);
++ assert.equal(h.w.document.getElementById('cfgSaveBtn').disabled,false);
 +});
 diff --git a/tests/manual-scrape.test.mjs b/tests/manual-scrape.test.mjs
 new file mode 100644

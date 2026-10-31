@@ -1,6 +1,6 @@
 # Roomtone 大曲库插件修正
 
-补丁对应 `charce526/songloft-library-plus` 的 `2fefd1afb1ac342820a17560c619c615e47a7ae2` 和 `songloft-org/songloft-plugin-tag` 的 `bf97f7db5a96e0db0aafb6f3165e95b2379281b1`。保留原权限与配置；Plus 本地版本为 `0.2.16+roomtone.1`，Tag 为 `2.3.1+roomtone.3`。宿主只在远端版本更高时自动更新，同版本的构建标识不会触发覆盖；升级上游代码时仍应重新应用并验证补丁。
+补丁对应 `charce526/songloft-library-plus` 的 `2fefd1afb1ac342820a17560c619c615e47a7ae2` 和 `songloft-org/songloft-plugin-tag` 的 `bf97f7db5a96e0db0aafb6f3165e95b2379281b1`。保留原权限与配置；Plus 本地版本为 `0.2.16+roomtone.1`，Tag 为 `2.3.1+roomtone.4`。宿主只在远端版本更高时自动更新，同版本的构建标识不会触发覆盖；升级上游代码时仍应重新应用并验证补丁。
 
 宿主增加可选 `songs.list({omitFingerprint:true})`，SQL 不读取指纹列，默认列表和单曲指纹读取保持兼容。Plus 每批读取 1000 首，在后台构建目录索引并提供进度，分段让出 VM；元数据缓存 15 分钟，写操作使缓存失效，外部修改可手动刷新。
 
@@ -20,3 +20,5 @@ node scripts/plugin-overrides/check-ui.mjs <Plus源目录> <Tag源目录>
 前置宿主改动验证：元数据桥接测试通过；Windows 全插件测试有两项原有路径夹具失败，二者及新增测试在 leonFN Linux 容器通过。Plus 隔离全量索引约 75 秒、5,421 个节点，无 504；原音频以只读方式挂载。
 
 2026-10-31：Tag 增加 `POST /scrape/prepare/:id`，复用指纹与文本刮削引擎，仅返回预览，不写标签、备份或已刮标记。返回具体的源错误、未配置和低匹配度原因，错误信息去除服务地址和凭证。歌曲信息对话框在用户确认后才调用宿主标签写入接口。插件 14 项、客户端相关回归及实际 NAS 只读请求验证通过；未修改真实歌曲标签，也未主动播放音频。
+
+配置保存补充：检查 HTTP 状态及返回体；失败保留输入并显示错误，QQ 字段明确要求完整 API URL。插件回归共 18 项通过。
