@@ -14,7 +14,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"songloft/internal/handlers"
+	"songloft/internal/models"
 	"songloft/internal/player/sink"
+	"songloft/internal/player/sink/dlna"
 )
 
 // Stream capabilities authorize one song and format, never the user's account.
@@ -62,6 +65,8 @@ func (s *dlnaStreams) protect(next http.HandlerFunc) http.HandlerFunc {
 		u := *r.URL
 		u.RawQuery = url.Values{"format": {format}}.Encode()
 		cloned.URL = &u
+		cloned = handlers.WithDLNAPlayback(cloned)
+		w.Header().Set("transferMode.dlna.org", "Streaming")
 		next(w, cloned)
 	}
 }
@@ -71,11 +76,25 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 	if err != nil {
 		return plan, err
 	}
-	format := strings.ToLower(song.Format)
-	switch format {
-	case "wav", "flac", "mp3":
-	default:
-		format = "mp3"
+	format := string(dlna.SelectCodec(strings.ToLower(song.Format), plan.AcceptedCodecs))
+	if format == "" {
+		return plan, fmt.Errorf("dlna: renderer advertises no supported output codec")
+	}
+	plan.Title, plan.Artist, plan.Album = song.Title, song.Artist, song.Album
+	// Prepare before SetAVTransportURI/Play so a slow conversion does not leave
+	// the renderer waiting on an HTTP response, and errors reach the zone UI.
+	if song.Type != models.TypeRadio && !song.IsLive {
+		source := song.FilePath
+		if song.Type == models.TypeRemote {
+			source, err = a.cacheService.Get(ctx, song)
+			if err != nil {
+				return plan, fmt.Errorf("dlna: prepare source: %w", err)
+			}
+		}
+		normalize := a.configService.GetBool("volume_normalize", false)
+		if _, err := a.cacheService.GetOrTranscode(ctx, source, song, format, 0, -1, normalize); err != nil {
+			return plan, fmt.Errorf("dlna: prepare %s output: %w", format, err)
+		}
 	}
 	plan.Format.Codec = sink.Codec(format)
 	u, err := url.Parse(target)

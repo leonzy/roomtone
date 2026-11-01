@@ -168,8 +168,12 @@ type StreamPlan struct {
 	Format      Format
 	SongID      int64
 	Title       string
-	Position    time.Duration
-	Duration    time.Duration
+	Artist      string
+	Album       string
+	// AcceptedCodecs is populated by pull renderers after protocol discovery.
+	AcceptedCodecs []Codec
+	Position       time.Duration
+	Duration       time.Duration
 	// Latency 起播提前量：帧在 play_at 之前这么久就已经写好。
 	Latency time.Duration
 	// StreamURL 仅 PullSink 使用（局域网可达绝对地址）。

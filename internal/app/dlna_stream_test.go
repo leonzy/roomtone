@@ -26,11 +26,18 @@ func TestDLNAStreamCapability(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/stream?"+tc.query, nil)
+			req.Header.Set("Range", "bytes=100-199")
 			route := chi.NewRouteContext()
 			route.URLParams.Add("id", tc.id)
 			req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, route))
 			rec := httptest.NewRecorder()
 			s.protect(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Range") != "bytes=100-199" {
+					t.Fatal("renderer byte-range header lost")
+				}
+				if w.Header().Get("transferMode.dlna.org") != "Streaming" {
+					t.Fatal("missing renderer transfer mode")
+				}
 				if r.URL.RawQuery != "format=mp3" {
 					t.Errorf("unexpected params %q", r.URL.RawQuery)
 				}

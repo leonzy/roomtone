@@ -47,6 +47,7 @@ func BuildMetadata(it Item) string {
 	fmt.Fprintf(&b, "<dc:title>%s</dc:title>", xmlEscape(it.Title))
 	if it.Artist != "" {
 		fmt.Fprintf(&b, "<dc:creator>%s</dc:creator>", xmlEscape(it.Artist))
+		fmt.Fprintf(&b, "<upnp:artist>%s</upnp:artist>", xmlEscape(it.Artist))
 	}
 	if it.Album != "" {
 		fmt.Fprintf(&b, "<upnp:album>%s</upnp:album>", xmlEscape(it.Album))

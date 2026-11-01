@@ -359,6 +359,9 @@ func (b *playerSinkBuilder) Build(ctx context.Context, p *player.Player) (sink.S
 		cl := dlna.NewClient()
 		fetchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		dev, err := dlna.Fetch(fetchCtx, cl, p.Address)
+		if err == nil {
+			dlna.LoadProtocolInfo(fetchCtx, cl, dev)
+		}
 		cancel()
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", player.ErrPlayerOffline, err)

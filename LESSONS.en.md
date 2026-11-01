@@ -1,5 +1,10 @@
 # Development Lessons
 
+## DLNA-001: Match renderer codecs and HTTP representations
+
+- On 2026-11-01 the Xiaomi S12 GetProtocolInfo returned only a wildcard. Explicit codec lists constrain output; wildcard/missing declarations retain the limited WAV/FLAC/MP3 fallback. Unknown explicit formats must not imply universal support. Prepare conversion/download before handing over the stream URI, and serve complete files with actual Content-Length, HEAD and byte Range support. Failed conversion must not silently serve an incompatible original.
+- The real FFmpeg cold-conversion/HEAD/Range/broken-source regression fails against the old handler and passes after repair. Propagate artist/album metadata and bound transient Play retries; Stop/Close cancels delayed startup and retries. Ordinary Web playback retains the live path. Initial preparation can add startup latency; live sources retain their streaming path. Seen 1×.
+
 ## OUTPUT-010: Discovery records expire and AirPlay uses its protocol volume scale
 
 - On 2026-11-01 AirConnect had stopped and disappeared from mDNS, but its speaker remained online. Two successful scans of the same protocol without an advertisement mark it offline. Failed/disabled protocol scans do not count. Management retains saved records while playback choices hide offline zones.

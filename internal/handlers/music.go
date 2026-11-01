@@ -1574,6 +1574,7 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := servePlayOptions{
+		dlna:         r.Context().Value(dlnaPlaybackKey{}) == true,
 		targetFormat: targetFormat,
 		bitrate:      bitrate,
 		videoIntent:  videoIntent,
@@ -1599,6 +1600,7 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 // servePlayOptions 是 serveLocal / serveRemote / serveCachedFile 共用的播放参数。
 // 收成结构体而非位置参数：这些字段里相邻的 int/bool/float64 用位置传参极易调错且编译器不报。
 type servePlayOptions struct {
+	dlna         bool    // renderer requires complete content length and byte seeking
 	targetFormat string  // 目标转码格式（format 参数，已含 quality/normalize 推导出的默认值）
 	bitrate      int     // 目标码率 kbps，0=原始音质
 	videoIntent  bool    // media=video：直出原容器保留画面
@@ -1704,6 +1706,9 @@ func (h *SongHandler) trySeekStream(w http.ResponseWriter, r *http.Request, song
 // 这条流**支持 Range**（`cbrRangePlan`）：拖动进度条会被真正满足，而不是像最初那样静默卡死。
 // 剩余差异只有「Content-Length 是按 CBR 估算的、`Cache-Control: no-store`」，见 exactLengthWriter。
 func (h *SongHandler) tryLiveTranscodeStream(w http.ResponseWriter, r *http.Request, song *models.Song, path string, opts servePlayOptions) bool {
+	if opts.dlna {
+		return false
+	}
 	if h.cacheService == nil {
 		return false
 	}
@@ -2256,6 +2261,10 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, trackIndex, normalize)
 		if err != nil {
 			slog.Warn("track extraction failed, serving original", "songId", song.ID, "trackIndex", trackIndex, "error", err)
+			if opts.dlna {
+				respondError(w, http.StatusBadGateway, "DLNA track extraction failed", err)
+				return
+			}
 		} else {
 			srcPath = path
 		}
@@ -2274,6 +2283,10 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize)
 		if err != nil {
 			slog.Warn("transcode failed, serving original", "songId", song.ID, "format", targetFormat, "bitrate", bitrate, "error", err)
+			if opts.dlna {
+				respondError(w, http.StatusBadGateway, "DLNA transcode failed", err)
+				return
+			}
 		} else {
 			srcPath = path
 		}
@@ -2516,6 +2529,15 @@ func isHLSURL(rawURL string) bool {
 // 失败时:返回 502,后台异步切源(若注入了 reassigner),客户端下次播放该 song 会用新源。
 // targetFormat 非空且与原格式不同时,对已缓存文件走 ffmpeg 转码。
 func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *models.Song, opts servePlayOptions) {
+	if opts.dlna && !song.IsLive {
+		path, err := h.cacheService.Get(r.Context(), song)
+		if err != nil {
+			respondError(w, http.StatusBadGateway, "DLNA source preparation failed", err)
+			return
+		}
+		h.serveCachedFile(w, r, song, path, opts)
+		return
+	}
 	// 1. 缓存命中 → 直接 ServeFile
 	if song.CachePath != "" {
 		if _, err := os.Stat(song.CachePath); err == nil {
@@ -2623,6 +2645,10 @@ func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, so
 		path, err := h.cacheService.GetOrTranscode(trackedCtx, cachedPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize)
 		if err != nil {
 			slog.Warn("transcode failed, serving original", "songId", song.ID, "format", targetFormat, "bitrate", bitrate, "error", err)
+			if opts.dlna {
+				respondError(w, http.StatusBadGateway, "DLNA transcode failed", err)
+				return
+			}
 		} else {
 			cachedPath = path
 		}

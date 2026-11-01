@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"songloft/internal/player/sink"
 )
 
 // 服务类型短名，与 SOAPAction 的 urn 对应。
@@ -34,6 +36,7 @@ type Device struct {
 	UDN          string
 	Location     *url.URL
 	Services     map[string]Service
+	Codecs       []sink.Codec
 }
 
 type descXML struct {

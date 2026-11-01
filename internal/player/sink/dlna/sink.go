@@ -35,20 +35,21 @@ type Sink struct {
 	// 避免"事件 goroutine 还在发、channel 已经被关"的 panic。
 	eventsMu sync.RWMutex
 
-	mu       sync.Mutex
-	plan     sink.StreamPlan
-	url      string
-	started  bool
-	playing  bool
-	closed   bool
-	volume   int
-	position time.Duration
-	startAt  time.Time
-	sub      *Subscription
-	done     chan struct{}
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	failures int
+	mu         sync.Mutex
+	plan       sink.StreamPlan
+	url        string
+	started    bool
+	playing    bool
+	closed     bool
+	volume     int
+	position   time.Duration
+	startAt    time.Time
+	sub        *Subscription
+	done       chan struct{}
+	cancel     context.CancelFunc
+	playCancel context.CancelFunc
+	wg         sync.WaitGroup
+	failures   int
 }
 
 // New 创建 sink。dev 必须含 AVTransport 服务。
@@ -84,11 +85,15 @@ func (s *Sink) Patch() Patch              { return s.patch }
 
 // CapsFor 设备能力。发现与建 sink 共用一份，避免两边写法漂移。
 //
-// DLNA 没有能力协商接口（GetProtocolInfo 只在部分设备上可用且格式各异），
-// 这里给保守值：WAV/FLAC/MP3 都能推，采样率上限 48k，同步等级只能对齐起播。
+// Use GetProtocolInfo when available. Devices returning wildcard/missing
+// declarations retain the WAV/FLAC/MP3 fallback. Sync only aligns startup.
 func CapsFor(dev *Device) sink.Caps {
+	codecs := []sink.Codec{sink.CodecWAV, sink.CodecFLAC, sink.CodecMP3}
+	if dev != nil && len(dev.Codecs) > 0 {
+		codecs = append([]sink.Codec(nil), dev.Codecs...)
+	}
 	return sink.Caps{
-		Codecs:         []sink.Codec{sink.CodecWAV, sink.CodecFLAC, sink.CodecMP3},
+		Codecs:         codecs,
 		MaxSampleRate:  48000,
 		Channels:       2,
 		BitDepth:       16,
@@ -111,6 +116,7 @@ func (s *Sink) StreamURL(plan sink.StreamPlan) (string, error) {
 //
 // 真正 Play 在 Start，这样组内多台设备能对齐起播时刻。
 func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
+	plan.AcceptedCodecs = s.caps.Codecs
 	if s.opts.ResolveStream != nil {
 		var err error
 		plan, err = s.opts.ResolveStream(ctx, plan)
@@ -137,6 +143,8 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	s.position = plan.Position
 	meta := BuildMetadata(Item{
 		Title:    plan.Title,
+		Artist:   plan.Artist,
+		Album:    plan.Album,
 		URL:      plan.StreamURL,
 		MimeType: mimeOf(plan.Format.Codec),
 		Duration: formatDuration(plan.Duration),
@@ -175,31 +183,63 @@ func (s *Sink) Start(at time.Time) error {
 		return errors.New("dlna: sink 已关闭")
 	}
 	s.startAt = at
+	if s.playCancel != nil {
+		s.playCancel()
+	}
+	playCtx, playCancel := context.WithCancel(context.Background())
+	s.playCancel = playCancel
 	// 在锁内 Add，保证 Close 的 Wait 不会与 Add 并发。
 	s.wg.Add(1)
 	s.mu.Unlock()
 
 	go func() {
 		defer s.wg.Done()
+		defer playCancel()
 		if d := time.Until(at); d > 0 {
 			select {
 			case <-time.After(d):
-			case <-s.done:
+			case <-playCtx.Done():
 				return
 			}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), s.opts.CommandTimeout)
+		ctx, cancel := context.WithTimeout(playCtx, s.opts.CommandTimeout)
 		defer cancel()
-		if err := s.call(ctx, SvcAVTransport, "Play", Arg{"InstanceID", "0"}, Arg{"Speed", "1"}); err != nil {
-			s.emit(sink.Event{Type: sink.EventError, Err: err})
+		if err := s.playWithRetry(ctx); err != nil {
+			if playCtx.Err() == nil {
+				s.emit(sink.Event{Type: sink.EventError, Err: err})
+			}
 			return
 		}
 		s.mu.Lock()
+		if playCtx.Err() != nil {
+			s.mu.Unlock()
+			return
+		}
 		s.playing = true
 		s.mu.Unlock()
 		s.emit(sink.Event{Type: sink.EventPlaying})
 	}()
 	return nil
+}
+
+func (s *Sink) playWithRetry(ctx context.Context) error {
+	for attempt := 0; ; attempt++ {
+		err := s.call(ctx, SvcAVTransport, "Play", Arg{"InstanceID", "0"}, Arg{"Speed", "1"})
+		if err == nil || attempt == 2 || ctx.Err() != nil {
+			return err
+		}
+		var fault *ActionError
+		if errors.As(err, &fault) && fault.Code != 501 && fault.Code != 701 {
+			return err
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * 300 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 // Seek 跳到指定采样。
@@ -243,6 +283,11 @@ func (s *Sink) SetVolume(v float64) error {
 
 // Stop 停止播放。
 func (s *Sink) Stop() error {
+	s.mu.Lock()
+	if s.playCancel != nil {
+		s.playCancel()
+	}
+	s.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), s.opts.CommandTimeout)
 	defer cancel()
 	err := s.call(ctx, SvcAVTransport, "Stop", Arg{"InstanceID", "0"})
@@ -289,6 +334,9 @@ func (s *Sink) Close() error {
 		return nil
 	}
 	s.closed = true
+	if s.playCancel != nil {
+		s.playCancel()
+	}
 	close(s.done)
 	cancel := s.cancel
 	sub := s.sub
