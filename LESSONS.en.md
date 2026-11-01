@@ -1,5 +1,10 @@
 # Development Lessons
 
+## OUTPUT-010: Discovery records expire and AirPlay uses its protocol volume scale
+
+- On 2026-11-01 AirConnect had stopped and disappeared from mDNS, but its speaker remained online. Two successful scans of the same protocol without an advertisement mark it offline. Failed/disabled protocol scans do not count. Management retains saved records while playback choices hide offline zones.
+- RAOP used `20*log10(v)`, mapping 3% to -30.46 dB below the receiver's normal -30..0 dB range. Initial and live volume now share the linear protocol scale, with -144 reserved for zero/mute. Values 3/4 map to -29.1/-28.8 dB. Discovery, RTSP and zone-choice regressions cover this repair; listening needs device validation. Seen 1×.
+
 ## PLAY-009: Crossfade must return track ownership at the current track boundary
 
 - On 2026-10-31 leonFN had three-second crossfade enabled. The dining server state reported 415.37 seconds for a 246.77-second track while the user heard the next song. `crossfadeReader` emitted the entire remainder of the next song, delaying queue advancement until both ended. The old unit test incorrectly treated both tracks minus overlap as the length of one reader invocation. The constructor also interpreted sample frames as bytes: three seconds mixed only 0.75 seconds, but playback resumed at three seconds.

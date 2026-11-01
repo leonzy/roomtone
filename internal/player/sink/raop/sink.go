@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -279,10 +278,7 @@ func (s *Sink) openOnce(ctx context.Context, plan sink.StreamPlan) error {
 		s.abortSessionLocked()
 		return err
 	}
-	db := -144.0
-	if s.volume > 0 {
-		db = 20 * math.Log10(s.volume)
-	}
+	db := airplayVolumeDB(s.volume)
 	resp, err = s.doAuth(ctx, cl, "SET_PARAMETER", uri, map[string]string{"Content-Type": "text/parameters"}, []byte(fmt.Sprintf("volume: %.2f\r\n", db)))
 	if err != nil {
 		s.abortSessionLocked()
@@ -491,7 +487,19 @@ func (s *Sink) Seek(sample uint64) error {
 	return s.recordLocked(ctx)
 }
 
-// SetVolume 设音量（0~1 映射到 -144~0 dB）。
+// airplayVolumeDB maps the UI slider onto AirPlay's -30..0 dB range.
+// -144 is the separate mute value, not the bottom of the slider range.
+func airplayVolumeDB(v float64) float64 {
+	if v <= 0 {
+		return -144
+	}
+	if v >= 1 {
+		return 0
+	}
+	return -30 + 30*v
+}
+
+// SetVolume 设音量，零静音，非零映射到 AirPlay 的 -30..0 dB。
 func (s *Sink) SetVolume(v float64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -505,13 +513,7 @@ func (s *Sink) SetVolume(v float64) error {
 	if s.rtsp == nil {
 		return nil
 	}
-	db := -144.0
-	if v > 0 {
-		db = 20 * math.Log10(v)
-		if db < -144 {
-			db = -144
-		}
-	}
+	db := airplayVolumeDB(v)
 	body := []byte(fmt.Sprintf("volume: %.2f\r\n", db))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

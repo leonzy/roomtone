@@ -265,7 +265,7 @@ func TestSinkHandshakeAndStream(t *testing.T) {
 	if !strings.Contains(bodies[1], "m=audio 0 RTP/AVP 96") {
 		t.Fatalf("ANNOUNCE body 不含 SDP: %q", bodies[1])
 	}
-	if !strings.Contains(bodies[4], "volume: 0.00") || !strings.Contains(bodies[5], "volume: -6.02") {
+	if !strings.Contains(bodies[4], "volume: 0.00") || !strings.Contains(bodies[5], "volume: -15.00") {
 		t.Fatalf("音量参数错误: initial=%q updated=%q", bodies[4], bodies[5])
 	}
 }

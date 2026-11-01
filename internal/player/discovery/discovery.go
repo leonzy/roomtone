@@ -101,7 +101,8 @@ type Discovery struct {
 	last      Result
 	lastAt    time.Time
 
-	scanMu sync.Mutex // 扫描串行化：手动与周期不并发
+	scanMu sync.Mutex     // 扫描串行化：手动与周期不并发
+	misses map[string]int // guarded by scanMu; require two successful scans before offline
 
 	kick chan struct{}
 	stop chan struct{}
@@ -211,12 +212,14 @@ func (d *Discovery) Scan(ctx context.Context) (Result, error) {
 		}(s)
 	}
 	seen := make(map[string]bool, len(scanners)*4)
+	succeeded := make(map[player.Kind]bool)
 	for range scanners {
 		o := <-outs
 		if o.err != nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", o.kind, o.err))
 			continue
 		}
+		succeeded[o.kind] = true
 		for _, sp := range o.list {
 			if sp.ID == "" || seen[sp.ID] {
 				continue
@@ -232,6 +235,27 @@ func (d *Discovery) Scan(ctx context.Context) (Result, error) {
 		return res.Speakers[i].Name < res.Speakers[j].Name
 	})
 
+	if registry, ok := d.reg.(interface {
+		ListPlayers() []player.Player
+		SetOnline(context.Context, string, bool)
+	}); ok {
+		if d.misses == nil {
+			d.misses = make(map[string]int)
+		}
+		for _, p := range registry.ListPlayers() {
+			if !succeeded[p.Kind] {
+				continue
+			}
+			if seen[p.ID] {
+				delete(d.misses, p.ID)
+				continue
+			}
+			d.misses[p.ID]++
+			if d.misses[p.ID] >= 2 {
+				registry.SetOnline(ctx, p.ID, false)
+			}
+		}
+	}
 	airplayHosts := make(map[string]bool)
 	for _, sp := range res.Speakers {
 		if sp.Kind == player.KindRAOP {
