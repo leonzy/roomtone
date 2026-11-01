@@ -5,7 +5,7 @@ import "strings"
 // Patch 厂商方言补丁。
 //
 // 同一个 UPnP 标准下各家行为差异集中在几处：Sonos 不接受空
-// CurrentURIMetaData、部分老电视只认 TRACK_NR seek、少数设备 SUBSCRIBE
+// CurrentURIMetaData、部分设备需要 Play 后定位、少数设备 SUBSCRIBE
 // 直接 500。命中不了就走标准路径，不做猜测。
 type Patch struct {
 	// TolerateEmptyMetadata true 表示元数据为空时不发 SetAVTransportURI 的第二个参数。
@@ -14,7 +14,7 @@ type Patch struct {
 	SeekUnit string
 	// Xiaomi S12 resets pre-play seeks when Play starts.
 	SeekAfterPlay bool
-	// DisableEvents true 表示跳过 SUBSCRIBE，直接 3s 轮询。
+	// DisableEvents true 表示跳过 SUBSCRIBE，直接轮询。
 	DisableEvents bool
 	// SkipSetNext 设备没有 SetNextAVTransportURI（无 gapless）。
 	SkipSetNext bool
@@ -32,8 +32,9 @@ var vendors = []struct {
 	{"sonos", Patch{TolerateEmptyMetadata: true, SeekUnit: "REL_TIME", SkipSetNext: true}},
 	{"kodi", Patch{SeekUnit: "REL_TIME", DisableEvents: false}},
 	{"xbmc", Patch{SeekUnit: "REL_TIME", DisableEvents: false}},
-	{"philips", Patch{SeekUnit: "TRACK_NR", DisableEvents: true}},
-	{"hisense", Patch{SeekUnit: "TRACK_NR", DisableEvents: true}},
+	// TRACK_NR takes a track number, never a H:MM:SS timestamp.
+	{"philips", Patch{SeekUnit: "REL_TIME", DisableEvents: true}},
+	{"hisense", Patch{SeekUnit: "REL_TIME", DisableEvents: true}},
 }
 
 // PatchFor 按 modelName 取补丁。

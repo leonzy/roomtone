@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ type Subscription struct {
 	timeout time.Duration
 	mu      sync.Mutex
 	stopped bool
+	renewAt time.Time
 }
 
 // Subscribe 发起订阅。callback 必须是设备可达的绝对 URL。
@@ -57,7 +59,30 @@ func Subscribe(ctx context.Context, cl *Client, svc Service, callback string, ti
 	if sid == "" {
 		return nil, fmt.Errorf("dlna: SUBSCRIBE 没有返回 SID")
 	}
-	return &Subscription{cl: cl, svc: svc, sid: sid, timeout: timeout}, nil
+	timeout = subscriptionTimeout(resp.Header.Get("TIMEOUT"), timeout)
+	return &Subscription{cl: cl, svc: svc, sid: sid, timeout: timeout, renewAt: time.Now().Add(timeout / 2)}, nil
+}
+
+func subscriptionTimeout(value string, fallback time.Duration) time.Duration {
+	if strings.EqualFold(value, "Second-infinite") {
+		return 24 * time.Hour
+	}
+	if len(value) > 7 && strings.EqualFold(value[:7], "Second-") {
+		if seconds, err := strconv.Atoi(value[7:]); err == nil && seconds > 0 && seconds <= 86400 {
+			return time.Duration(seconds) * time.Second
+		}
+	}
+	return fallback
+}
+
+func (s *Subscription) RenewAfter() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d := time.Until(s.renewAt)
+	if d < 10*time.Millisecond {
+		d = 10 * time.Millisecond
+	}
+	return d
 }
 
 // SID 订阅 id。
@@ -89,6 +114,8 @@ func (s *Subscription) Renew(ctx context.Context) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("dlna: 续订返回 %d", resp.StatusCode)
 	}
+	s.timeout = subscriptionTimeout(resp.Header.Get("TIMEOUT"), s.timeout)
+	s.renewAt = time.Now().Add(s.timeout / 2)
 	return nil
 }
 
@@ -139,13 +166,37 @@ func ParseLastChange(body []byte) map[string]string {
 		// Event → InstanceID → 各状态变量，变量值在 val 属性里
 		// （<TransportState val="PLAYING"/>），不是元素文本。
 		dec := xml.NewDecoder(bytes.NewReader([]byte(p.LastChange)))
+		instance := false
 		for {
 			tok, err := dec.Token()
 			if err != nil {
 				break
 			}
+			if end, ok := tok.(xml.EndElement); ok && end.Name.Local == "InstanceID" {
+				instance = false
+			}
 			se, ok := tok.(xml.StartElement)
 			if !ok {
+				continue
+			}
+			if se.Name.Local == "InstanceID" {
+				for _, a := range se.Attr {
+					if a.Name.Local == "val" {
+						instance = a.Value == "0"
+					}
+				}
+				continue
+			}
+			if !instance {
+				continue
+			}
+			master := true
+			for _, a := range se.Attr {
+				if a.Name.Local == "channel" && a.Value != "Master" {
+					master = false
+				}
+			}
+			if !master {
 				continue
 			}
 			for _, a := range se.Attr {

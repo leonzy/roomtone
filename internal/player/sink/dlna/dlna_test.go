@@ -315,7 +315,7 @@ func TestPatchFor(t *testing.T) {
 	if p := PatchFor("Sonos Play:1"); !p.TolerateEmptyMetadata || !p.SkipSetNext {
 		t.Fatalf("Sonos 补丁未命中: %+v", p)
 	}
-	if p := PatchFor("Philips TV"); p.SeekUnit != "TRACK_NR" {
+	if p := PatchFor("Philips TV"); p.SeekUnit != "REL_TIME" {
 		t.Fatalf("Philips seek 单位错误: %+v", p)
 	}
 	if p := PatchFor("Unknown Device"); p.SeekUnit != "REL_TIME" {

@@ -16,6 +16,7 @@ type Item struct {
 	ID           string
 	ParentID     string
 	ProtocolInfo string // 留空按 MimeType 生成
+	Live         bool
 }
 
 // BuildMetadata 生成 DIDL-Lite。
@@ -52,9 +53,13 @@ func BuildMetadata(it Item) string {
 	if it.Album != "" {
 		fmt.Fprintf(&b, "<upnp:album>%s</upnp:album>", xmlEscape(it.Album))
 	}
-	b.WriteString("<upnp:class>object.item.audioItem.musicTrack</upnp:class>")
+	if it.Live {
+		b.WriteString("<upnp:class>object.item.audioItem.audioBroadcast</upnp:class>")
+	} else {
+		b.WriteString("<upnp:class>object.item.audioItem.musicTrack</upnp:class>")
+	}
 	b.WriteString(`<res protocolInfo="` + xmlEscape(proto) + `"`)
-	if it.Duration != "" {
+	if it.Duration != "" && !it.Live {
 		fmt.Fprintf(&b, ` duration="%s"`, xmlEscape(it.Duration))
 	}
 	fmt.Fprintf(&b, ">%s</res>", xmlEscape(it.URL))

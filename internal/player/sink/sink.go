@@ -170,6 +170,9 @@ type StreamPlan struct {
 	Title       string
 	Artist      string
 	Album       string
+	// Pull output metadata describes the actual HTTP representation.
+	ProtocolInfo string
+	Live         bool
 	// AcceptedCodecs is populated by pull renderers after protocol discovery.
 	AcceptedCodecs []Codec
 	Position       time.Duration

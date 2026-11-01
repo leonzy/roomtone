@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -64,14 +65,20 @@ func (s *dlnaStreams) protect(next http.HandlerFunc) http.HandlerFunc {
 		// proxy parameters from a renderer must not alter this capability.
 		cloned := r.Clone(r.Context())
 		u := *r.URL
-		if strings.HasPrefix(format, "original:") {
+		live := strings.HasPrefix(format, "live:")
+		mediaFormat := strings.TrimPrefix(format, "live:")
+		original := strings.HasPrefix(mediaFormat, "original:")
+		if original {
 			u.RawQuery = ""
 		} else {
-			u.RawQuery = url.Values{"format": {format}}.Encode()
+			u.RawQuery = url.Values{"format": {mediaFormat}}.Encode()
 		}
 		cloned.URL = &u
 		cloned = handlers.WithDLNAPlayback(cloned)
 		w.Header().Set("transferMode.dlna.org", "Streaming")
+		if r.Header.Get("getcontentFeatures.dlna.org") == "1" {
+			w.Header().Set("contentFeatures.dlna.org", dlna.ContentFeatures(!original, live))
+		}
 		next(w, cloned)
 	}
 }
@@ -82,6 +89,10 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 		return plan, err
 	}
 	sourceFormat := services.EffectiveSourceFormat(song, song.FilePath)
+	// Library scanning may normalize raw .aac to m4a. Keep its actual container.
+	if strings.EqualFold(filepath.Ext(song.FilePath), ".aac") {
+		sourceFormat = "adts"
+	}
 	if sourceFormat == "" {
 		sourceFormat = "unknown"
 	}
@@ -90,10 +101,11 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 		return plan, fmt.Errorf("dlna: renderer advertises no supported output codec")
 	}
 	plan.Title, plan.Artist, plan.Album = song.Title, song.Artist, song.Album
+	plan.Live = song.Type == models.TypeRadio || song.IsLive
 	normalize := a.configService.GetBool("volume_normalize", false)
 	if normalize || song.CueSourcePath != "" {
 		switch format {
-		case "flac", "wav", "mp3", "m4a", "ogg":
+		case "flac", "wav", "l16", "mp3", "m4a", "adts", "ogg":
 		default:
 			format = string(dlna.SelectCodec("flac", plan.AcceptedCodecs))
 			if format == "" {
@@ -119,6 +131,7 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 		}
 	}
 	plan.Format.Codec = sink.Codec(format)
+	plan.ProtocolInfo = "http-get:*:" + dlna.MIMEType(plan.Format.Codec) + ":" + dlna.ContentFeatures(!native, plan.Live)
 	u, err := url.Parse(target)
 	if err != nil {
 		return plan, err
@@ -126,6 +139,9 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 	ticketFormat := format
 	if native {
 		ticketFormat = "original:" + sourceFormat
+	}
+	if plan.Live {
+		ticketFormat = "live:" + ticketFormat
 	}
 	plan.StreamURL, err = a.lanURL.Resolve(ctx, u.Hostname(), fmt.Sprintf("/api/v1/playback/dlna/stream/%d", plan.SongID), a.dlnaStreams.query(plan.SongID, ticketFormat, plan.Duration))
 	return plan, err

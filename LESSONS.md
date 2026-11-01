@@ -2,6 +2,7 @@
 
 ## DLNA-001：拉流格式与 HTTP 表示必须匹配接收器
 
+- 2026-11-01 再对照 AirConnect：补上 HTTP contentFeatures 与 DIDL 的转换/字节定位声明、URLBase/内嵌 renderer、按实际租期续订、串行控制与轮询、分数秒和无效进度过滤、InstanceID=0/Master 事件筛选、原生音量范围。显式仅支持 L16/ADTS 的设备增加对应输出；L16 必须大端 44.1kHz 双声道，AAC ADTS 不可冒充 M4A，必要的 AAC→M4A 使用 copy 重新封装。真实 FFmpeg 字节/容器、HEAD/Range 和控制回归验证。范围及未验收项见 [DLNA 对照](docs/dlna_output_compatibility.md)。本次无听感验收。
 - 2026-11-01，小爱 S12 的 GetProtocolInfo 只返回通配符。显式能力列表应限制输出格式；通配符或缺失能力时优先原格式直放，不得仅因能力未知而自动转成 FLAC。只有明确格式不兼容或启用音量归一化、CUE 提取等处理时才准备转换。流地址下发前完成必要的下载/转换，HTTP 播放路径使用完整文件提供真实 Content-Length、HEAD 和字节 Range；禁止转码失败后悄悄返回不兼容原文件。
 - 冷转码、HEAD、Range、损坏源错误的真实 FFmpeg 回归对旧 handler 失败，对新路径通过。曲目信息传递歌手和专辑；临时 Play 失败有限重试，Stop/Close 取消延迟起播与重试。普通网页仍走原有实时路径。首次转换可能增加等待时间；直播仍使用直播路径。Seen 1×。
 - S12 实机静音预检发现 `SetVolume(0)` 回读为 1，`GetMute` 仍为 0。零音量必须先发 `SetMute(1)`，恢复非零时设置目标音量后再解除静音，不能把硬件最小音量当作已静音。

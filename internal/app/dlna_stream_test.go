@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -65,5 +66,24 @@ func TestDLNANativeStreamDoesNotForceCodec(t *testing.T) {
 	})(w, r)
 	if w.Code != 200 {
 		t.Fatalf("native ticket rejected: %d", w.Code)
+	}
+}
+
+func TestDLNAHTTPFeaturesMatchRepresentation(t *testing.T) {
+	for _, tc := range []struct{ format, op, ci string }{
+		{"original:flac", "01", "0"}, {"mp3", "01", "1"}, {"live:original:mp3", "00", "0"},
+	} {
+		s := newDLNAStreams()
+		r := httptest.NewRequest("HEAD", "/stream?"+s.query(42, tc.format, time.Minute), nil)
+		r.Header.Set("getcontentFeatures.dlna.org", "1")
+		route := chi.NewRouteContext()
+		route.URLParams.Add("id", "42")
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, route))
+		w := httptest.NewRecorder()
+		s.protect(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })(w, r)
+		features := w.Header().Get("contentFeatures.dlna.org")
+		if !strings.Contains(features, "DLNA.ORG_OP="+tc.op) || !strings.Contains(features, "DLNA.ORG_CI="+tc.ci) {
+			t.Fatalf("%s: %s", tc.format, features)
+		}
 	}
 }

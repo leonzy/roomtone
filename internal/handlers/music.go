@@ -2317,6 +2317,10 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 			// Matroska 音频容器（songloft-org/songloft#297）:stdlib 不识别 .mka,
 			// 显式声明为 audio/x-matroska（转码失败回退原始文件时才会命中）。
 			w.Header().Set("Content-Type", "audio/x-matroska")
+		case ".l16":
+			w.Header().Set("Content-Type", "audio/L16;rate=44100;channels=2")
+		case ".adts", ".aac":
+			w.Header().Set("Content-Type", "audio/aac")
 		}
 	}
 	http.ServeFile(w, r, srcPath)
@@ -2498,6 +2502,10 @@ func normalizeAudioContentType(ct string) string {
 // radioTranscodeContentType 返回电台实时转码目标格式对应的响应 Content-Type。
 func radioTranscodeContentType(format string) string {
 	switch format {
+	case "adts", "aac":
+		return "audio/aac"
+	case "l16":
+		return "audio/L16;rate=44100;channels=2"
 	case "mp3":
 		return "audio/mpeg"
 	case "ogg":
@@ -2658,6 +2666,12 @@ func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, so
 		return
 	}
 	w.Header().Set("Cache-Control", "public, max-age=604800")
+	switch strings.ToLower(filepath.Ext(cachedPath)) {
+	case ".l16":
+		w.Header().Set("Content-Type", "audio/L16;rate=44100;channels=2")
+	case ".adts", ".aac":
+		w.Header().Set("Content-Type", "audio/aac")
+	}
 	http.ServeFile(w, r, cachedPath)
 }
 

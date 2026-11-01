@@ -17,7 +17,7 @@ type Options struct {
 	ResolveStream func(context.Context, sink.StreamPlan) (sink.StreamPlan, error)
 	// CallbackBase 事件回调基地址（局域网可达），空则不做订阅。
 	CallbackBase string
-	// PollInterval 轮询间隔，默认 3s。
+	// PollInterval 轮询间隔，默认 1s；事件不可靠时仍持续轮询。
 	PollInterval time.Duration
 	// CommandTimeout 单条 SOAP 超时。
 	CommandTimeout time.Duration
@@ -34,8 +34,10 @@ type Sink struct {
 	events chan sink.Event
 	// eventsMu 保护 channel 的发送与关闭：Close 拿写锁后再 close，
 	// 避免"事件 goroutine 还在发、channel 已经被关"的 panic。
-	eventsMu sync.RWMutex
-	openMu   sync.Mutex
+	eventsMu  sync.RWMutex
+	openMu    sync.Mutex
+	commandMu sync.Mutex // serialize SOAP actions with poll responses
+	volumeMu  sync.Mutex // keep mute/volume/unmute atomic across slider updates
 
 	mu         sync.Mutex
 	plan       sink.StreamPlan
@@ -61,7 +63,7 @@ func New(id string, dev *Device, cl *Client, opts Options) *Sink {
 		cl = NewClient()
 	}
 	if opts.PollInterval <= 0 {
-		opts.PollInterval = 3 * time.Second
+		opts.PollInterval = time.Second
 	}
 	if opts.CommandTimeout <= 0 {
 		opts.CommandTimeout = 10 * time.Second
@@ -154,27 +156,31 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 		s.mu.Unlock()
 		return errors.New("dlna: 缺少流地址")
 	}
-	s.started = true
 	s.position = plan.Position
 	s.positionAt = time.Now()
 	meta := BuildMetadata(Item{
-		Title:    plan.Title,
-		Artist:   plan.Artist,
-		Album:    plan.Album,
-		URL:      plan.StreamURL,
-		MimeType: mimeOf(plan.Format.Codec),
-		Duration: formatDuration(plan.Duration),
+		Title:        plan.Title,
+		Artist:       plan.Artist,
+		Album:        plan.Album,
+		URL:          plan.StreamURL,
+		MimeType:     MIMEType(plan.Format.Codec),
+		Duration:     formatDuration(plan.Duration),
+		ProtocolInfo: plan.ProtocolInfo,
+		Live:         plan.Live,
 	})
 	seekTo := plan.Position
 	s.mu.Unlock()
 
-	if err := s.call(ctx, SvcAVTransport, "SetAVTransportURI",
+	if err := s.transportWithRetry(ctx, "SetAVTransportURI",
 		Arg{"InstanceID", "0"},
 		Arg{"CurrentURI", plan.StreamURL},
 		Arg{"CurrentURIMetaData", meta},
 	); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	s.started = true
+	s.mu.Unlock()
 	if seekTo > 0 && !s.patch.SeekAfterPlay {
 		if err := s.seekTo(ctx, seekTo); err != nil {
 			return err
@@ -307,16 +313,23 @@ func (s *Sink) Seek(sample uint64) error {
 		rate = 44100
 	}
 	pos := time.Duration(float64(sample) / float64(rate) * float64(time.Second))
-	s.position = pos
-	s.positionAt = time.Now()
 	s.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), s.opts.CommandTimeout)
 	defer cancel()
-	return s.seekTo(ctx, pos)
+	if err := s.seekTo(ctx, pos); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.position = pos
+	s.positionAt = time.Now()
+	s.mu.Unlock()
+	return nil
 }
 
 // SetVolume 音量 0~1 → 设备 0~100。
 func (s *Sink) SetVolume(v float64) error {
+	s.volumeMu.Lock()
+	defer s.volumeMu.Unlock()
 	if v < 0 {
 		v = 0
 	}
@@ -324,9 +337,6 @@ func (s *Sink) SetVolume(v float64) error {
 		v = 1
 	}
 	vol := int(v*100 + 0.5)
-	s.mu.Lock()
-	s.volume = vol
-	s.mu.Unlock()
 	if s.dev.Services[SvcRenderingControl].ControlURL == nil {
 		return nil
 	}
@@ -334,16 +344,22 @@ func (s *Sink) SetVolume(v float64) error {
 	defer cancel()
 	if vol == 0 {
 		if err := s.call(ctx, SvcRenderingControl, "SetMute", Arg{"InstanceID", "0"}, Arg{"Channel", "Master"}, Arg{"DesiredMute", "1"}); err != nil {
-			return err
+			var fault *ActionError
+			if !errors.As(err, &fault) || fault.Code != 401 {
+				return err
+			}
 		}
 	}
 	if err := s.call(ctx, SvcRenderingControl, "SetVolume",
 		Arg{"InstanceID", "0"},
 		Arg{"Channel", "Master"},
-		Arg{"DesiredVolume", strconv.Itoa(vol)},
+		Arg{"DesiredVolume", strconv.Itoa(s.dev.VolumeRange.native(vol))},
 	); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	s.volume = vol
+	s.mu.Unlock()
 	if vol > 0 {
 		err := s.call(ctx, SvcRenderingControl, "SetMute", Arg{"InstanceID", "0"}, Arg{"Channel", "Master"}, Arg{"DesiredMute", "0"})
 		var fault *ActionError
@@ -444,12 +460,14 @@ func (s *Sink) HandleNotify(body []byte) {
 		s.onTransportState(v)
 	}
 	if v, ok := vars["RelativeTimePosition"]; ok {
-		s.mu.Lock()
-		s.position = parseDuration(v)
-		s.positionAt = time.Now()
-		pos := s.position
-		s.mu.Unlock()
-		s.emit(sink.Event{Type: sink.EventProgress, Position: pos})
+		pos, valid := parseDurationOK(v)
+		if valid {
+			s.mu.Lock()
+			s.position = pos
+			s.positionAt = time.Now()
+			s.mu.Unlock()
+			s.emit(sink.Event{Type: sink.EventProgress, Position: pos})
+		}
 	}
 	if v, ok := vars["Volume"]; ok {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -490,6 +508,11 @@ func (s *Sink) Position() time.Duration {
 // --- 内部 ---
 
 func (s *Sink) call(ctx context.Context, svcName, action string, args ...Arg) error {
+	s.commandMu.Lock()
+	defer s.commandMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	svc, ok := s.dev.Services[svcName]
 	if !ok {
 		return fmt.Errorf("dlna: 设备不支持 %s", svcName)
@@ -532,6 +555,14 @@ func (s *Sink) trySubscribe() {
 	if existing != nil && existing.Renew(ctx) == nil {
 		return
 	}
+	if existing != nil {
+		s.mu.Lock()
+		if s.sub == existing {
+			s.sub = nil
+		}
+		s.mu.Unlock()
+		existing.Unsubscribe(ctx)
+	}
 	svc, ok := s.dev.Services[SvcAVTransport]
 	if !ok {
 		return
@@ -571,27 +602,42 @@ func (s *Sink) startPoller() {
 	s.mu.Unlock()
 	go func() {
 		defer s.wg.Done()
-		interval := s.opts.PollInterval
-		s.mu.Lock()
-		if s.sub != nil {
-			// 有事件时轮询只当兜底，拉长到 10s。
-			interval = 10 * time.Second
-		}
-		s.mu.Unlock()
-		t := time.NewTicker(interval)
+		t := time.NewTicker(s.opts.PollInterval)
 		defer t.Stop()
+		renew := time.NewTimer(s.renewAfter())
+		defer renew.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-t.C:
 				s.poll(ctx)
+			case <-renew.C:
+				if s.opts.CallbackBase != "" && !s.patch.DisableEvents && ctx.Err() == nil {
+					s.trySubscribe()
+				}
+				renew.Reset(s.renewAfter())
 			}
 		}
 	}()
 }
 
+func (s *Sink) renewAfter() time.Duration {
+	s.mu.Lock()
+	sub := s.sub
+	s.mu.Unlock()
+	if sub != nil {
+		return sub.RenewAfter()
+	}
+	return 30 * time.Second
+}
+
 func (s *Sink) poll(ctx context.Context) {
+	s.commandMu.Lock()
+	defer s.commandMu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
 	ctx, cancel := context.WithTimeout(ctx, s.opts.CommandTimeout)
 	defer cancel()
 	svc, ok := s.dev.Services[SvcAVTransport]
@@ -599,6 +645,9 @@ func (s *Sink) poll(ctx context.Context) {
 		return
 	}
 	out, err := s.cl.Call(ctx, svc, "GetTransportInfo", Arg{"InstanceID", "0"})
+	if ctx.Err() != nil {
+		return
+	}
 	if err != nil {
 		s.mu.Lock()
 		s.failures++
@@ -622,7 +671,10 @@ func (s *Sink) poll(ctx context.Context) {
 	if err != nil || ctx.Err() != nil {
 		return
 	}
-	pos := parseDuration(out["RelTime"])
+	pos, valid := parseDurationOK(out["RelTime"])
+	if !valid {
+		return
+	}
 	s.mu.Lock()
 	s.position = pos
 	s.positionAt = time.Now()
@@ -667,14 +719,21 @@ func (s *Sink) emit(ev sink.Event) {
 	}
 }
 
-func mimeOf(c sink.Codec) string {
+func mimeOf(c sink.Codec) string { return MIMEType(c) }
+
+// MIMEType identifies the container on the wire (ADTS is not an MP4 container).
+func MIMEType(c sink.Codec) string {
 	switch c {
 	case sink.CodecFLAC:
 		return "audio/flac"
 	case sink.CodecMP3:
 		return "audio/mpeg"
-	case sink.CodecAAC:
+	case sink.CodecAAC, sink.Codec("adts"):
 		return "audio/aac"
+	case sink.Codec("m4a"):
+		return "audio/mp4"
+	case sink.Codec("ogg"):
+		return "audio/ogg"
 	case sink.CodecL16:
 		return "audio/L16;rate=44100;channels=2"
 	case sink.CodecWAV:

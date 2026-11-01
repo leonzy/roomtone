@@ -361,6 +361,7 @@ func (b *playerSinkBuilder) Build(ctx context.Context, p *player.Player) (sink.S
 		dev, err := dlna.Fetch(fetchCtx, cl, p.Address)
 		if err == nil {
 			dlna.LoadProtocolInfo(fetchCtx, cl, dev)
+			dlna.LoadVolumeRange(fetchCtx, cl, dev)
 		}
 		cancel()
 		if err != nil {

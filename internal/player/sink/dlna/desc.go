@@ -37,24 +37,42 @@ type Device struct {
 	Location     *url.URL
 	Services     map[string]Service
 	Codecs       []sink.Codec
+	VolumeRange  VolumeRange
 }
 
 type descXML struct {
-	Device struct {
-		FriendlyName string `xml:"friendlyName"`
-		ModelName    string `xml:"modelName"`
-		UDN          string `xml:"UDN"`
-		ServiceList  struct {
-			Services []struct {
-				ServiceType string `xml:"serviceType"`
-				ServiceID   string `xml:"serviceId"`
-				ControlURL  string `xml:"controlURL"`
-				EventSubURL string `xml:"eventSubURL"`
-				SCPDURL     string `xml:"SCPDURL"`
-			} `xml:"service"`
-		} `xml:"serviceList"`
-		Devices []struct{} `xml:"deviceList>device"`
-	} `xml:"device"`
+	URLBase string    `xml:"URLBase"`
+	Device  deviceXML `xml:"device"`
+}
+
+type deviceXML struct {
+	FriendlyName string `xml:"friendlyName"`
+	ModelName    string `xml:"modelName"`
+	UDN          string `xml:"UDN"`
+	ServiceList  struct {
+		Services []struct {
+			ServiceType string `xml:"serviceType"`
+			ServiceID   string `xml:"serviceId"`
+			ControlURL  string `xml:"controlURL"`
+			EventSubURL string `xml:"eventSubURL"`
+			SCPDURL     string `xml:"SCPDURL"`
+		} `xml:"service"`
+	} `xml:"serviceList"`
+	Devices []deviceXML `xml:"deviceList>device"`
+}
+
+func (d *deviceXML) renderer() *deviceXML {
+	for _, s := range d.ServiceList.Services {
+		if shortServiceName(s.ServiceType) == SvcAVTransport {
+			return d
+		}
+	}
+	for i := range d.Devices {
+		if found := d.Devices[i].renderer(); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 // ParseDescription 解析 desc.xml。
@@ -66,22 +84,30 @@ func ParseDescription(location *url.URL, r io.Reader) (*Device, error) {
 	if err := xml.NewDecoder(r).Decode(&d); err != nil {
 		return nil, fmt.Errorf("dlna: 解析设备描述失败: %w", err)
 	}
+	renderer := d.Device.renderer()
+	if renderer == nil {
+		return nil, errors.New("dlna: 设备没有 AVTransport 服务")
+	}
 	dev := &Device{
-		FriendlyName: strings.TrimSpace(d.Device.FriendlyName),
-		ModelName:    strings.TrimSpace(d.Device.ModelName),
-		UDN:          strings.TrimSpace(d.Device.UDN),
+		FriendlyName: strings.TrimSpace(renderer.FriendlyName),
+		ModelName:    strings.TrimSpace(renderer.ModelName),
+		UDN:          strings.TrimSpace(renderer.UDN),
 		Location:     location,
 		Services:     map[string]Service{},
 	}
-	for _, s := range d.Device.ServiceList.Services {
+	base := location
+	if u, err := url.Parse(strings.TrimSpace(d.URLBase)); err == nil && u.IsAbs() && u.Host != "" {
+		base = u
+	}
+	for _, s := range renderer.ServiceList.Services {
 		name := shortServiceName(s.ServiceType)
 		if name == "" {
 			continue
 		}
 		svc := Service{Type: s.ServiceType, Name: name}
-		svc.ControlURL = resolveURL(location, s.ControlURL)
-		svc.EventSubURL = resolveURL(location, s.EventSubURL)
-		svc.SCPDURL = resolveURL(location, s.SCPDURL)
+		svc.ControlURL = resolveURL(base, s.ControlURL)
+		svc.EventSubURL = resolveURL(base, s.EventSubURL)
+		svc.SCPDURL = resolveURL(base, s.SCPDURL)
 		if svc.ControlURL == nil {
 			continue
 		}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -178,18 +179,29 @@ func formatDuration(d time.Duration) string {
 
 // parseDuration 解析 H:MM:SS / MM:SS / 秒数。
 func parseDuration(s string) time.Duration {
+	d, _ := parseDurationOK(s)
+	return d
+}
+
+func parseDurationOK(s string) (time.Duration, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" || s == "NOT_IMPLEMENTED" {
-		return 0
+		return 0, false
 	}
 	parts := strings.Split(s, ":")
-	total := 0
+	if len(parts) > 3 {
+		return 0, false
+	}
+	total := float64(0)
 	for _, p := range parts {
-		n, err := strconv.Atoi(strings.TrimSpace(p))
-		if err != nil {
-			return 0
+		n, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
+		if err != nil || n < 0 || math.IsNaN(n) || math.IsInf(n, 0) {
+			return 0, false
 		}
 		total = total*60 + n
 	}
-	return time.Duration(total) * time.Second
+	if total >= float64(math.MaxInt64)/float64(time.Second) {
+		return 0, false
+	}
+	return time.Duration(total * float64(time.Second)), true
 }

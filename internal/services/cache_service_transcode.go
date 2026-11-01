@@ -146,6 +146,9 @@ func (c *CacheService) GetOrTranscode(ctx context.Context, srcPath string, song 
 		return "", errors.New("song is nil")
 	}
 	srcFmt := EffectiveSourceFormat(song, srcPath)
+	if strings.EqualFold(filepath.Ext(srcPath), ".aac") {
+		srcFmt = "adts"
+	}
 	isCue := song.CueSourcePath != ""
 	// 抽轨（trackIndex >= 0）必须走 ffmpeg：即使容器/编码相同也要 -map 出单条音轨。
 	// CUE track 必须走 ffmpeg 提取对应时间段。
@@ -276,12 +279,16 @@ func (c *CacheService) runFFmpeg(ctx context.Context, srcPath, dstPath string, s
 		args = append(args, "-ss", fmt.Sprintf("%.3f", song.CueStartSeconds))
 	}
 
-	if trackIndex >= 0 && NormalizeFormat(targetFormat) == "m4a" && !normalize {
+	if (trackIndex >= 0 || strings.EqualFold(filepath.Ext(srcPath), ".aac")) && NormalizeFormat(targetFormat) == "m4a" && !normalize {
 		args = append(args, "-i", srcPath)
 		if hasCueTiming && song.CueEndSeconds > song.CueStartSeconds {
 			args = append(args, "-t", fmt.Sprintf("%.3f", song.CueEndSeconds-song.CueStartSeconds))
 		}
-		args = append(args, "-map", fmt.Sprintf("0:a:%d", trackIndex), "-c:a", "copy", "-f", "ipod", "-y", dstPath)
+		index := trackIndex
+		if index < 0 {
+			index = 0
+		}
+		args = append(args, "-map", fmt.Sprintf("0:a:%d", index), "-c:a", "copy", "-f", "ipod", "-y", dstPath)
 	} else {
 		// CUE 同格式提取使用 stream copy 免重编码；APE 源已在上游转为 flac targetFormat
 		// normalize 需要重编码，不能使用 stream copy
@@ -620,6 +627,13 @@ func ffmpegArgs(targetFormat string, bitrate int) (encoder string, qualityArgs [
 		return "flac", nil, "flac", nil
 	case "wav":
 		return "pcm_s16le", nil, "wav", nil
+	case "l16":
+		return "pcm_s16be", []string{"-ar", "44100", "-ac", "2"}, "s16be", nil
+	case "adts":
+		if bitrate > 0 {
+			return "aac", []string{"-b:a", bitrateArg}, "adts", nil
+		}
+		return "aac", []string{"-b:a", "256k"}, "adts", nil
 	default:
 		return "", nil, "", ErrUnsupportedTranscodeFormat
 	}
