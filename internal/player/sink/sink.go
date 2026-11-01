@@ -173,6 +173,8 @@ type StreamPlan struct {
 	// Pull output metadata describes the actual HTTP representation.
 	ProtocolInfo string
 	Live         bool
+	// AlignStart keeps pull playback on the common presentation clock in mixed groups.
+	AlignStart bool
 	// AcceptedCodecs is populated by pull renderers after protocol discovery.
 	AcceptedCodecs []Codec
 	Position       time.Duration
@@ -255,6 +257,12 @@ type PowerSink interface {
 type PullSink interface {
 	Sink
 	StreamURL(plan StreamPlan) (string, error)
+}
+
+// PositionAligner can seek a pulling renderer to the group's media time.
+// The song guard prevents a correction from affecting a subsequent track.
+type PositionAligner interface {
+	AlignPlayback(context.Context, int64, time.Duration) error
 }
 
 // ClockParticipant 支持组内时钟主同步的 sink（RAAT）。

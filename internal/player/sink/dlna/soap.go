@@ -177,6 +177,14 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%d:%02d:%02d", total/3600, (total%3600)/60, total%60)
 }
 
+func formatSeekDuration(d time.Duration) string {
+	base := formatDuration(d)
+	if ms := (d % time.Second) / time.Millisecond; ms > 0 {
+		return fmt.Sprintf("%s.%03d", base, ms)
+	}
+	return base
+}
+
 // parseDuration 解析 H:MM:SS / MM:SS / 秒数。
 func parseDuration(s string) time.Duration {
 	d, _ := parseDurationOK(s)

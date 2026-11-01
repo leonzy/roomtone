@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"mime"
 	"strconv"
 	"sync"
@@ -44,6 +45,7 @@ type Sink struct {
 	url        string
 	started    bool
 	playing    bool
+	ready      bool
 	closed     bool
 	volume     int
 	position   time.Duration
@@ -151,6 +153,7 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 		}
 	}
 	s.plan = plan
+	s.ready = false
 	s.url = plan.StreamURL
 	if s.url == "" {
 		s.mu.Unlock()
@@ -234,13 +237,17 @@ func (s *Sink) Start(at time.Time) error {
 		}
 		s.mu.Lock()
 		position := s.plan.Position
+		alignStart := s.plan.AlignStart
 		s.mu.Unlock()
-		if s.patch.SeekAfterPlay && position > 0 {
+		if s.patch.SeekAfterPlay && (position > 0 || alignStart) {
 			if err := s.waitForSeekReady(ctx); err != nil {
 				if playCtx.Err() == nil {
 					s.emit(sink.Event{Type: sink.EventError, Err: err})
 				}
 				return
+			}
+			if alignStart {
+				position += max(time.Duration(0), time.Since(at))
 			}
 			if err := s.seekTo(ctx, position); err != nil {
 				if playCtx.Err() == nil {
@@ -255,6 +262,7 @@ func (s *Sink) Start(at time.Time) error {
 			return
 		}
 		s.playing = true
+		s.ready = true
 		s.position = position
 		s.positionAt = time.Now()
 		s.mu.Unlock()
@@ -328,6 +336,26 @@ func (s *Sink) Seek(sample uint64) error {
 	s.mu.Lock()
 	s.position = pos
 	s.positionAt = time.Now()
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Sink) AlignPlayback(ctx context.Context, songID int64, position time.Duration) error {
+	s.openMu.Lock()
+	defer s.openMu.Unlock()
+	s.mu.Lock()
+	if s.closed || !s.ready || !s.playing || s.plan.SongID != songID {
+		s.mu.Unlock()
+		return errors.New("dlna: playback changed before alignment")
+	}
+	s.mu.Unlock()
+	if err := s.seekTo(ctx, position); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	if s.plan.SongID == songID {
+		s.position, s.positionAt = position, time.Now()
+	}
 	s.mu.Unlock()
 	return nil
 }
@@ -488,7 +516,7 @@ func (s *Sink) HandleNotify(body []byte) {
 func (s *Sink) PlaybackPosition() (time.Duration, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.started || s.closed {
+	if !s.started || !s.ready || s.closed {
 		return 0, false
 	}
 	if !s.playing {
@@ -548,7 +576,7 @@ func (s *Sink) seekTo(ctx context.Context, pos time.Duration) error {
 	return s.transportWithRetry(ctx, "Seek",
 		Arg{"InstanceID", "0"},
 		Arg{"Unit", unit},
-		Arg{"Target", formatDuration(pos)},
+		Arg{"Target", formatSeekDuration(pos)},
 	)
 }
 
@@ -717,6 +745,9 @@ func (s *Sink) onTransportState(st string) {
 }
 
 func (s *Sink) emit(ev sink.Event) {
+	if ev.Type == sink.EventError && ev.Err != nil {
+		slog.Warn("DLNA playback failed", "player_id", s.id, "err", ev.Err)
+	}
 	s.eventsMu.RLock()
 	defer s.eventsMu.RUnlock()
 	select {

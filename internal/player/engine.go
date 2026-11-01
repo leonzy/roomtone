@@ -285,6 +285,7 @@ func (e *Engine) SetControls(cs []sink.Sink) error {
 	if running && ctx != nil && plan.SongID != 0 && timeline != nil && rate > 0 {
 		offset := max(int64(0), cursor-base)
 		plan.Position += time.Duration(float64(offset) / float64(rate) * float64(time.Second))
+		plan.AlignStart = e.targets.Len() > 0
 		for _, s := range cs {
 			if previous[s.ID()] {
 				continue
@@ -818,6 +819,7 @@ func (e *Engine) startLocked(parent context.Context, position time.Duration) {
 	e.timeline = NewTimeline(e.deps.Clock().Add(-position), e.format.SampleRate, e.deps.Latency)
 	go e.run(ctx, position)
 	go e.pushMetadata(ctx)
+	go e.alignControls(ctx)
 }
 
 // run 解码 → 分发 → 自动续播的主循环。
@@ -998,6 +1000,7 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		// 控制型成员（本机客户端自拉流）与推送成员同组时也要收到 load/play，
 		// 否则浏览器那一端不会出声。它们不接收 PCM，只按指令自己拉流。
 		for _, s := range e.controlSinks() {
+			plan.AlignStart = len(targets) > 0
 			if err := s.Open(ctx, plan); err != nil {
 				e.fail(ctx, fmt.Errorf("open sink %s: %w", s.ID(), err))
 				return
@@ -1014,7 +1017,10 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		// ReplayGain：分发器每曲新建，增益跟着曲目走，不跨曲残留。
 		e.applyReplayGain(ctx, runner, track.SongID)
 		// 同步校正环：与分发器同生命周期，ctx 结束即退出。
+		cancelSync := func() {}
 		if cr, ok := runner.(CorrectionRunner); ok {
+			syncCtx, cancel := context.WithCancel(ctx)
+			cancelSync = cancel
 			loop := &SyncLoop{
 				Targets:   e.targets,
 				Timeline:  timeline,
@@ -1034,7 +1040,7 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 						"player", playerID, "delta_ms", delta.Milliseconds())
 				},
 			}
-			go loop.Run(ctx)
+			go loop.Run(syncCtx)
 		}
 		// 交叉淡化：把当前曲尾巴与下一曲开头等功率混合。
 		// 下一轮从实际混入的头部长度起播，短曲可能不足一个完整淡化窗。
@@ -1052,6 +1058,7 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			}
 		}
 		frames, runErr := runner.Run(ctx, src)
+		cancelSync()
 		consumedNext := time.Duration(0)
 		if xf != nil {
 			consumedNext = time.Duration(xf.ConsumedNextFrames()) * time.Second / time.Duration(format.SampleRate)

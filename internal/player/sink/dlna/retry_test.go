@@ -78,7 +78,7 @@ func TestPlaybackPositionAdvancesBetweenRendererReports(t *testing.T) {
 	s := New("position", f.device(t), nil, Options{})
 	defer s.Close()
 	s.mu.Lock()
-	s.started, s.playing = true, true
+	s.started, s.playing, s.ready = true, true, true
 	s.position, s.positionAt = 10*time.Second, time.Now().Add(-2*time.Second)
 	s.plan.Duration = time.Minute
 	s.mu.Unlock()

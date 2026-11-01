@@ -12,6 +12,7 @@ Reference: [AirConnect af345def](https://github.com/philippe44/AirConnect/tree/a
 | Codec choice | Original first; convert only on explicit incompatibility or requested processing. Distinguish ADTS AAC from M4A. L16 output is big-endian stereo 44.1kHz and selected only for matching declarations |
 | Control ordering | Serialize SOAP controls with polling. Bounded transient load/play/seek retries; stop cancels scheduled playback. Reload stops the old session |
 | Mixed-group hot join | Rebuild the decoded/delegated loop at the current track/position when the first push member joins DLNA/Web playback or the last push member leaves. Preserve the budget slot; handshake without PCM production is insufficient |
+| Mixed-group alignment | S12 seek targets compensate actual post-Play delay and retain milliseconds. Check pull members against PCM presentation time. Require two same-direction reports ≥1.2s and a 15s cooldown; skip unready/different tracks and pure delegated zones. Acoustic precision is not guaranteed |
 | Status | Persistent one-second fallback polling, even with events. Interpolate between reports, support fractional seconds and ignore unavailable positions |
 | GENA | Renew halfway through the granted lease; re-subscribe on failure and keep polling. Unsubscribe on close; accept instance 0/Master only |
 | Description | Honor URLBase and embedded renderers; keep services within one renderer |
