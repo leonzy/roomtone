@@ -30,3 +30,7 @@ AirConnect 的 `AVTSetNextURI` 在所核对版本只有定义，没有播放调�
 后续暂停/WAV 回读修复验证：Windows 的 player、DLNA、app 包及 vet 通过；NAS 容器 DLNA 全包、相关 player 回归通过。NAS player 全套出现既有 `TestStandbyExcludesFromSyncB0805` 的排队帧时序失败（22→29），不能称全套稳定通过。本轮未改该测试或分发队列来绕过失败。隔离移除 Pause/恢复错误 WAV 计数器会分别使新回归失败，旧 Engine.Seek 的重复控制会话 Seek 也被新回归抓住。实机字节证据为：WAV PCM 44.1kHz/16bit/双声道、数据偏移 44，40s/50s 请求 7056044/8820044，真实响应均为 206。
 
 验证基线 `847d5e83`；回归包括短租期自动续订、并发命令互斥、URLBase/内嵌设备、事件实例筛选、原生音量范围/不支持静音、L16 参考 PCM 逐字节比对、ADTS 文件头及 AAC→M4A 容器、HEAD/Range。隔离 overlay 故意恢复错误 URLBase 后，新回归因解析到旧地址而失败；当前实现通过。Windows 相关五个包、vet 及 NAS 容器中的 DLNA 全包/真实 FFmpeg HTTP 回归通过。Windows 未配置 C 编译器且 CGO 关闭，race 未运行。生产实机与发布证据在任务交付中单独记录；其他型号、Sonos 原生组拓扑和直播/ICY 厂商差异仍需对应设备验收，不宣称所有 DLNA 设备等价兼容。
+
+混合组起停补充（2026-11-01）：拉流与推送成员均先完成 Open，再统一起播时间；准备耗时不消耗初始缓冲提前量。Pause/Stop 并发通知各成员，避免 RAOP TEARDOWN 阻塞 DLNA Pause。成员延迟通过逐路 PCM 静音/丢采样及对应时间戳偏移生效，无缝续曲继承偏移，不重复加延迟。同步环扣除 RAOP 合成位置中的已插入偏移。回归覆盖实际音频前导、负延迟时间戳、无缝继承、准备顺序与停止并发；声学同步仍需听音验收。
+
+本轮 PCM/并发起停验证：Windows 相关五包通过，新增准备/续曲回归及 vet 通过；NAS 分发器全包、混合起播/并发暂停/延迟/同步/热加入/完成事件回归通过。NAS player 全包仍出现既有 TestStandbyExcludesFromSyncB0805 排队帧失败（43→45），没有修改测试绕过。

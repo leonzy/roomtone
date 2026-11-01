@@ -141,6 +141,11 @@ func (l *SyncLoop) CheckOnce() []SyncAdjustment {
 		if !ok {
 			continue
 		}
+		if t.Sink.Kind() == sink.KindRAOP {
+			if offset, ok := l.Corrector.(interface{ ContentDelay(string) time.Duration }); ok {
+				pos -= offset.ContentDelay(t.PlayerID)
+			}
+		}
 		// 补回该设备自己的延迟补偿：delay 越大，它"应该"越落后，折算成同一把尺子。
 		samples = append(samples, sample{target: t, pos: pos + t.Delay})
 	}

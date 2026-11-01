@@ -316,17 +316,19 @@ func (e *Engine) Controls() []sink.Sink {
 // controlSinks 取控制型 sink 快照；调用方不得持锁。
 func (e *Engine) controlSinks() []sink.Sink { return e.Controls() }
 
-// commandControls 把一条指令广播给所有控制型 sink。
-//
-// 单个成员失败不影响其它成员：客户端断线是常态，重连后管理器会重建 sink，
-// 这里只记日志，不把整组拖进错误态。
-func (e *Engine) commandControls(op string, fn func(sink.Sink) error) {
-	for _, s := range e.controlSinks() {
-		if err := fn(s); err != nil {
-			e.deps.Logger.Warn("control sink command failed",
-				"player_id", s.ID(), "cmd", op, "err", err)
-		}
+// dispatchControls starts each command before waiting for another device's reply.
+func (e *Engine) dispatchControls(op string, members []sink.Sink, fn func(sink.Sink) error) func() {
+	var wg sync.WaitGroup
+	for _, member := range members {
+		wg.Add(1)
+		go func(s sink.Sink) {
+			defer wg.Done()
+			if err := fn(s); err != nil {
+				e.deps.Logger.Warn("control sink command failed", "player_id", s.ID(), "cmd", op, "err", err)
+			}
+		}(member)
 	}
+	return wg.Wait
 }
 
 // AttachTarget 播放中加入一台设备（也可在空闲时调用，等下次开播生效）。
@@ -377,7 +379,7 @@ func (e *Engine) attachTarget(ctx context.Context, t sink.Target) error {
 		_ = t.Sink.Stop()
 		return fmt.Errorf("open sink %s: %w", t.PlayerID, err)
 	}
-	if err := t.Sink.Start(timeline.At(uint64(cursor)).Add(t.Delay)); err != nil {
+	if err := t.Sink.Start(timeline.At(uint64(cursor))); err != nil {
 		_ = t.Sink.Stop()
 		return fmt.Errorf("start sink %s: %w", t.PlayerID, err)
 	}
@@ -517,15 +519,16 @@ func (e *Engine) Pause() error {
 		e.mu.Unlock()
 		return err
 	}
-	e.stopLocked()
-	e.mu.Unlock()
-	// 控制型成员自己拉流，服务端停解码不会让它们停下来，必须显式下指令。
-	e.commandControls("pause", func(s sink.Sink) error {
+	waitControls := e.dispatchControls("pause", append([]sink.Sink(nil), e.controls...), func(s sink.Sink) error {
 		if p, ok := s.(interface{ Pause() error }); ok {
 			return p.Pause()
 		}
-		return nil
+		return s.Stop()
 	})
+	e.stopLocked()
+	e.mu.Unlock()
+	// 控制型成员自己拉流，服务端停解码不会让它们停下来，必须显式下指令。
+	waitControls()
 	e.persistState()
 	e.emitState()
 	return nil
@@ -534,11 +537,12 @@ func (e *Engine) Pause() error {
 // Stop 停止播放并清空当前曲目（队列保留）。
 func (e *Engine) Stop() {
 	e.mu.Lock()
+	waitControls := e.dispatchControls("stop", append([]sink.Sink(nil), e.controls...), func(s sink.Sink) error { return s.Stop() })
 	e.stopLocked()
 	e.transport.Stop()
 	e.sourceFormat = ""
 	e.mu.Unlock()
-	e.commandControls("stop", func(s sink.Sink) error { return s.Stop() })
+	waitControls()
 	e.persistState()
 	e.emitState()
 }
@@ -776,11 +780,17 @@ func (e *Engine) stopLocked() {
 	// Push sinks own an independent transport session. Stopping decoding alone
 	// leaves that session open and makes the next Open (resume/seek) fail.
 	targets, _ := e.targets.Snapshot()
+	var stopped sync.WaitGroup
 	for _, target := range targets {
-		if err := target.Sink.Stop(); err != nil {
-			e.deps.Logger.Warn("stop push sink failed", "player_id", target.PlayerID, "err", err)
-		}
+		stopped.Add(1)
+		go func(target sink.Target) {
+			defer stopped.Done()
+			if err := target.Sink.Stop(); err != nil {
+				e.deps.Logger.Warn("stop push sink failed", "player_id", target.PlayerID, "err", err)
+			}
+		}(target)
 	}
+	stopped.Wait()
 	if e.preload != nil {
 		_ = e.preload.Close()
 		e.preload = nil
@@ -846,6 +856,7 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 
 	position := startAt
 	sampleBase := int64(0)
+	var carriedDelays map[string]time.Duration
 	if position > 0 {
 		sampleBase = int64(position.Seconds() * float64(e.format.SampleRate))
 	}
@@ -923,6 +934,14 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		resume := e.sinksOpen
 		e.mu.Unlock()
 		targets, _ := e.targets.Snapshot()
+		controls := e.controlSinks()
+		plan.AlignStart = len(targets) > 0
+		for _, s := range controls {
+			if err := s.Open(ctx, plan); err != nil {
+				e.fail(ctx, fmt.Errorf("open sink %s: %w", s.ID(), err))
+				return
+			}
+		}
 		// Mixing changes PCM, not the continuous sample timeline. Keep capable
 		// sinks open across crossfades too: TEARDOWN would discard the buffered
 		// overlap while the next decoder skips that same consumed prefix.
@@ -983,8 +1002,14 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 					}
 				}
 			}
+			if !resume {
+				start := e.deps.Clock().Add(e.deps.Latency)
+				if start.After(timeline.At(uint64(sampleBase))) {
+					timeline.Reset(start.Add(-time.Duration(float64(sampleBase)/float64(format.SampleRate)*float64(time.Second))).Add(-e.deps.Latency), e.deps.Latency)
+				}
+			}
 			for _, t := range targets {
-				if err := t.Sink.Start(timeline.At(uint64(sampleBase)).Add(t.Delay)); err != nil {
+				if err := t.Sink.Start(timeline.At(uint64(sampleBase))); err != nil {
 					e.fail(ctx, fmt.Errorf("start sink %s: %w", t.PlayerID, err))
 					return
 				}
@@ -995,12 +1020,7 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		}
 		// 控制型成员（本机客户端自拉流）与推送成员同组时也要收到 load/play，
 		// 否则浏览器那一端不会出声。它们不接收 PCM，只按指令自己拉流。
-		for _, s := range e.controlSinks() {
-			plan.AlignStart = len(targets) > 0
-			if err := s.Open(ctx, plan); err != nil {
-				e.fail(ctx, fmt.Errorf("open sink %s: %w", s.ID(), err))
-				return
-			}
+		for _, s := range controls {
 			if err := s.Start(timeline.At(uint64(sampleBase))); err != nil {
 				e.fail(ctx, fmt.Errorf("start sink %s: %w", s.ID(), err))
 				return
@@ -1010,6 +1030,13 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		runner := e.deps.Runners(timeline, e.targets, sampleBase, func(idx int64, at time.Time) {
 			e.onProgress(ctx, idx, at, track.Duration, format.SampleRate)
 		})
+		if resume && canGapless(targets) {
+			if state, ok := runner.(interface {
+				ResumeContentDelays(map[string]time.Duration)
+			}); ok {
+				state.ResumeContentDelays(carriedDelays)
+			}
+		}
 		// ReplayGain：分发器每曲新建，增益跟着曲目走，不跨曲残留。
 		e.applyReplayGain(ctx, runner, track.SongID)
 		// 同步校正环：与分发器同生命周期，ctx 结束即退出。
@@ -1055,6 +1082,11 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		}
 		frames, runErr := runner.Run(ctx, src)
 		cancelSync()
+		if state, ok := runner.(interface {
+			ContentDelays() map[string]time.Duration
+		}); ok {
+			carriedDelays = state.ContentDelays()
+		}
 		consumedNext := time.Duration(0)
 		if xf != nil {
 			consumedNext = time.Duration(xf.ConsumedNextFrames()) * time.Second / time.Duration(format.SampleRate)

@@ -17,6 +17,34 @@ type posSink struct {
 	report bool
 }
 
+type syntheticRAOPPosition struct{ *posSink }
+
+func (*syntheticRAOPPosition) Kind() sink.Kind { return sink.KindRAOP }
+
+type contentOffsetCorrector struct {
+	*fakeCorrector
+	offset time.Duration
+}
+
+func (c *contentOffsetCorrector) ContentDelay(string) time.Duration { return c.offset }
+
+func TestSyncDoesNotRepeatInsertedRAOPDelay(t *testing.T) {
+	a, b := newPosSink("a", 10*time.Second), newPosSink("b", 10*time.Second)
+	c := &contentOffsetCorrector{fakeCorrector: &fakeCorrector{sinks: map[string]*posSink{"a": a, "b": b}}, offset: time.Second}
+	loop := &SyncLoop{
+		Targets: sink.NewSet(
+			sink.Target{PlayerID: "a", Sink: a},
+			sink.Target{PlayerID: "b", Sink: &syntheticRAOPPosition{b}, Delay: time.Second}),
+		Timeline: NewTimeline(time.Now(), 44100, 0), Corrector: c,
+	}
+	for i := 0; i < 3; i++ {
+		loop.CheckOnce()
+	}
+	if c.count() != 0 {
+		t.Fatal("already inserted member delay triggered another correction")
+	}
+}
+
 func newPosSink(id string, pos time.Duration) *posSink {
 	return &posSink{Sink: fake.New(id), pos: pos, report: true}
 }

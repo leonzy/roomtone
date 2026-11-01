@@ -280,3 +280,11 @@ Status: lesson / promotion candidate / promoted (authoritative destination)
 - Logs: retain the 20 MiB per-file and seven-day policies while adding a 100 MiB aggregate limit, evicting chronological archives without unlinking active handles or unrelated files. Docker capture is separately limited to three 10 MiB files.
 - Validation: six guard policy tests plus logging/player regressions; site verification used binding checks and silent decoding only, with no initiated audio playback.
 - Seen 1× (2026-10-31).
+
+### MIX-002: Apply member delay to audio and dispatch controls concurrently
+
+- Scope: Xiaomi DLNA plus study RAOP group, 2026-11-01.
+- Evidence: both paused, but study still led by 0.5–1s. Start timestamps alone did not change PCM; pull Pause waited for push teardown.
+- Rule: prepare every member before starting; dispatch Pause/Stop concurrently. Positive push delay inserts PCM silence and shifts timestamps; negative delay skips PCM and compresses timestamps. Carry offsets across gapless tracks without repeating the prefix. Remove inserted offsets from RAOP synthetic position feedback to prevent repeated correction.
+- Validation: actual PCM-delay and parallel-Pause tests failed before the fix and pass afterward; preparation-order and gapless-offset tests added. StartedAt-only assertions were insufficient and now inspect the first non-silent PCM frame. Software and muted hardware tests do not prove acoustic synchronization.
+- Seen 1× (2026-11-01).

@@ -1062,8 +1062,8 @@ func (m *Manager) groupTierLocked(g *Group) SyncTier {
 
 // UpdateMember 调整成员的延迟补偿与音量偏移。
 //
-// delay_ms 是"这台设备比主控晚出声多少"：吸顶喇叭走线长、蓝牙箱自带缓冲，
-// 不给这个旋钮就只能整组迁就最慢的那台。volume_offset 让每台设备在自己
+// delay_ms 为正时给该推送成员增加 PCM 静音前导，为负时跳过对应 PCM；
+// 用于让较快设备等待较慢设备。volume_offset 让每台设备在自己
 // 的音量基准上做微调（书架箱和吸顶喇叭灵敏度差 6dB 很常见）。
 func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, delayMs, volumeOffset int) (GroupView, error) {
 	if delayMs < -2000 {

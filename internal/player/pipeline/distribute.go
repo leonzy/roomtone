@@ -46,8 +46,10 @@ type Distributor struct {
 	// Sleep 注入休眠（测试用，默认 time.Sleep）。
 	Sleep func(time.Duration)
 
-	mu     sync.Mutex
-	active *fanout
+	mu            sync.Mutex
+	active        *fanout
+	initialDelays map[string]time.Duration
+	lastDelays    map[string]time.Duration
 }
 
 // ErrNoSinks 没有可推送的 sink。
@@ -101,11 +103,13 @@ func (d *Distributor) Run(ctx context.Context, r io.Reader) (int, error) {
 	queue += 8
 	out := newFanout(queue, rate, frameSamples, d.OnSinkError, d.OnSinkDrop)
 	d.mu.Lock()
+	out.initialDelays = d.initialDelays
 	d.active = out
 	d.mu.Unlock()
 	defer func() {
 		out.close()
 		d.mu.Lock()
+		d.lastDelays = out.finalDelays
 		if d.active == out {
 			d.active = nil
 		}
@@ -217,6 +221,38 @@ func (d *Distributor) Pad(playerID string, dur time.Duration) error {
 // Corrector 把自身暴露成同步校正执行者（player.CorrectionRunner）。
 func (d *Distributor) Corrector() player.Corrector { return d }
 
+// ResumeContentDelays carries timestamp offsets across gapless tracks without
+// inserting a second silence prefix or moving RTP timestamps backwards.
+func (d *Distributor) ResumeContentDelays(offsets map[string]time.Duration) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.initialDelays = offsets
+}
+func (d *Distributor) ContentDelays() map[string]time.Duration {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.lastDelays
+}
+
+func (d *Distributor) ContentDelay(id string) time.Duration {
+	d.mu.Lock()
+	out := d.active
+	d.mu.Unlock()
+	if out == nil {
+		return 0
+	}
+	out.mu.Lock()
+	w := out.writers[id]
+	out.mu.Unlock()
+	if w == nil {
+		return 0
+	}
+	w.mu.Lock()
+	extra, rate := w.extra, w.rate
+	w.mu.Unlock()
+	return time.Duration(extra) * time.Second / time.Duration(rate)
+}
+
 // Stats 当前各路统计（监控与测试用）。
 func (d *Distributor) Stats() []SinkStats {
 	d.mu.Lock()
@@ -230,15 +266,17 @@ func (d *Distributor) Stats() []SinkStats {
 
 // fanout 每路一个写协程的分发器。
 type fanout struct {
-	mu      sync.Mutex
-	writers map[string]*sinkWriter
-	version uint64
-	queue   int
-	rate    int
-	samples int
-	onErr   func(string, error)
-	onDrop  func(string, int)
-	closed  bool
+	mu            sync.Mutex
+	writers       map[string]*sinkWriter
+	version       uint64
+	queue         int
+	rate          int
+	samples       int
+	onErr         func(string, error)
+	onDrop        func(string, int)
+	closed        bool
+	initialDelays map[string]time.Duration
+	finalDelays   map[string]time.Duration
 }
 
 func newFanout(queue, rate, samples int, onErr func(string, error), onDrop func(string, int)) *fanout {
@@ -280,6 +318,10 @@ func (f *fanout) reconcile(targets []sink.Target, version uint64) {
 			continue
 		}
 		w := newSinkWriter(t, f.queue, f.rate, f.samples, f.onErr, f.onDrop)
+		if offset, ok := f.initialDelays[id]; ok {
+			w.extra = int64(offset) * int64(w.rate) / int64(time.Second)
+			w.pad, w.skip = 0, 0
+		}
 		f.writers[id] = w
 		go w.run()
 	}
@@ -343,6 +385,16 @@ func (f *fanout) close() {
 		ws = append(ws, w)
 	}
 	f.mu.Unlock()
+	defer func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.finalDelays = make(map[string]time.Duration, len(ws))
+		for _, w := range ws {
+			w.mu.Lock()
+			f.finalDelays[w.id] = time.Duration(w.extra) * time.Second / time.Duration(w.rate)
+			w.mu.Unlock()
+		}
+	}()
 	deadline := time.After(drainTimeout)
 	for _, w := range ws {
 		select {
@@ -381,7 +433,7 @@ type sinkWriter struct {
 }
 
 func newSinkWriter(t sink.Target, queue, rate, samples int, onErr func(string, error), onDrop func(string, int)) *sinkWriter {
-	return &sinkWriter{
+	w := &sinkWriter{
 		id:      t.PlayerID,
 		ch:      make(chan sink.Frame, queue),
 		done:    make(chan struct{}),
@@ -394,6 +446,12 @@ func newSinkWriter(t sink.Target, queue, rate, samples int, onErr func(string, e
 		eq:      t.EQ,
 		delay:   t.Delay,
 	}
+	if t.Delay > 0 {
+		w.padFor(t.Delay)
+	} else if t.Delay < 0 {
+		w.skipFor(-t.Delay)
+	}
+	return w
 }
 
 func (w *sinkWriter) sinkRef() sink.PushSink {
@@ -404,6 +462,12 @@ func (w *sinkWriter) sinkRef() sink.PushSink {
 
 func (w *sinkWriter) update(t sink.Target) {
 	w.mu.Lock()
+	delta := t.Delay - w.delay
+	if delta > 0 {
+		w.pad += int64(delta) * int64(w.rate) / int64(time.Second)
+	} else if delta < 0 {
+		w.skip += int64(-delta) * int64(w.rate) / int64(time.Second)
+	}
 	w.eq = t.EQ
 	w.delay = t.Delay
 	w.mu.Unlock()
@@ -464,18 +528,19 @@ func (w *sinkWriter) takePad() int64 {
 }
 
 // shouldDrop 本帧是否要丢（同步校正）。
-func (w *sinkWriter) shouldDrop() bool {
+func (w *sinkWriter) shouldDrop(samples int64) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.skip <= 0 {
 		return false
 	}
-	if w.skip >= int64(w.samples) {
-		w.skip -= int64(w.samples)
+	if w.skip >= samples {
+		w.skip -= samples
 	} else {
 		// 不足一帧：整帧丢弃，避免半帧对齐把序号搞乱。
 		w.skip = 0
 	}
+	w.extra -= samples
 	w.skipped++
 	return true
 }
@@ -483,7 +548,7 @@ func (w *sinkWriter) shouldDrop() bool {
 func (w *sinkWriter) run() {
 	defer close(w.done)
 	for f := range w.ch {
-		if w.shouldDrop() {
+		if w.shouldDrop(int64(len(f.Data) / 4)) {
 			continue
 		}
 		if pad := w.takePad(); pad > 0 {
@@ -496,6 +561,7 @@ func (w *sinkWriter) run() {
 		w.mu.Unlock()
 		if extra != 0 {
 			f.SampleIndex += extra
+			f.PlayAt = f.PlayAt.Add(time.Duration(extra) * time.Second / time.Duration(w.rate))
 		}
 		if eq != nil {
 			eq.ProcessInPlace(f.Data)
@@ -526,10 +592,11 @@ func (w *sinkWriter) writeSilence(n int64, base int64, playAt time.Time) {
 		}
 		w.mu.Lock()
 		idx := base + w.extra
+		at := playAt.Add(time.Duration(w.extra) * time.Second / time.Duration(w.rate))
 		w.extra += chunk
 		w.mu.Unlock()
 		data := make([]byte, chunk*4)
-		if err := s.WriteFrame(sink.Frame{SampleIndex: idx, PlayAt: playAt, Data: data}); err != nil {
+		if err := s.WriteFrame(sink.Frame{SampleIndex: idx, PlayAt: at, Data: data}); err != nil {
 			w.mu.Lock()
 			w.errs++
 			w.lastErr = err

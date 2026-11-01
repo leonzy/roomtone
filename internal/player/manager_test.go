@@ -368,7 +368,7 @@ func TestAddMemberMidPlayback(t *testing.T) {
 	}
 }
 
-// TestMemberDelayB04 B5-04：delay_ms 换算成起播偏移，误差 ≤1 帧（20ms）。
+// TestMemberDelayB04 checks actual musical PCM presentation, not just Start arguments.
 func TestMemberDelayB04(t *testing.T) {
 	m, builder, _ := newTestManager(t, "a", "b")
 	ctx := context.Background()
@@ -390,9 +390,23 @@ func TestMemberDelayB04(t *testing.T) {
 	waitFor(t, "两台都起播", 2*time.Second, func() bool {
 		return !a.StartedAt().IsZero() && !b.StartedAt().IsZero()
 	})
-	diff := b.StartedAt().Sub(a.StartedAt())
+	firstSignal := func(s *fake.Sink) (fake.FrameRecord, bool) {
+		for _, f := range s.Frames() {
+			if !f.Silent {
+				return f, true
+			}
+		}
+		return fake.FrameRecord{}, false
+	}
+	waitFor(t, "真实音乐帧", time.Second, func() bool { _, aa := firstSignal(a); _, bb := firstSignal(b); return aa && bb })
+	af, _ := firstSignal(a)
+	bf, _ := firstSignal(b)
+	diff := bf.PlayAt.Sub(af.PlayAt)
 	if diff < 40*time.Millisecond || diff > 80*time.Millisecond {
 		t.Fatalf("delay_ms=60 的起播偏移是 %v，误差超过 1 帧", diff)
+	}
+	if !a.StartedAt().Equal(b.StartedAt()) {
+		t.Fatal("member delay was applied twice through Start and PCM")
 	}
 }
 
