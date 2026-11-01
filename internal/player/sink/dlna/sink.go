@@ -174,7 +174,7 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	); err != nil {
 		return err
 	}
-	if seekTo > 0 {
+	if seekTo > 0 && !s.patch.SeekAfterPlay {
 		if err := s.seekTo(ctx, seekTo); err != nil {
 			return err
 		}
@@ -219,12 +219,20 @@ func (s *Sink) Start(at time.Time) error {
 		}
 		ctx, cancel := context.WithTimeout(playCtx, s.opts.CommandTimeout)
 		defer cancel()
-		if err := s.playWithRetry(ctx); err != nil {
+		if err := s.transportWithRetry(ctx, "Play", Arg{"InstanceID", "0"}, Arg{"Speed", "1"}); err != nil {
 			if playCtx.Err() == nil {
 				s.emit(sink.Event{Type: sink.EventError, Err: err})
 			}
 			return
 		}
+		s.mu.Lock()
+		position := s.plan.Position
+		s.mu.Unlock()
+		if s.patch.SeekAfterPlay && position > 0 {
+			if err := s.seekTo(ctx, position); err != nil {
+				if playCtx.Err() == nil { s.emit(sink.Event{Type:sink.EventError, Err:err}) }
+				return
+			}
 		s.mu.Lock()
 		if playCtx.Err() != nil {
 			s.mu.Unlock()
@@ -238,9 +246,9 @@ func (s *Sink) Start(at time.Time) error {
 	return nil
 }
 
-func (s *Sink) playWithRetry(ctx context.Context) error {
+func (s *Sink) transportWithRetry(ctx context.Context, action string, args ...Arg) error {
 	for attempt := 0; ; attempt++ {
-		err := s.call(ctx, SvcAVTransport, "Play", Arg{"InstanceID", "0"}, Arg{"Speed", "1"})
+		err := s.call(ctx, SvcAVTransport, action, args...)
 		if err == nil || attempt == 2 || ctx.Err() != nil {
 			return err
 		}
@@ -475,7 +483,7 @@ func (s *Sink) seekTo(ctx context.Context, pos time.Duration) error {
 	if unit == "" {
 		unit = "REL_TIME"
 	}
-	return s.call(ctx, SvcAVTransport, "Seek",
+	return s.transportWithRetry(ctx, "Seek",
 		Arg{"InstanceID", "0"},
 		Arg{"Unit", unit},
 		Arg{"Target", formatDuration(pos)},

@@ -111,3 +111,34 @@ func TestRendererReloadSupportsSeekAndNextTrack(t *testing.T) {
 		t.Fatalf("reload sequence %s want %s", got, want)
 	}
 }
+
+func TestXiaomiS12SeeksAfterPlay(t *testing.T) {
+	f := newFakeRenderer(t)
+	dev := f.device(t)
+	dev.ModelName = "S12"
+	s := New("s12", dev, nil, Options{PollInterval: time.Hour})
+	defer s.Close()
+	if err := s.Open(context.Background(), sink.StreamPlan{StreamURL: "http://example.invalid/a.flac", Position: 30 * time.Second}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(f.calls(), ","); got != "SetAVTransportURI" {
+		t.Fatalf("seek before Play resets on S12: %s", got)
+	}
+	if err := s.Start(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case event := <-s.Events():
+			if event.Type == sink.EventPlaying {
+				if got := strings.Join(f.calls(), ","); got != "SetAVTransportURI,Play,Seek" {
+					t.Fatal(got)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("post-Play seek did not finish")
+		}
+	}
+}

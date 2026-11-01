@@ -12,6 +12,8 @@ type Patch struct {
 	TolerateEmptyMetadata bool
 	// SeekUnit 覆盖 seek 单位，空则用 REL_TIME。
 	SeekUnit string
+	// Xiaomi S12 resets pre-play seeks when Play starts.
+	SeekAfterPlay bool
 	// DisableEvents true 表示跳过 SUBSCRIBE，直接 3s 轮询。
 	DisableEvents bool
 	// SkipSetNext 设备没有 SetNextAVTransportURI（无 gapless）。
@@ -26,6 +28,7 @@ var vendors = []struct {
 	match string
 	patch Patch
 }{
+	{"s12", Patch{SeekUnit: "REL_TIME", SeekAfterPlay: true}},
 	{"sonos", Patch{TolerateEmptyMetadata: true, SeekUnit: "REL_TIME", SkipSetNext: true}},
 	{"kodi", Patch{SeekUnit: "REL_TIME", DisableEvents: false}},
 	{"xbmc", Patch{SeekUnit: "REL_TIME", DisableEvents: false}},
