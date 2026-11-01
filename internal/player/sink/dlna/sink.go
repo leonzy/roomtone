@@ -274,11 +274,27 @@ func (s *Sink) SetVolume(v float64) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.opts.CommandTimeout)
 	defer cancel()
-	return s.call(ctx, SvcRenderingControl, "SetVolume",
+	if vol == 0 {
+		if err := s.call(ctx, SvcRenderingControl, "SetMute", Arg{"InstanceID", "0"}, Arg{"Channel", "Master"}, Arg{"DesiredMute", "1"}); err != nil {
+			return err
+		}
+	}
+	if err := s.call(ctx, SvcRenderingControl, "SetVolume",
 		Arg{"InstanceID", "0"},
 		Arg{"Channel", "Master"},
 		Arg{"DesiredVolume", strconv.Itoa(vol)},
-	)
+	); err != nil {
+		return err
+	}
+	if vol > 0 {
+		err := s.call(ctx, SvcRenderingControl, "SetMute", Arg{"InstanceID", "0"}, Arg{"Channel", "Master"}, Arg{"DesiredMute", "0"})
+		var fault *ActionError
+		if errors.As(err, &fault) && fault.Code == 401 {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // Stop 停止播放。

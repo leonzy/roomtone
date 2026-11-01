@@ -225,9 +225,21 @@ func TestSinkCallSequence(t *testing.T) {
 	}
 
 	got := strings.Join(f.calls(), ",")
-	want := "SetAVTransportURI,Play,SetVolume,Seek,Stop"
+	want := "SetAVTransportURI,Play,SetVolume,SetMute,Seek,Stop"
 	if got != want {
 		t.Fatalf("调用序列错误:\n got=%s\nwant=%s", got, want)
+	}
+}
+
+func TestZeroVolumeMutesBeforeClampedHardwareVolume(t *testing.T) {
+	f := newFakeRenderer(t)
+	s := New("mute", f.device(t), nil, Options{})
+	defer s.Close()
+	if err := s.SetVolume(0); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(f.calls(), ","); got != "SetMute,SetVolume" {
+		t.Fatalf("zero must mute before renderer clamps volume: %s", got)
 	}
 }
 
