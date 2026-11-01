@@ -288,3 +288,10 @@ Status: lesson / promotion candidate / promoted (authoritative destination)
 - Rule: prepare every member before starting; dispatch Pause/Stop concurrently. Positive push delay inserts PCM silence and shifts timestamps; negative delay skips PCM and compresses timestamps. Carry offsets across gapless tracks without repeating the prefix. Remove inserted offsets from RAOP synthetic position feedback to prevent repeated correction.
 - Validation: actual PCM-delay and parallel-Pause tests failed before the fix and pass afterward; preparation-order and gapless-offset tests added. StartedAt-only assertions were insufficient and now inspect the first non-silent PCM frame. Software and muted hardware tests do not prove acoustic synchronization.
 - Seen 1× (2026-11-01).
+
+### CAL-001: Distinguish persistence from live application
+
+- Scope: group calibration, 2026-11-01. UpdateMember ignored SaveMember failures, allowing false success and loss on restart.
+- Rule: return persistence failures without changing live values; report saved-but-not-applied failures explicitly. Pull outputs apply calibration at their next start, and feedback uses active offsets rather than pending settings.
+- Evidence: new tests inject disk failure, assert unchanged memory, restore a Manager from the same store, and verify control start timestamps and calibration-aware feedback.
+- Seen 1× (2026-11-01).

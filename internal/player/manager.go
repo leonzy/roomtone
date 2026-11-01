@@ -1085,12 +1085,18 @@ func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, de
 		return GroupView{}, ErrGroupNotFound
 	}
 	found := false
-	position := 0
 	for i := range g.Members {
 		if g.Members[i].PlayerID == playerID {
+			if m.deps.Store != nil {
+				member := g.Members[i]
+				member.DelayMs, member.VolumeOffset = delayMs, volumeOffset
+				if err := m.deps.Store.SaveMember(ctx, groupID, member); err != nil {
+					m.mu.Unlock()
+					return GroupView{}, fmt.Errorf("save member calibration: %w", err)
+				}
+			}
 			g.Members[i].DelayMs = delayMs
 			g.Members[i].VolumeOffset = volumeOffset
-			position = g.Members[i].Position
 			found = true
 		}
 	}
@@ -1098,11 +1104,10 @@ func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, de
 	if !found {
 		return GroupView{}, fmt.Errorf("%w: %s", ErrPlayerNotFound, playerID)
 	}
-	if m.deps.Store != nil {
-		_ = m.deps.Store.SaveMember(ctx, groupID, Member{PlayerID: playerID, DelayMs: delayMs, VolumeOffset: volumeOffset, Position: position})
-	}
 	// 延迟补偿要立刻生效：重建目标时把新 Delay 带进 sink.Target。
-	m.rebuildSinks(ctx, groupID)
+	if err := m.rebuildSinks(ctx, groupID); err != nil {
+		return GroupView{}, fmt.Errorf("calibration saved but applying failed: %w", err)
+	}
 	if m.deps.Bus != nil {
 		m.deps.Bus.Publish(Event{Type: EventMemberChanged, GroupID: groupID, PlayerID: playerID, Action: "update"})
 	}
@@ -1412,6 +1417,7 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) error {
 	e.SetFormat(format)
 	targets := make([]sink.Target, 0, len(players))
 	controls := make([]sink.Sink, 0, len(players))
+	controlDelays := make(map[string]time.Duration)
 	for _, p := range players {
 		// 待机成员不参与分发，也不进同步校正环——否则每 950ms 都去"修"
 		// 一台被用户主动关掉的音箱，日志里全是无法收敛的偏差。
@@ -1436,6 +1442,7 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) error {
 			// 但必须交给引擎：服务端要给它下发 load/play 指令，否则
 			// 客户端永远收不到播放命令，组里只有它时还会误报 no sinks。
 			controls = append(controls, s)
+			controlDelays[p.ID] = memberDelay(*g, p.ID)
 			continue
 		}
 		targets = append(targets, sink.Target{
@@ -1445,6 +1452,7 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) error {
 			Delay:    memberDelay(*g, p.ID),
 		})
 	}
+	e.SetControlDelays(controlDelays)
 	if err := e.SetControls(controls); err != nil {
 		return err
 	}

@@ -14,6 +14,7 @@ type ControlSyncLoop struct {
 	Reference func() (int64, time.Duration, bool)
 	Clock     func() time.Time
 	OnResult  func(string, time.Duration, error)
+	Delay     func(string) time.Duration
 	states    map[string]controlSyncState
 }
 
@@ -66,6 +67,9 @@ func (l *ControlSyncLoop) CheckOnce(ctx context.Context) {
 			return
 		}
 		expected = currentExpected
+		if l.Delay != nil {
+			expected = max(time.Duration(0), expected-l.Delay(member.ID()))
+		}
 		if l.Clock != nil {
 			now = l.Clock()
 		} else {
@@ -136,7 +140,7 @@ func (e *Engine) alignmentReference(ctx context.Context) (int64, time.Duration, 
 }
 
 func (e *Engine) alignControls(ctx context.Context) {
-	loop := ControlSyncLoop{Members: e.controlSinks, Reference: func() (int64, time.Duration, bool) { return e.alignmentReference(ctx) }, Clock: e.deps.Clock,
+	loop := ControlSyncLoop{Members: e.controlSinks, Reference: func() (int64, time.Duration, bool) { return e.alignmentReference(ctx) }, Clock: e.deps.Clock, Delay: e.activeControlDelay,
 		OnResult: func(id string, delta time.Duration, err error) {
 			if err != nil {
 				e.deps.Logger.Warn("pull playback alignment failed", "player_id", id, "delta_ms", delta.Milliseconds(), "err", err)

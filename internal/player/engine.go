@@ -151,7 +151,34 @@ type Engine struct {
 	//
 	// 与 targets 分开存：sink.Set 的元素类型是 PushSink，控制型 sink 进不去。
 	// 纯控制型组（组内只有本机）走委派播放，见 runDelegated。
-	controls []sink.Sink
+	controls            []sink.Sink
+	controlDelays       map[string]time.Duration
+	activeControlDelays map[string]time.Duration
+}
+
+// SetControlDelays applies saved calibration on the next load/start. Push
+// calibration is applied live by the PCM distributor instead.
+func (e *Engine) SetControlDelays(delays map[string]time.Duration) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.controlDelays = delays
+}
+
+func (e *Engine) startControl(s sink.Sink, at time.Time) error {
+	e.mu.Lock()
+	delay := e.controlDelays[s.ID()]
+	if e.activeControlDelays == nil {
+		e.activeControlDelays = make(map[string]time.Duration)
+	}
+	e.activeControlDelays[s.ID()] = delay
+	e.mu.Unlock()
+	return s.Start(at.Add(delay))
+}
+
+func (e *Engine) activeControlDelay(id string) time.Duration {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.activeControlDelays[id]
 }
 
 // NewEngine 创建引擎。
@@ -294,7 +321,7 @@ func (e *Engine) SetControls(cs []sink.Sink) error {
 				_ = s.Stop()
 				return fmt.Errorf("open control %s: %w", s.ID(), err)
 			}
-			if err := s.Start(timeline.At(uint64(cursor))); err != nil {
+			if err := e.startControl(s, timeline.At(uint64(cursor))); err != nil {
 				_ = s.Stop()
 				return fmt.Errorf("start control %s: %w", s.ID(), err)
 			}
@@ -937,7 +964,11 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		controls := e.controlSinks()
 		plan.AlignStart = len(targets) > 0
 		for _, s := range controls {
-			if err := s.Open(ctx, plan); err != nil {
+			controlPlan := plan
+			e.mu.Lock()
+			controlPlan.AlignStart = controlPlan.AlignStart || e.controlDelays[s.ID()] != 0
+			e.mu.Unlock()
+			if err := s.Open(ctx, controlPlan); err != nil {
 				e.fail(ctx, fmt.Errorf("open sink %s: %w", s.ID(), err))
 				return
 			}
@@ -1021,7 +1052,7 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		// 控制型成员（本机客户端自拉流）与推送成员同组时也要收到 load/play，
 		// 否则浏览器那一端不会出声。它们不接收 PCM，只按指令自己拉流。
 		for _, s := range controls {
-			if err := s.Start(timeline.At(uint64(sampleBase))); err != nil {
+			if err := e.startControl(s, timeline.At(uint64(sampleBase))); err != nil {
 				e.fail(ctx, fmt.Errorf("start sink %s: %w", s.ID(), err))
 				return
 			}
@@ -1201,17 +1232,29 @@ func (e *Engine) runDelegated(ctx context.Context, startAt time.Duration) {
 
 		// 指令下发：load 带起始位置，play 带绝对起播时刻，客户端据此对齐。
 		at := e.deps.Clock()
+		e.mu.Lock()
+		for _, delay := range e.controlDelays {
+			if delay != 0 {
+				at = at.Add(2 * time.Second)
+				break
+			}
+		}
+		e.mu.Unlock()
 		controls := e.controlSinks()
 		if len(controls) == 0 {
 			e.fail(ctx, errors.New("区域没有可用设备"))
 			return
 		}
 		for _, s := range controls {
-			if err := s.Open(ctx, plan); err != nil {
+			controlPlan := plan
+			e.mu.Lock()
+			controlPlan.AlignStart = e.controlDelays[s.ID()] != 0
+			e.mu.Unlock()
+			if err := s.Open(ctx, controlPlan); err != nil {
 				e.fail(ctx, fmt.Errorf("open sink %s: %w", s.ID(), err))
 				return
 			}
-			if err := s.Start(at); err != nil {
+			if err := e.startControl(s, at); err != nil {
 				e.fail(ctx, fmt.Errorf("start sink %s: %w", s.ID(), err))
 				return
 			}

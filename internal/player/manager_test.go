@@ -26,6 +26,46 @@ type memStore struct {
 	states  map[string]player.StateSnapshot
 }
 
+type failingCalibrationStore struct {
+	*memStore
+	fail bool
+}
+
+func (s *failingCalibrationStore) SaveMember(ctx context.Context, id string, member player.Member) error {
+	if s.fail {
+		return errors.New("disk full")
+	}
+	return s.memStore.SaveMember(ctx, id, member)
+}
+
+func TestMemberCalibrationSurvivesRestoreAndReportsSaveFailure(t *testing.T) {
+	ctx := context.Background()
+	store := &failingCalibrationStore{memStore: newMemStore()}
+	m, _, _ := newTestManagerWithStore(t, store, time.Now, "a")
+	if _, err := m.UpdateMember(ctx, "grp-a", "a", 1050, 3); err != nil {
+		t.Fatal(err)
+	}
+	restored := player.NewManager(player.ManagerDeps{Store: store})
+	if err := restored.Restore(ctx); err != nil {
+		t.Fatal(err)
+	}
+	view, err := restored.GetGroup("grp-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Members[0].DelayMs != 1050 || view.Members[0].VolumeOffset != 3 {
+		t.Fatalf("calibration lost: %+v", view.Members)
+	}
+	store.fail = true
+	if _, err := m.UpdateMember(ctx, "grp-a", "a", 1500, 7); err == nil {
+		t.Fatal("save failure was hidden")
+	}
+	view, _ = m.GetGroup("grp-a")
+	if view.Members[0].DelayMs != 1050 || view.Members[0].VolumeOffset != 3 {
+		t.Fatal("failed save changed live state")
+	}
+}
+
 func TestRestoreIgnoresLegacyCompanionServicesWithoutDeletingRows(t *testing.T) {
 	ctx := context.Background()
 	store := newMemStore()
