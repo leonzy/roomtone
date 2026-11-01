@@ -229,6 +229,12 @@ func (s *Sink) Start(at time.Time) error {
 		position := s.plan.Position
 		s.mu.Unlock()
 		if s.patch.SeekAfterPlay && position > 0 {
+			if err := s.waitForSeekReady(ctx); err != nil {
+				if playCtx.Err() == nil {
+					s.emit(sink.Event{Type: sink.EventError, Err: err})
+				}
+				return
+			}
 			if err := s.seekTo(ctx, position); err != nil {
 				if playCtx.Err() == nil {
 					s.emit(sink.Event{Type: sink.EventError, Err: err})
@@ -242,11 +248,34 @@ func (s *Sink) Start(at time.Time) error {
 			return
 		}
 		s.playing = true
+		s.position = position
 		s.positionAt = time.Now()
 		s.mu.Unlock()
 		s.emit(sink.Event{Type: sink.EventPlaying})
 	}()
 	return nil
+}
+
+// S12 acknowledges Play before its decoder is ready and silently drops seeks
+// during that interval. A moving device position confirms it can accept Seek.
+func (s *Sink) waitForSeekReady(ctx context.Context) error {
+	deadline := time.NewTimer(2500 * time.Millisecond)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		values, err := s.cl.Call(ctx, s.dev.Services[SvcAVTransport], "GetPositionInfo", Arg{"InstanceID", "0"})
+		if err == nil && parseDuration(values["RelTime"]) > 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return errors.New("dlna: renderer did not become ready for seek")
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *Sink) transportWithRetry(ctx context.Context, action string, args ...Arg) error {

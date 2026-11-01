@@ -132,7 +132,7 @@ func TestXiaomiS12SeeksAfterPlay(t *testing.T) {
 		select {
 		case event := <-s.Events():
 			if event.Type == sink.EventPlaying {
-				if got := strings.Join(f.calls(), ","); got != "SetAVTransportURI,Play,Seek" {
+				if got := strings.Join(f.calls(), ","); got != "SetAVTransportURI,Play,GetPositionInfo,Seek" {
 					t.Fatal(got)
 				}
 				return
