@@ -230,9 +230,12 @@ func (s *Sink) Start(at time.Time) error {
 		s.mu.Unlock()
 		if s.patch.SeekAfterPlay && position > 0 {
 			if err := s.seekTo(ctx, position); err != nil {
-				if playCtx.Err() == nil { s.emit(sink.Event{Type:sink.EventError, Err:err}) }
+				if playCtx.Err() == nil {
+					s.emit(sink.Event{Type: sink.EventError, Err: err})
+				}
 				return
 			}
+		}
 		s.mu.Lock()
 		if playCtx.Err() != nil {
 			s.mu.Unlock()
