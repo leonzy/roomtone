@@ -1,6 +1,7 @@
 [submodule "pkg/tag"]
 	path = pkg/tag
-	url = https://github.com/hanxi/tag.git
+	url = https://github.com/leonzy/tag.git
+	branch = main
 [submodule "clients/player"]
 	path = clients/player
 	url = https://github.com/leonzy/roomtone-player.git

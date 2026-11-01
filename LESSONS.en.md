@@ -302,3 +302,11 @@ Status: lesson / promotion candidate / promoted (authoritative destination)
 - Rule: store relative lag on DLNA devices, calculate group compensation automatically, add none for solo playback, and do not stack legacy offsets. Retain settings across rediscovery and regrouping.
 - Evidence: solo/exact/mixed/multiple-DLNA/default/standby policy tests plus failure/rediscovery/restore tests passed. Millisecond inputs and unit tests do not prove acoustic accuracy.
 - Seen 1× (2026-11-01).
+
+### WAV-001: Inspect both metadata chunks before assuming Unicode is lost
+
+- Scope: WAV tag reading, 2026-11-01. LIST/INFO contained literal ASCII question marks, while lowercase id3 retained correct UTF-16 Chinese labels. The reader accepted uppercase ID3 only.
+- Rule: accept established chunk spellings and recover display from existing file tags rather than masking a parser bug with online scraping. Database refresh and audio-file tag writing are separate operations.
+- Evidence: dual-tag regression failed before the fix and passed afterward; tag suite and services/handlers/app tests passed. Read-only NAS parsing recovered the original tags. Targeted recovery verifies SHA-256 and avoids a whole-library reimport.
+- Dependency: keep module github.com/hanxi/tag; the Git submodule uses leonzy/tag's compatibility fix, retaining upstream as a remote.
+- Seen 1× (2026-11-01).
