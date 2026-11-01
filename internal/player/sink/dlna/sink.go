@@ -43,6 +43,7 @@ type Sink struct {
 	closed     bool
 	volume     int
 	position   time.Duration
+	positionAt time.Time
 	startAt    time.Time
 	sub        *Subscription
 	done       chan struct{}
@@ -141,6 +142,7 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	}
 	s.started = true
 	s.position = plan.Position
+	s.positionAt = time.Now()
 	meta := BuildMetadata(Item{
 		Title:    plan.Title,
 		Artist:   plan.Artist,
@@ -216,6 +218,7 @@ func (s *Sink) Start(at time.Time) error {
 			return
 		}
 		s.playing = true
+		s.positionAt = time.Now()
 		s.mu.Unlock()
 		s.emit(sink.Event{Type: sink.EventPlaying})
 	}()
@@ -251,6 +254,7 @@ func (s *Sink) Seek(sample uint64) error {
 	}
 	pos := time.Duration(float64(sample) / float64(rate) * float64(time.Second))
 	s.position = pos
+	s.positionAt = time.Now()
 	s.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), s.opts.CommandTimeout)
 	defer cancel()
@@ -384,6 +388,7 @@ func (s *Sink) HandleNotify(body []byte) {
 	if v, ok := vars["RelativeTimePosition"]; ok {
 		s.mu.Lock()
 		s.position = parseDuration(v)
+		s.positionAt = time.Now()
 		pos := s.position
 		s.mu.Unlock()
 		s.emit(sink.Event{Type: sink.EventProgress, Position: pos})
@@ -407,7 +412,14 @@ func (s *Sink) PlaybackPosition() (time.Duration, bool) {
 	if !s.playing {
 		return 0, false
 	}
-	return s.position, true
+	position := s.position
+	if !s.positionAt.IsZero() {
+		position += time.Since(s.positionAt)
+	}
+	if s.plan.Duration > 0 && position > s.plan.Duration {
+		position = s.plan.Duration
+	}
+	return position, true
 }
 
 // Position 当前播放位置（轮询/事件更新的最近值）。
@@ -530,6 +542,7 @@ func (s *Sink) poll(ctx context.Context) {
 	pos := parseDuration(out["RelTime"])
 	s.mu.Lock()
 	s.position = pos
+	s.positionAt = time.Now()
 	s.mu.Unlock()
 	s.emit(sink.Event{Type: sink.EventProgress, Position: pos})
 }
@@ -538,6 +551,12 @@ func (s *Sink) onTransportState(st string) {
 	s.mu.Lock()
 	prevPlaying := s.playing
 	s.playing = st == "PLAYING"
+	if prevPlaying && !s.playing && !s.positionAt.IsZero() {
+		s.position += time.Since(s.positionAt)
+	}
+	if prevPlaying != s.playing {
+		s.positionAt = time.Now()
+	}
 	nowPlaying := s.playing
 	s.mu.Unlock()
 	switch st {

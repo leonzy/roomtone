@@ -72,3 +72,22 @@ func TestStopCancelsScheduledPlay(t *testing.T) {
 		}
 	}
 }
+
+func TestPlaybackPositionAdvancesBetweenRendererReports(t *testing.T) {
+	f := newFakeRenderer(t)
+	s := New("position", f.device(t), nil, Options{})
+	defer s.Close()
+	s.mu.Lock()
+	s.started, s.playing = true, true
+	s.position, s.positionAt = 10*time.Second, time.Now().Add(-2*time.Second)
+	s.plan.Duration = time.Minute
+	s.mu.Unlock()
+	position, valid := s.PlaybackPosition()
+	if !valid || position < 12*time.Second || position > 12100*time.Millisecond {
+		t.Fatalf("stale position reused between polls: %v %v", position, valid)
+	}
+	s.onTransportState("PAUSED_PLAYBACK")
+	if _, valid := s.PlaybackPosition(); valid {
+		t.Fatal("paused position is still extrapolated")
+	}
+}
