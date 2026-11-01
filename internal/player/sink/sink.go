@@ -175,6 +175,9 @@ type StreamPlan struct {
 	Live         bool
 	// AlignStart keeps pull playback on the common presentation clock in mixed groups.
 	AlignStart bool
+	// RangeRequests confirms the media offset actually requested by a pull device.
+	RangeRequests <-chan time.Duration `json:"-"`
+	ReleaseStream func()               `json:"-"`
 	// AcceptedCodecs is populated by pull renderers after protocol discovery.
 	AcceptedCodecs []Codec
 	Position       time.Duration

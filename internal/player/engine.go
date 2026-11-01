@@ -562,12 +562,8 @@ func (e *Engine) Seek(ctx context.Context, position time.Duration) error {
 		e.startLocked(ctx, position)
 	}
 	e.mu.Unlock()
-	if wasPlaying {
-		rate := float64(e.Format().SampleRate)
-		e.commandControls("seek", func(s sink.Sink) error {
-			return s.Seek(uint64(position.Seconds() * rate))
-		})
-	}
+	// The new loop loads every control with the requested position. A second
+	// direct Seek races that load and can address the old or stopped session.
 	e.persistState()
 	e.emitState()
 	return nil

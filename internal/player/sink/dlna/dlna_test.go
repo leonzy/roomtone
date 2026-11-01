@@ -3,6 +3,7 @@ package dlna
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -122,10 +123,13 @@ func TestFormatAndParseDuration(t *testing.T) {
 
 // fakeRenderer 假 DLNA 设备。
 type fakeRenderer struct {
-	srv  *httptest.Server
-	mu   sync.Mutex
-	acts []string
-	fail bool
+	srv        *httptest.Server
+	mu         sync.Mutex
+	acts       []string
+	fail       bool
+	position   string
+	ignoreSeek bool
+	state      string
 }
 
 func newFakeRenderer(t *testing.T) *fakeRenderer {
@@ -137,9 +141,30 @@ func newFakeRenderer(t *testing.T) *fakeRenderer {
 		if i := strings.LastIndex(action, "#"); i >= 0 {
 			action = action[i+1:]
 		}
+		var target string
+		if action == "Seek" {
+			body, _ := io.ReadAll(r.Body)
+			values, _ := ParseEnvelope(body)
+			target = values["Target"]
+		}
 		f.mu.Lock()
 		f.acts = append(f.acts, action)
 		fail := f.fail
+		if !fail {
+			switch action {
+			case "Seek":
+				if !f.ignoreSeek {
+					f.position = target
+				}
+			case "Play":
+				f.state = "PLAYING"
+			case "Pause":
+				f.state = "PAUSED_PLAYBACK"
+			case "Stop":
+				f.state = "STOPPED"
+			}
+		}
+		position, state := f.position, f.state
 		f.mu.Unlock()
 
 		if fail {
@@ -150,9 +175,15 @@ func newFakeRenderer(t *testing.T) *fakeRenderer {
 		var extra string
 		switch action {
 		case "GetTransportInfo":
-			extra = `<CurrentTransportState>PLAYING</CurrentTransportState>`
+			if state == "" {
+				state = "PLAYING"
+			}
+			extra = `<CurrentTransportState>` + state + `</CurrentTransportState>`
 		case "GetPositionInfo":
-			extra = `<RelTime>0:00:12</RelTime>`
+			if position == "" {
+				position = "0:00:12"
+			}
+			extra = `<RelTime>` + position + `</RelTime>`
 		}
 		fmt.Fprintf(w, `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>`+
 			`<u:%sResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">%s</u:%sResponse>`+

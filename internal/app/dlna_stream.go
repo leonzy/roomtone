@@ -23,7 +23,10 @@ import (
 )
 
 // Stream capabilities authorize one song and format, never the user's account.
-type dlnaStreams struct{ key [32]byte }
+type dlnaStreams struct {
+	key [32]byte
+	dlnaRangeRegistry
+}
 
 func newDLNAStreams() *dlnaStreams {
 	s := &dlnaStreams{}
@@ -79,7 +82,11 @@ func (s *dlnaStreams) protect(next http.HandlerFunc) http.HandlerFunc {
 		if r.Header.Get("getcontentFeatures.dlna.org") == "1" {
 			w.Header().Set("contentFeatures.dlna.org", dlna.ContentFeatures(!original, live))
 		}
-		next(w, cloned)
+		response := w
+		if r.Method == http.MethodGet {
+			response = s.observeResponse(w, q.Get("ticket"))
+		}
+		next(response, cloned)
 	}
 }
 
@@ -114,6 +121,7 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 		}
 	}
 	native := strings.EqualFold(format, sourceFormat) && !normalize && song.CueSourcePath == ""
+	preparedPath := song.FilePath
 	// Prepare before SetAVTransportURI/Play so a slow conversion does not leave
 	// the renderer waiting on an HTTP response, and errors reach the zone UI.
 	if song.Type != models.TypeRadio && !song.IsLive {
@@ -125,9 +133,11 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 			}
 		}
 		if !native {
-			if _, err := a.cacheService.GetOrTranscode(ctx, source, song, format, 0, -1, normalize); err != nil {
+			if preparedPath, err = a.cacheService.GetOrTranscode(ctx, source, song, format, 0, -1, normalize); err != nil {
 				return plan, fmt.Errorf("dlna: prepare %s output: %w", format, err)
 			}
+		} else {
+			preparedPath = source
 		}
 	}
 	plan.Format.Codec = sink.Codec(format)
@@ -143,6 +153,12 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 	if plan.Live {
 		ticketFormat = "live:" + ticketFormat
 	}
-	plan.StreamURL, err = a.lanURL.Resolve(ctx, u.Hostname(), fmt.Sprintf("/api/v1/playback/dlna/stream/%d", plan.SongID), a.dlnaStreams.query(plan.SongID, ticketFormat, plan.Duration))
+	query := a.dlnaStreams.query(plan.SongID, ticketFormat, plan.Duration)
+	plan.StreamURL, err = a.lanURL.Resolve(ctx, u.Hostname(), fmt.Sprintf("/api/v1/playback/dlna/stream/%d", plan.SongID), query)
+	if err == nil && format == "wav" && !plan.Live {
+		if rate, offset, ok := wavByteLayout(preparedPath); ok {
+			plan.RangeRequests, plan.ReleaseStream = a.dlnaStreams.watchRanges(query, rate, offset)
+		}
+	}
 	return plan, err
 }

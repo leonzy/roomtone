@@ -40,23 +40,24 @@ type Sink struct {
 	commandMu sync.Mutex // serialize SOAP actions with poll responses
 	volumeMu  sync.Mutex // keep mute/volume/unmute atomic across slider updates
 
-	mu         sync.Mutex
-	plan       sink.StreamPlan
-	url        string
-	started    bool
-	playing    bool
-	ready      bool
-	closed     bool
-	volume     int
-	position   time.Duration
-	positionAt time.Time
-	startAt    time.Time
-	sub        *Subscription
-	done       chan struct{}
-	cancel     context.CancelFunc
-	playCancel context.CancelFunc
-	wg         sync.WaitGroup
-	failures   int
+	mu                 sync.Mutex
+	plan               sink.StreamPlan
+	url                string
+	started            bool
+	playing            bool
+	ready              bool
+	positionFromStream bool
+	closed             bool
+	volume             int
+	position           time.Duration
+	positionAt         time.Time
+	startAt            time.Time
+	sub                *Subscription
+	done               chan struct{}
+	cancel             context.CancelFunc
+	playCancel         context.CancelFunc
+	wg                 sync.WaitGroup
+	failures           int
 }
 
 // New 创建 sink。dev 必须含 AVTransport 服务。
@@ -133,6 +134,12 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 			return err
 		}
 	}
+	adopted := false
+	defer func() {
+		if !adopted && plan.ReleaseStream != nil {
+			plan.ReleaseStream()
+		}
+	}()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -152,8 +159,11 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 			return errors.New("dlna: sink 已关闭")
 		}
 	}
+	oldRelease := s.plan.ReleaseStream
 	s.plan = plan
+	adopted = true
 	s.ready = false
+	s.positionFromStream = false
 	s.url = plan.StreamURL
 	if s.url == "" {
 		s.mu.Unlock()
@@ -173,6 +183,9 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	})
 	seekTo := plan.Position
 	s.mu.Unlock()
+	if oldRelease != nil {
+		oldRelease()
+	}
 
 	if err := s.transportWithRetry(ctx, "SetAVTransportURI",
 		Arg{"InstanceID", "0"},
@@ -248,6 +261,9 @@ func (s *Sink) Start(at time.Time) error {
 			}
 			if alignStart {
 				position += max(time.Duration(0), time.Since(at))
+			}
+			if s.patch.SeekWholeSeconds {
+				position = position.Round(time.Second)
 			}
 			if err := s.seekTo(ctx, position); err != nil {
 				if playCtx.Err() == nil {
@@ -327,6 +343,9 @@ func (s *Sink) Seek(sample uint64) error {
 		rate = 44100
 	}
 	pos := time.Duration(float64(sample) / float64(rate) * float64(time.Second))
+	if s.patch.SeekWholeSeconds {
+		pos = pos.Round(time.Second)
+	}
 	s.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), s.opts.CommandTimeout)
 	defer cancel()
@@ -405,6 +424,32 @@ func (s *Sink) SetVolume(v float64) error {
 	return nil
 }
 
+// Pause freezes pulling playback and cancels a pending delayed start.
+func (s *Sink) Pause() error {
+	s.mu.Lock()
+	if s.playCancel != nil {
+		s.playCancel()
+	}
+	if s.cancel != nil {
+		s.cancel()
+		s.cancel = nil
+	}
+	s.playing, s.ready = false, false
+	s.mu.Unlock()
+	s.openMu.Lock()
+	defer s.openMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), s.opts.CommandTimeout)
+	defer cancel()
+	if err := s.transportWithRetry(ctx, "Pause", Arg{"InstanceID", "0"}); err != nil {
+		if IsNotFound(err) {
+			return s.Stop()
+		}
+		return err
+	}
+	s.emit(sink.Event{Type: sink.EventPaused})
+	return nil
+}
+
 // Stop 停止播放。
 func (s *Sink) Stop() error {
 	s.mu.Lock()
@@ -415,7 +460,12 @@ func (s *Sink) Stop() error {
 	if s.playCancel != nil {
 		s.playCancel()
 	}
+	release := s.plan.ReleaseStream
+	s.plan.ReleaseStream = nil
 	s.mu.Unlock()
+	if release != nil {
+		release()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.opts.CommandTimeout)
 	defer cancel()
 	err := s.call(ctx, SvcAVTransport, "Stop", Arg{"InstanceID", "0"})
@@ -468,7 +518,12 @@ func (s *Sink) Close() error {
 	close(s.done)
 	cancel := s.cancel
 	sub := s.sub
+	release := s.plan.ReleaseStream
+	s.plan.ReleaseStream = nil
 	s.mu.Unlock()
+	if release != nil {
+		release()
+	}
 	if cancel != nil {
 		cancel()
 	}
@@ -497,6 +552,10 @@ func (s *Sink) HandleNotify(body []byte) {
 		pos, valid := parseDurationOK(v)
 		if valid {
 			s.mu.Lock()
+			if s.positionFromStream {
+				s.mu.Unlock()
+				return
+			}
 			s.position = pos
 			s.positionAt = time.Now()
 			s.mu.Unlock()
@@ -530,6 +589,13 @@ func (s *Sink) PlaybackPosition() (time.Duration, bool) {
 		position = s.plan.Duration
 	}
 	return position, true
+}
+
+// S12's WAV clock is an estimate after seek; never use it for feedback correction.
+func (s *Sink) PlaybackAlignmentAvailable() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !(s.patch.SeekWholeSeconds && s.plan.Format.Codec == sink.CodecWAV)
 }
 
 // Position 当前播放位置（轮询/事件更新的最近值）。
@@ -573,11 +639,89 @@ func (s *Sink) seekTo(ctx context.Context, pos time.Duration) error {
 	if unit == "" {
 		unit = "REL_TIME"
 	}
-	return s.transportWithRetry(ctx, "Seek",
-		Arg{"InstanceID", "0"},
-		Arg{"Unit", unit},
-		Arg{"Target", formatSeekDuration(pos)},
-	)
+	if s.patch.SeekWholeSeconds {
+		pos = pos.Round(time.Second)
+	}
+	s.mu.Lock()
+	ranges := s.plan.RangeRequests
+	wave := s.patch.VerifySeek && s.plan.Format.Codec == sink.CodecWAV
+	s.mu.Unlock()
+	if wave && ranges == nil {
+		return errors.New("dlna: WAV seek cannot be verified without byte-range observation")
+	}
+	var actual time.Duration
+	for attempt := 0; attempt < 3; attempt++ {
+		if wave {
+			for draining := true; draining; {
+				select {
+				case <-ranges:
+				default:
+					draining = false
+				}
+			}
+		}
+		if err := s.transportWithRetry(ctx, "Seek", Arg{"InstanceID", "0"}, Arg{"Unit", unit}, Arg{"Target", formatSeekDuration(pos)}); err != nil {
+			return err
+		}
+		if !s.patch.VerifySeek {
+			return nil
+		}
+		if wave {
+			timer := time.NewTimer(700 * time.Millisecond)
+			matched := false
+		waitRange:
+			for {
+				select {
+				case actual = <-ranges:
+					if delta := actual - pos; delta >= -500*time.Millisecond && delta <= 500*time.Millisecond {
+						matched = true
+						break waitRange
+					}
+				case <-ctx.Done():
+					timer.Stop()
+					return ctx.Err()
+				case <-timer.C:
+					break waitRange
+				}
+			}
+			timer.Stop()
+			if matched {
+				s.mu.Lock()
+				s.positionFromStream = true
+				s.mu.Unlock()
+				slog.Info("DLNA seek confirmed by byte range", "player_id", s.id, "target_seconds", pos.Seconds(), "requested_seconds", actual.Seconds())
+				return nil
+			}
+			continue
+		}
+		for read := 0; read < 4; read++ {
+			s.commandMu.Lock()
+			values, err := s.cl.Call(ctx, s.dev.Services[SvcAVTransport], "GetPositionInfo", Arg{"InstanceID", "0"})
+			s.commandMu.Unlock()
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if err == nil {
+				if value, valid := parseDurationOK(values["RelTime"]); valid {
+					actual = value
+					if delta := actual - pos; delta >= -1500*time.Millisecond && delta <= 1500*time.Millisecond {
+						return nil
+					}
+				}
+			}
+			timer := time.NewTimer(150 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	if wave {
+		return fmt.Errorf("dlna: seek acknowledged but expected WAV byte range was not requested (target %s, observed %s)", formatDuration(pos), formatDuration(actual))
+	}
+	return fmt.Errorf("dlna: renderer acknowledged seek without applying it (target %s, actual %s)", formatDuration(pos), formatDuration(actual))
 }
 
 func (s *Sink) trySubscribe() {
@@ -710,6 +854,10 @@ func (s *Sink) poll(ctx context.Context) {
 		return
 	}
 	s.mu.Lock()
+	if s.positionFromStream {
+		s.mu.Unlock()
+		return
+	}
 	s.position = pos
 	s.positionAt = time.Now()
 	s.mu.Unlock()

@@ -14,6 +14,10 @@ type Patch struct {
 	SeekUnit string
 	// Xiaomi S12 resets pre-play seeks when Play starts.
 	SeekAfterPlay bool
+	// S12 rounds to whole seconds. WAV RelTime becomes unreliable after seek;
+	// use the requested byte range instead of trusting the counter.
+	SeekWholeSeconds bool
+	VerifySeek       bool
 	// DisableEvents true 表示跳过 SUBSCRIBE，直接轮询。
 	DisableEvents bool
 	// SkipSetNext 设备没有 SetNextAVTransportURI（无 gapless）。
@@ -28,7 +32,7 @@ var vendors = []struct {
 	match string
 	patch Patch
 }{
-	{"s12", Patch{SeekUnit: "REL_TIME", SeekAfterPlay: true}},
+	{"s12", Patch{SeekUnit: "REL_TIME", SeekAfterPlay: true, SeekWholeSeconds: true, VerifySeek: true}},
 	{"sonos", Patch{TolerateEmptyMetadata: true, SeekUnit: "REL_TIME", SkipSetNext: true}},
 	{"kodi", Patch{SeekUnit: "REL_TIME", DisableEvents: false}},
 	{"xbmc", Patch{SeekUnit: "REL_TIME", DisableEvents: false}},

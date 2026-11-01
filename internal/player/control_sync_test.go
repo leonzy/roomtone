@@ -136,3 +136,40 @@ func TestMixedEngineRunsPullAlignment(t *testing.T) {
 	}
 	t.Fatal("mixed engine never aligned its pulling member")
 }
+
+type seekTrackingControl struct {
+	*ctrlSink
+	seeks atomic.Int32
+}
+
+func (s *seekTrackingControl) Seek(uint64) error { s.seeks.Add(1); return nil }
+func TestSeekReloadDoesNotSeekTheOldControlSession(t *testing.T) {
+	e := newDelegatedEngine(t, staticResolver{1: {SongID: 1, Duration: time.Minute}})
+	defer e.Close()
+	member := &seekTrackingControl{ctrlSink: newCtrlSink("dlna")}
+	e.SetControls([]sink.Sink{member})
+	if err := e.Load(context.Background(), []int64{1}, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, e, StatePlaying)
+	if err := e.Seek(context.Background(), 20*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		opens, _, _, _ := member.snapshot()
+		if opens >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("new seek session was not loaded")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if member.seeks.Load() != 0 {
+		t.Fatal("sent a second seek to an old/reloading session")
+	}
+	if member.lastPlan().Position != 20*time.Second {
+		t.Fatal("reload lost seek position")
+	}
+}

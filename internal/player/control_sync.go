@@ -55,6 +55,9 @@ func (l *ControlSyncLoop) CheckOnce(ctx context.Context) {
 		l.states = make(map[string]controlSyncState)
 	}
 	for _, member := range l.Members() {
+		if quality, ok := member.(interface{ PlaybackAlignmentAvailable() bool }); ok && !quality.PlaybackAlignmentAvailable() {
+			continue
+		}
 		if ctx.Err() != nil {
 			return
 		}
@@ -138,7 +141,7 @@ func (e *Engine) alignControls(ctx context.Context) {
 			if err != nil {
 				e.deps.Logger.Warn("pull playback alignment failed", "player_id", id, "delta_ms", delta.Milliseconds(), "err", err)
 			} else {
-				e.deps.Logger.Info("pull playback alignment corrected", "player_id", id, "delta_ms", delta.Milliseconds())
+				e.deps.Logger.Info("pull playback alignment completed", "player_id", id, "delta_ms", delta.Milliseconds())
 			}
 		},
 	}
