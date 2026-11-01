@@ -18,6 +18,7 @@ import (
 	"songloft/internal/models"
 	"songloft/internal/player/sink"
 	"songloft/internal/player/sink/dlna"
+	"songloft/internal/services"
 )
 
 // Stream capabilities authorize one song and format, never the user's account.
@@ -63,7 +64,11 @@ func (s *dlnaStreams) protect(next http.HandlerFunc) http.HandlerFunc {
 		// proxy parameters from a renderer must not alter this capability.
 		cloned := r.Clone(r.Context())
 		u := *r.URL
-		u.RawQuery = url.Values{"format": {format}}.Encode()
+		if strings.HasPrefix(format, "original:") {
+			u.RawQuery = ""
+		} else {
+			u.RawQuery = url.Values{"format": {format}}.Encode()
+		}
 		cloned.URL = &u
 		cloned = handlers.WithDLNAPlayback(cloned)
 		w.Header().Set("transferMode.dlna.org", "Streaming")
@@ -76,11 +81,27 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 	if err != nil {
 		return plan, err
 	}
-	format := string(dlna.SelectCodec(strings.ToLower(song.Format), plan.AcceptedCodecs))
+	sourceFormat := services.EffectiveSourceFormat(song, song.FilePath)
+	if sourceFormat == "" {
+		sourceFormat = "unknown"
+	}
+	format := string(dlna.SelectCodec(sourceFormat, plan.AcceptedCodecs))
 	if format == "" {
 		return plan, fmt.Errorf("dlna: renderer advertises no supported output codec")
 	}
 	plan.Title, plan.Artist, plan.Album = song.Title, song.Artist, song.Album
+	normalize := a.configService.GetBool("volume_normalize", false)
+	if normalize || song.CueSourcePath != "" {
+		switch format {
+		case "flac", "wav", "mp3", "m4a", "ogg":
+		default:
+			format = string(dlna.SelectCodec("flac", plan.AcceptedCodecs))
+			if format == "" {
+				return plan, fmt.Errorf("dlna: renderer has no supported processed output codec")
+			}
+		}
+	}
+	native := strings.EqualFold(format, sourceFormat) && !normalize && song.CueSourcePath == ""
 	// Prepare before SetAVTransportURI/Play so a slow conversion does not leave
 	// the renderer waiting on an HTTP response, and errors reach the zone UI.
 	if song.Type != models.TypeRadio && !song.IsLive {
@@ -91,9 +112,10 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 				return plan, fmt.Errorf("dlna: prepare source: %w", err)
 			}
 		}
-		normalize := a.configService.GetBool("volume_normalize", false)
-		if _, err := a.cacheService.GetOrTranscode(ctx, source, song, format, 0, -1, normalize); err != nil {
-			return plan, fmt.Errorf("dlna: prepare %s output: %w", format, err)
+		if !native {
+			if _, err := a.cacheService.GetOrTranscode(ctx, source, song, format, 0, -1, normalize); err != nil {
+				return plan, fmt.Errorf("dlna: prepare %s output: %w", format, err)
+			}
 		}
 	}
 	plan.Format.Codec = sink.Codec(format)
@@ -101,6 +123,10 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 	if err != nil {
 		return plan, err
 	}
-	plan.StreamURL, err = a.lanURL.Resolve(ctx, u.Hostname(), fmt.Sprintf("/api/v1/playback/dlna/stream/%d", plan.SongID), a.dlnaStreams.query(plan.SongID, format, plan.Duration))
+	ticketFormat := format
+	if native {
+		ticketFormat = "original:" + sourceFormat
+	}
+	plan.StreamURL, err = a.lanURL.Resolve(ctx, u.Hostname(), fmt.Sprintf("/api/v1/playback/dlna/stream/%d", plan.SongID), a.dlnaStreams.query(plan.SongID, ticketFormat, plan.Duration))
 	return plan, err
 }

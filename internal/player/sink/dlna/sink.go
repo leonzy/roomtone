@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"mime"
 	"strconv"
 	"sync"
 	"time"
@@ -120,7 +121,7 @@ func (s *Sink) StreamURL(plan sink.StreamPlan) (string, error) {
 func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	s.openMu.Lock()
 	defer s.openMu.Unlock()
-	plan.AcceptedCodecs = s.caps.Codecs
+	plan.AcceptedCodecs = s.dev.Codecs
 	if s.opts.ResolveStream != nil {
 		var err error
 		plan, err = s.opts.ResolveStream(ctx, plan)
@@ -676,7 +677,12 @@ func mimeOf(c sink.Codec) string {
 		return "audio/aac"
 	case sink.CodecL16:
 		return "audio/L16;rate=44100;channels=2"
-	default:
+	case sink.CodecWAV:
 		return "audio/wav"
+	default:
+		if value := mime.TypeByExtension("." + string(c)); value != "" {
+			return value
+		}
+		return "application/octet-stream"
 	}
 }

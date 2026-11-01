@@ -7,9 +7,9 @@ import (
 	"songloft/internal/player/sink"
 )
 
-// LoadProtocolInfo narrows the conservative fallback to formats explicitly
-// advertised by the renderer. Missing services, wildcard replies and broken
-// implementations keep the fallback; discovery must still work on those devices.
+// LoadProtocolInfo records formats explicitly advertised by the renderer.
+// Missing services, wildcard replies and broken implementations leave capabilities
+// unknown, so stream planning preserves the original rather than forcing conversion.
 func LoadProtocolInfo(ctx context.Context, client *Client, dev *Device) {
 	service, ok := dev.Services[SvcConnectionMgr]
 	if !ok {
@@ -36,6 +36,10 @@ func ParseSinkCodecs(protocols string) []sink.Codec {
 			codec = sink.CodecFLAC
 		case "audio/wav", "audio/x-wav", "audio/wave":
 			codec = sink.CodecWAV
+		case "audio/mp4", "audio/x-m4a":
+			codec = sink.Codec("m4a")
+		case "audio/aac":
+			codec = sink.CodecAAC
 		case "audio/mpeg", "audio/mp3":
 			codec = sink.CodecMP3
 		case "*":
@@ -52,17 +56,18 @@ func ParseSinkCodecs(protocols string) []sink.Codec {
 }
 
 // SelectCodec preserves supported originals, then prefers lossless output.
+// Unknown capabilities preserve the original format.
 // An explicit list containing only unknown formats must not silently imply MP3.
 func SelectCodec(source string, accepted []sink.Codec) sink.Codec {
 	if len(accepted) == 0 {
-		accepted = []sink.Codec{sink.CodecFLAC, sink.CodecWAV, sink.CodecMP3}
+		return sink.Codec(strings.ToLower(source))
 	}
 	for _, codec := range accepted {
 		if string(codec) == strings.ToLower(source) {
 			return codec
 		}
 	}
-	for _, preferred := range []sink.Codec{sink.CodecFLAC, sink.CodecWAV, sink.CodecMP3} {
+	for _, preferred := range []sink.Codec{sink.CodecFLAC, sink.CodecWAV, sink.CodecMP3, sink.Codec("m4a")} {
 		for _, codec := range accepted {
 			if codec == preferred {
 				return codec

@@ -16,7 +16,9 @@ func TestRendererCodecSelection(t *testing.T) {
 		{"http-get:*:audio/x-flac:*,http-get:*:audio/mpeg:*", "dsf", sink.CodecFLAC},
 		{"http-get:*:*:*", "wav", sink.CodecWAV},
 		{"http-get:*:audio/unsupported:*", "mp3", ""},
-		{"", "ape", sink.CodecFLAC},
+		{"", "ape", sink.Codec("ape")},
+		{"http-get:*:*:*", "m4a", sink.Codec("m4a")},
+		{"http-get:*:audio/mp4:*", "m4a", sink.Codec("m4a")},
 	} {
 		if got := SelectCodec(tc.source, ParseSinkCodecs(tc.protocols)); got != tc.want {
 			t.Errorf("%q source %s: got %s want %s", tc.protocols, tc.source, got, tc.want)

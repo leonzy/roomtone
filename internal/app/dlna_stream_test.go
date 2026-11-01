@@ -49,3 +49,21 @@ func TestDLNAStreamCapability(t *testing.T) {
 		})
 	}
 }
+
+func TestDLNANativeStreamDoesNotForceCodec(t *testing.T) {
+	s := newDLNAStreams()
+	r := httptest.NewRequest(http.MethodGet, "/stream?"+s.query(42, "original:m4a", time.Minute)+"&format=mp3&normalize=1", nil)
+	route := chi.NewRouteContext()
+	route.URLParams.Add("id", "42")
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, route))
+	w := httptest.NewRecorder()
+	s.protect(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "" {
+			t.Fatalf("native stream acquired a conversion parameter: %s", r.URL.RawQuery)
+		}
+		w.WriteHeader(200)
+	})(w, r)
+	if w.Code != 200 {
+		t.Fatalf("native ticket rejected: %d", w.Code)
+	}
+}
