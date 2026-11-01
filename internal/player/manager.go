@@ -1527,12 +1527,16 @@ func (m *Manager) sinkFor(ctx context.Context, p *Player) (sink.Sink, bool) {
 		m.deps.Logger.Warn("build sink failed", "player", p.ID, "err", err)
 		return nil, false
 	}
-	if p.Kind == KindRAOP || p.Kind == KindRAAT {
+	if p.Kind == KindRAOP || p.Kind == KindRAAT || (p.Kind == KindDLNA && p.VolumeMode != VolumeModeFixed) {
 		volume := float64(min(p.Volume, p.MaxVolume)) / 100
 		if p.Muted {
 			volume = 0
 		}
-		_ = built.SetVolume(volume)
+		if err := built.SetVolume(volume); err != nil && p.Kind == KindDLNA {
+			_ = built.Close()
+			m.deps.Logger.Warn("initialize DLNA volume failed", "player", p.ID, "err", err)
+			return nil, false
+		}
 	}
 	m.mu.Lock()
 	m.sinks[p.ID] = built

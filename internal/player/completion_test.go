@@ -59,6 +59,7 @@ func TestTrackCompletionPush(t *testing.T) {
 				t.Fatal(err)
 			}
 			e.queue.Replace([]int64{1, 2}, 0)
+			e.runCtx = ctx // direct runner invocation owns this playback session
 			e.run(ctx, 0)
 			if outcome != "eof" {
 				if len(got) != 0 {

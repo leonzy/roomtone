@@ -2,6 +2,7 @@
 
 ## DLNA-001：拉流格式与 HTTP 表示必须匹配接收器
 
+- 同日实机分组：小爱 DLNA 播放中加入书房 RAOP 后，握手建立但没有 PCM，随后 SET_PARAMETER EOF/broken pipe。引擎仅在 run 入口选择委派/解码模式，热加入只 Open/Start，旧委派循环永不解码。首个推流成员加入或最后一个移除时按当前曲目/进度重建循环，保留预算槽；新回归在旧实现因零 PCM、未应用 DLNA 重连音量失败，修复后通过。另一个并发回归抓到 S12 定位就绪查询绕过控制锁，已纳入串行控制。静音实测约 11 秒设备与服务端进度一致，之后被局域网网页客户端音量请求覆盖，立即停止，不能将定位/下一首或听感算作本轮通过。
 - 2026-11-01 再对照 AirConnect：补上 HTTP contentFeatures 与 DIDL 的转换/字节定位声明、URLBase/内嵌 renderer、按实际租期续订、串行控制与轮询、分数秒和无效进度过滤、InstanceID=0/Master 事件筛选、原生音量范围。显式仅支持 L16/ADTS 的设备增加对应输出；L16 必须大端 44.1kHz 双声道，AAC ADTS 不可冒充 M4A，必要的 AAC→M4A 使用 copy 重新封装。真实 FFmpeg 字节/容器、HEAD/Range 和控制回归验证。范围及未验收项见 [DLNA 对照](docs/dlna_output_compatibility.md)。本次无听感验收。
 - 2026-11-01，小爱 S12 的 GetProtocolInfo 只返回通配符。显式能力列表应限制输出格式；通配符或缺失能力时优先原格式直放，不得仅因能力未知而自动转成 FLAC。只有明确格式不兼容或启用音量归一化、CUE 提取等处理时才准备转换。流地址下发前完成必要的下载/转换，HTTP 播放路径使用完整文件提供真实 Content-Length、HEAD 和字节 Range；禁止转码失败后悄悄返回不兼容原文件。
 - 冷转码、HEAD、Range、损坏源错误的真实 FFmpeg 回归对旧 handler 失败，对新路径通过。曲目信息传递歌手和专辑；临时 Play 失败有限重试，Stop/Close 取消延迟起播与重试。普通网页仍走原有实时路径。首次转换可能增加等待时间；直播仍使用直播路径。Seen 1×。

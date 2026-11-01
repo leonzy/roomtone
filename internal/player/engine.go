@@ -131,6 +131,7 @@ type Engine struct {
 	cancel       context.CancelFunc
 	runCtx       context.Context
 	running      bool
+	delegated    bool // active loop has no PCM producer; must change when first push target joins
 	release      func()
 	underruns    int64
 	preload      Decoder
@@ -216,6 +217,22 @@ func (e *Engine) Targets() *sink.Set { return e.targets }
 func (e *Engine) SetTargets(ctx context.Context, ts []sink.Target) error {
 	e.mu.Lock()
 	running := e.running
+	modeChanged := running && ((e.delegated && len(ts) > 0) || (!e.delegated && len(ts) == 0 && len(e.controls) > 0))
+	if modeChanged {
+		// Open/Start alone cannot feed a newly joined AirPlay sink while the
+		// active loop only follows a DLNA/Web player's position. Rebuild the
+		// loop at the current position, retaining its existing budget slot.
+		position := e.transport.Position()
+		release := e.release
+		e.release = nil
+		e.stopLocked()
+		e.release = release
+		e.targets.Store(ts)
+		e.startLocked(ctx, position)
+		e.mu.Unlock()
+		e.emitState()
+		return nil
+	}
 	e.mu.Unlock()
 	if !running {
 		e.targets.Store(ts)
@@ -309,20 +326,6 @@ func (e *Engine) commandControls(op string, fn func(sink.Sink) error) {
 				"player_id", s.ID(), "cmd", op, "err", err)
 		}
 	}
-}
-
-// delegatedLocked 判断当前组是否只能走委派播放。
-//
-// 条件：没有任何推送目标，但至少有一个控制型 sink。此时服务端拿不到任何
-// PCM 出口，跑解码环只会得到 distributor: no sinks——而指令其实已经生效，
-// 客户端正在正常出声。
-func (e *Engine) delegatedLocked() bool {
-	if e.targets.Len() > 0 {
-		return false
-	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return len(e.controls) > 0
 }
 
 // AttachTarget 播放中加入一台设备（也可在空闲时调用，等下次开播生效）。
@@ -771,6 +774,7 @@ func (e *Engine) stopLocked() {
 		e.cancel = nil
 	}
 	e.running = false
+	e.delegated = false
 	e.sinksOpen = false
 	// Push sinks own an independent transport session. Stopping decoding alone
 	// leaves that session open and makes the next Open (resume/seek) fail.
@@ -805,6 +809,7 @@ func (e *Engine) startLocked(parent context.Context, position time.Duration) {
 	e.cancel = cancel
 	e.runCtx = ctx
 	e.running = true
+	e.delegated = e.targets.Len() == 0 && len(e.controls) > 0
 	e.sourceFormat = ""
 	songID, _ := e.queue.CurrentSong()
 	e.transport.Load(songID, position)
@@ -829,7 +834,14 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 
 	// 纯控制型组（组内只有本机客户端）：服务端没有 PCM 可推，解码环必然
 	// 以 ErrNoSinks 失败。这类组走「下发指令 + 跟随上报」的委派模式。
-	if e.delegatedLocked() {
+	e.mu.Lock()
+	delegated := e.delegated
+	valid := e.runCtx == ctx && ctx.Err() == nil
+	e.mu.Unlock()
+	if !valid {
+		return
+	}
+	if delegated {
 		e.runDelegated(ctx, startAt)
 		return
 	}

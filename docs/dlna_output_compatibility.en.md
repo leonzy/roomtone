@@ -11,10 +11,11 @@ Reference: [AirConnect af345def](https://github.com/philippe44/AirConnect/tree/a
 | Protocol declarations | Matching DIDL and HTTP contentFeatures distinguish converted/original and finite/live representations; advertise byte seeking only, not unsupported DLNA time-range requests |
 | Codec choice | Original first; convert only on explicit incompatibility or requested processing. Distinguish ADTS AAC from M4A. L16 output is big-endian stereo 44.1kHz and selected only for matching declarations |
 | Control ordering | Serialize SOAP controls with polling. Bounded transient load/play/seek retries; stop cancels scheduled playback. Reload stops the old session |
+| Mixed-group hot join | Rebuild the decoded/delegated loop at the current track/position when the first push member joins DLNA/Web playback or the last push member leaves. Preserve the budget slot; handshake without PCM production is insufficient |
 | Status | Persistent one-second fallback polling, even with events. Interpolate between reports, support fractional seconds and ignore unavailable positions |
 | GENA | Renew halfway through the granted lease; re-subscribe on failure and keep polling. Unsubscribe on close; accept instance 0/Master only |
 | Description | Honor URLBase and embedded renderers; keep services within one renderer |
-| Volume | Native advertised range/step; mute before zero, set volume before unmuting. Unsupported SetMute falls back to setting native volume, without promising absolute silence |
+| Volume | Native advertised range/step; reconnect applies saved volume/mute/limit. Mute before zero, set volume before unmuting. Unsupported SetMute falls back to setting native volume, without promising absolute silence |
 | Seek quirks | S12 waits for post-Play readiness; time seeks no longer misuse TRACK_NR, which expects a track number |
 
 Excluded bridge concerns: incoming AirPlay/pairing, RTP retransmission/jitter buffering, controller feedback, aircast/Chromecast, and fake lengths/silence prefixes needed for real-time AirPlay input. Complete Roomtone files should not acquire artificial bridge latency.

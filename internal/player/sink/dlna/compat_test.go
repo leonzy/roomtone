@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"songloft/internal/player/sink"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -145,6 +146,38 @@ func TestControlsAndPollingDoNotOverlapOnRenderer(t *testing.T) {
 	wg.Wait()
 	if tr.max.Load() != 1 {
 		t.Fatalf("concurrent renderer requests: %d", tr.max.Load())
+	}
+}
+
+func TestPostPlaySeekReadinessDoesNotOverlapPolling(t *testing.T) {
+	f := newFakeRenderer(t)
+	d := f.device(t)
+	d.ModelName = "S12"
+	tr := &serializedTransport{}
+	s := New("ready", d, &Client{HC: &http.Client{Transport: tr}}, Options{PollInterval: time.Millisecond})
+	defer s.Close()
+	if err := s.Open(context.Background(), sink.StreamPlan{StreamURL: "http://example.invalid/audio.flac", Position: 30 * time.Second}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Start(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case ev := <-s.Events():
+			if ev.Type == sink.EventError {
+				t.Fatal(ev.Err)
+			}
+			if ev.Type == sink.EventPlaying {
+				if tr.max.Load() != 1 {
+					t.Fatalf("readiness bypassed serialized controls: %d", tr.max.Load())
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("seek did not start")
+		}
 	}
 }
 

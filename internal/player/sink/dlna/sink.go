@@ -271,7 +271,13 @@ func (s *Sink) waitForSeekReady(ctx context.Context) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		s.commandMu.Lock()
+		if err := ctx.Err(); err != nil {
+			s.commandMu.Unlock()
+			return err
+		}
 		values, err := s.cl.Call(ctx, s.dev.Services[SvcAVTransport], "GetPositionInfo", Arg{"InstanceID", "0"})
+		s.commandMu.Unlock()
 		if err == nil && parseDuration(values["RelTime"]) > 0 {
 			return nil
 		}
