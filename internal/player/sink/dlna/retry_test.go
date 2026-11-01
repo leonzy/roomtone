@@ -91,3 +91,23 @@ func TestPlaybackPositionAdvancesBetweenRendererReports(t *testing.T) {
 		t.Fatal("paused position is still extrapolated")
 	}
 }
+
+func TestRendererReloadSupportsSeekAndNextTrack(t *testing.T) {
+	f := newFakeRenderer(t)
+	s := New("reload", f.device(t), nil, Options{PollInterval: time.Hour})
+	defer s.Close()
+	ctx := context.Background()
+	for _, plan := range []sink.StreamPlan{
+		{SongID: 1, StreamURL: "http://example.invalid/1.flac"},
+		{SongID: 1, StreamURL: "http://example.invalid/1.flac", Position: 30 * time.Second},
+		{SongID: 2, StreamURL: "http://example.invalid/2.flac"},
+	} {
+		if err := s.Open(ctx, plan); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := "SetAVTransportURI,Stop,SetAVTransportURI,Seek,Stop,SetAVTransportURI"
+	if got := strings.Join(f.calls(), ","); got != want {
+		t.Fatalf("reload sequence %s want %s", got, want)
+	}
+}

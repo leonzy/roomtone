@@ -34,6 +34,7 @@ type Sink struct {
 	// eventsMu 保护 channel 的发送与关闭：Close 拿写锁后再 close，
 	// 避免"事件 goroutine 还在发、channel 已经被关"的 panic。
 	eventsMu sync.RWMutex
+	openMu   sync.Mutex
 
 	mu         sync.Mutex
 	plan       sink.StreamPlan
@@ -117,6 +118,8 @@ func (s *Sink) StreamURL(plan sink.StreamPlan) (string, error) {
 //
 // 真正 Play 在 Start，这样组内多台设备能对齐起播时刻。
 func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
+	s.openMu.Lock()
+	defer s.openMu.Unlock()
 	plan.AcceptedCodecs = s.caps.Codecs
 	if s.opts.ResolveStream != nil {
 		var err error
@@ -125,6 +128,9 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 			return err
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -132,7 +138,14 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	}
 	if s.started {
 		s.mu.Unlock()
-		return errors.New("dlna: 已经 Open")
+		if err := s.Stop(); err != nil {
+			return err
+		}
+		s.mu.Lock()
+		if s.closed {
+			s.mu.Unlock()
+			return errors.New("dlna: sink 已关闭")
+		}
 	}
 	s.plan = plan
 	s.url = plan.StreamURL
@@ -304,6 +317,10 @@ func (s *Sink) SetVolume(v float64) error {
 // Stop 停止播放。
 func (s *Sink) Stop() error {
 	s.mu.Lock()
+	if s.cancel != nil {
+		s.cancel()
+		s.cancel = nil
+	}
 	if s.playCancel != nil {
 		s.playCancel()
 	}
@@ -468,6 +485,12 @@ func (s *Sink) seekTo(ctx context.Context, pos time.Duration) error {
 func (s *Sink) trySubscribe() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	s.mu.Lock()
+	existing := s.sub
+	s.mu.Unlock()
+	if existing != nil && existing.Renew(ctx) == nil {
+		return
+	}
 	svc, ok := s.dev.Services[SvcAVTransport]
 	if !ok {
 		return
@@ -478,17 +501,33 @@ func (s *Sink) trySubscribe() {
 		return
 	}
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		sub.Unsubscribe(ctx)
+		return
+	}
+	old := s.sub
 	s.sub = sub
 	s.mu.Unlock()
+	if old != nil {
+		old.Unsubscribe(ctx)
+	}
 }
 
 func (s *Sink) startPoller() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		cancel()
+		return
+	}
+	if s.cancel != nil {
+		s.cancel()
+	}
 	s.cancel = cancel
-	s.mu.Unlock()
-
 	s.wg.Add(1)
+	s.mu.Unlock()
 	go func() {
 		defer s.wg.Done()
 		interval := s.opts.PollInterval
@@ -529,6 +568,9 @@ func (s *Sink) poll(ctx context.Context) {
 		}
 		return
 	}
+	if ctx.Err() != nil {
+		return
+	}
 	s.mu.Lock()
 	s.failures = 0
 	s.mu.Unlock()
@@ -536,7 +578,7 @@ func (s *Sink) poll(ctx context.Context) {
 		s.onTransportState(st)
 	}
 	out, err = s.cl.Call(ctx, svc, "GetPositionInfo", Arg{"InstanceID", "0"})
-	if err != nil {
+	if err != nil || ctx.Err() != nil {
 		return
 	}
 	pos := parseDuration(out["RelTime"])
