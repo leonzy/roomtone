@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"errors"
+	"net"
 	"songloft/internal/player"
 	"testing"
 )
@@ -46,5 +47,35 @@ func TestMissingSpeakersGoOfflineOnlyAfterSuccessfulScans(t *testing.T) {
 	d.Scan(ctx)
 	if d.misses["bridge"] != 0 {
 		t.Fatal("returned speaker retains missing counter")
+	}
+}
+
+func TestMissingMulticastDoesNotHideReachableSpeaker(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		for {
+			c, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	reg := onlineRegistry{newFakeRegistry()}
+	reg.players["speaker"] = player.Player{ID: "speaker", Kind: player.KindRAOP, Address: listener.Addr().String(), Online: true}
+	d := New(Options{Registry: reg, Scanners: []Scanner{&fakeScanner{kind: player.KindRAOP}}, Protocols: []string{"raop"}})
+	d.Scan(context.Background())
+	d.Scan(context.Background())
+	if !reg.players["speaker"].Online {
+		t.Fatal("lost multicast response hid reachable speaker")
+	}
+	listener.Close()
+	d.Scan(context.Background())
+	if reg.players["speaker"].Online {
+		t.Fatal("closed control endpoint remains online")
 	}
 }

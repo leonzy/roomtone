@@ -252,7 +252,7 @@ func (d *Discovery) Scan(ctx context.Context) (Result, error) {
 			}
 			d.misses[p.ID]++
 			if d.misses[p.ID] >= 2 {
-				registry.SetOnline(ctx, p.ID, false)
+				registry.SetOnline(ctx, p.ID, speakerReachable(ctx, p.Address))
 			}
 		}
 	}
@@ -322,6 +322,28 @@ func (d *Discovery) Scan(ctx context.Context) (Result, error) {
 		d.logger.Info("发现音箱", "added", len(res.Added), "updated", len(res.Updated), "skipped", len(res.Skipped))
 	}
 	return res, nil
+}
+
+// Multicast replies can be lost even when a renderer is reachable. Confirm
+// the saved control endpoint before retiring its online state.
+func speakerReachable(ctx context.Context, address string) bool {
+	if u, err := url.Parse(address); err == nil && u.Host != "" {
+		address = u.Host
+		if u.Port() == "" {
+			port := "80"
+			if u.Scheme == "https" {
+				port = "443"
+			}
+			address = net.JoinHostPort(u.Hostname(), port)
+		}
+	}
+	dialer := net.Dialer{Timeout: 500 * time.Millisecond}
+	connection, err := dialer.DialContext(ctx, "tcp", address)
+	if err != nil {
+		return false
+	}
+	connection.Close()
+	return true
 }
 
 func speakerHost(address string) string {
