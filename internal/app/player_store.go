@@ -42,7 +42,7 @@ func (s *playbackStore) SavePlayer(ctx context.Context, p player.Player) error {
 }
 
 func (s *playbackStore) UpdatePlayerConfig(ctx context.Context, p player.Player) error {
-	return s.repo.UpdatePlayerConfig(ctx, p.ID, p.Name, string(p.Takeover), p.VolumeMode, p.MaxVolume, p.Password)
+	return s.repo.UpdatePlayerConfig(ctx, p.ID, p.Name, string(p.Takeover), p.VolumeMode, p.MaxVolume, p.Password, p.DLNASyncDelayMs)
 }
 
 func (s *playbackStore) UpdatePlayerVolume(ctx context.Context, p player.Player) error {
@@ -170,20 +170,21 @@ func (s *playbackStore) LoadState(ctx context.Context, ownerKind, ownerID string
 
 func playerFromRow(r database.PlayerRow) player.Player {
 	return player.Player{
-		ID:         r.ID,
-		Kind:       player.Kind(r.Kind),
-		Name:       r.Name,
-		Address:    r.Address,
-		Model:      r.Model,
-		Caps:       player.ParseCaps(r.Capabilities),
-		Volume:     r.Volume,
-		Muted:      r.Muted,
-		VolumeMode: r.VolumeMode,
-		MaxVolume:  r.MaxVolume,
-		Online:     r.Online,
-		Takeover:   player.TakeoverBehavior(r.TakeoverBehavior),
-		EQ:         player.ParseEQ(r.EQProfile),
-		Password:   r.Password,
+		ID:              r.ID,
+		Kind:            player.Kind(r.Kind),
+		Name:            r.Name,
+		Address:         r.Address,
+		Model:           r.Model,
+		Caps:            player.ParseCaps(r.Capabilities),
+		Volume:          r.Volume,
+		Muted:           r.Muted,
+		VolumeMode:      r.VolumeMode,
+		MaxVolume:       r.MaxVolume,
+		Online:          r.Online,
+		Takeover:        player.TakeoverBehavior(r.TakeoverBehavior),
+		EQ:              player.ParseEQ(r.EQProfile),
+		Password:        r.Password,
+		DLNASyncDelayMs: r.DLNASyncDelayMs,
 	}
 }
 
@@ -215,6 +216,7 @@ func playerRow(p player.Player) database.PlayerRow {
 		VolumeMode:       volumeMode,
 		MaxVolume:        maxVolume,
 		Password:         p.Password,
+		DLNASyncDelayMs:  p.DLNASyncDelayMs,
 	}
 }
 

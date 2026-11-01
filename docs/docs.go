@@ -4208,7 +4208,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "修改设备名称、接管行为、音量模式或音量上限。takeover_behavior 只对 local 设备生效：pause（默认，被切走后立即暂停并提示）或 follow（静默转为纯控制器）。volume_mode 支持 device（默认，直接下发设备）/ fixed（固定音量，忽略音量设置）/ dsp（服务端 DSP 音量）；max_volume 为 0-100 的硬上限，调低时当前音量一并钳位。未传的字段保持不变。",
+                "description": "修改设备名称、接管行为、音量模式或音量上限。takeover_behavior 只对 local 设备生效：pause（默认，被切走后立即暂停并提示）或 follow（静默转为纯控制器）。volume_mode 支持 device（默认，直接下发设备）/ fixed（固定音量，忽略音量设置）/ dsp（服务端 DSP 音量）；max_volume 为 0-100 的硬上限，调低时当前音量一并钳位。dlna_sync_delay_ms 仅用于 DLNA：0-2000 毫秒，表示相对 AirPlay 的额外出声延迟，组内按最慢成员自动补偿，单独播放不加延迟。未传的字段保持不变。",
                 "consumes": [
                     "application/json"
                 ],
@@ -14384,6 +14384,9 @@ const docTemplate = `{
         "handlers.updatePlayerRequest": {
             "type": "object",
             "properties": {
+                "dlna_sync_delay_ms": {
+                    "type": "integer"
+                },
                 "max_volume": {
                     "type": "integer"
                 },
@@ -15767,6 +15770,9 @@ const docTemplate = `{
                 },
                 "caps": {
                     "$ref": "#/definitions/player.Caps"
+                },
+                "dlna_sync_delay_ms": {
+                    "type": "integer"
                 },
                 "eq": {
                     "$ref": "#/definitions/player.EQProfile"

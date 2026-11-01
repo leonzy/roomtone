@@ -258,6 +258,7 @@ func (m *Manager) RegisterPlayer(ctx context.Context, p Player) error {
 		p.EQ = prev.EQ
 		p.Takeover = prev.Takeover
 		p.Password = prev.Password
+		p.DLNASyncDelayMs = prev.DLNASyncDelayMs
 		if prev.Name != "" {
 			p.Name = prev.Name
 		}
@@ -409,10 +410,11 @@ func (m *Manager) Reconnect(ctx context.Context, id string) (Player, error) {
 
 // PlayerUpdate 设备可编辑配置；nil 字段表示不修改。
 type PlayerUpdate struct {
-	Name       *string
-	Takeover   *TakeoverBehavior
-	VolumeMode *string
-	MaxVolume  *int
+	Name            *string
+	Takeover        *TakeoverBehavior
+	VolumeMode      *string
+	MaxVolume       *int
+	DLNASyncDelayMs *int
 	// Password 设备密码（AirPlay 1 = HTTP Digest）。非 nil 更新（空串清空），
 	// nil 不覆盖；不出 Player JSON，API 侧单独通道传入。
 	Password *string
@@ -437,6 +439,16 @@ func (m *Manager) UpdatePlayer(ctx context.Context, id string, upd PlayerUpdate)
 		return Player{}, ErrPlayerNotFound
 	}
 	oldName := p.Name
+	copy := *p
+	p = &copy
+	if upd.DLNASyncDelayMs != nil {
+		value := *upd.DLNASyncDelayMs
+		if p.Kind != KindDLNA || value < 0 || value > 2000 {
+			m.mu.Unlock()
+			return Player{}, invalidArg("dlna_sync_delay_ms 只适用于 DLNA，范围为 0-2000 毫秒")
+		}
+		p.DLNASyncDelayMs = value
+	}
 	if upd.Name != nil {
 		p.Name = *upd.Name
 	}
@@ -474,6 +486,13 @@ func (m *Manager) UpdatePlayer(ctx context.Context, id string, upd PlayerUpdate)
 			volumeClamped = true
 		}
 	}
+	if m.deps.Store != nil {
+		if err := m.deps.Store.UpdatePlayerConfig(ctx, *p); err != nil {
+			m.mu.Unlock()
+			return Player{}, err
+		}
+	}
+	m.players[id] = p
 	// 密码更新后旧 sink 的握手凭据已失效，丢弃重建（下次起播用新密码）。
 	if upd.Password != nil {
 		if stale, ok := m.sinks[id]; ok {
@@ -495,7 +514,6 @@ func (m *Manager) UpdatePlayer(ctx context.Context, id string, upd PlayerUpdate)
 	}
 	m.mu.Unlock()
 	if m.deps.Store != nil {
-		_ = m.deps.Store.UpdatePlayerConfig(ctx, out)
 		if volumeClamped {
 			_ = m.deps.Store.UpdatePlayerVolume(ctx, out)
 		}
@@ -507,6 +525,13 @@ func (m *Manager) UpdatePlayer(ctx context.Context, id string, upd PlayerUpdate)
 		}
 		if err := s.SetVolume(v); err != nil {
 			return out, err
+		}
+	}
+	if upd.DLNASyncDelayMs != nil {
+		if gid := m.GroupIDOf(id); gid != "" {
+			if err := m.rebuildSinks(ctx, gid); err != nil {
+				return out, fmt.Errorf("延迟已保存，应用失败: %w", err)
+			}
 		}
 	}
 	if soloGroup != nil {
@@ -1062,8 +1087,8 @@ func (m *Manager) groupTierLocked(g *Group) SyncTier {
 
 // UpdateMember 调整成员的延迟补偿与音量偏移。
 //
-// delay_ms 为正时给该推送成员增加 PCM 静音前导，为负时跳过对应 PCM；
-// 用于让较快设备等待较慢设备。volume_offset 让每台设备在自己
+// delay_ms 作为旧客户端兼容字段保留；实际同步由 DLNA 设备配置自动计算。
+// volume_offset 让每台设备在自己
 // 的音量基准上做微调（书架箱和吸顶喇叭灵敏度差 6dB 很常见）。
 func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, delayMs, volumeOffset int) (GroupView, error) {
 	if delayMs < -2000 {
@@ -1405,6 +1430,7 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) error {
 		}
 	}
 	e := m.engines["group:"+groupID]
+	delays := m.groupDelaysLocked(g)
 	m.mu.RUnlock()
 	if e == nil {
 		return nil
@@ -1442,14 +1468,14 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) error {
 			// 但必须交给引擎：服务端要给它下发 load/play 指令，否则
 			// 客户端永远收不到播放命令，组里只有它时还会误报 no sinks。
 			controls = append(controls, s)
-			controlDelays[p.ID] = memberDelay(*g, p.ID)
+			controlDelays[p.ID] = delays[p.ID]
 			continue
 		}
 		targets = append(targets, sink.Target{
 			PlayerID: p.ID,
 			Sink:     ps,
 			EQ:       m.eqChainFor(p, format.SampleRate),
-			Delay:    memberDelay(*g, p.ID),
+			Delay:    delays[p.ID],
 		})
 	}
 	e.SetControlDelays(controlDelays)
@@ -1506,16 +1532,6 @@ func (m *Manager) eqChainFor(p *Player, rate int) sink.SampleProcessor {
 	chain := dsp.NewEQ(rate, 2, p.EQ.Bands, p.EQ.Preamp)
 	m.eqChains[p.ID] = chain
 	return chain
-}
-
-// memberDelay 组成员延迟补偿。
-func memberDelay(g Group, playerID string) time.Duration {
-	for _, mem := range g.Members {
-		if mem.PlayerID == playerID {
-			return time.Duration(mem.DelayMs) * time.Millisecond
-		}
-	}
-	return 0
 }
 
 // sinkFor 取（或建）某设备的 sink。PullSink（DLNA）不进分发列表，

@@ -85,19 +85,20 @@ func (p EQProfile) Flat() bool {
 
 // Player 一台播放设备（内存态）。
 type Player struct {
-	ID         string
-	Kind       Kind
-	Name       string
-	Address    string
-	Model      string
-	Caps       Caps
-	Volume     int
-	Muted      bool
-	VolumeMode string `json:"volume_mode"`
-	MaxVolume  int    `json:"max_volume"`
-	Online     bool
-	Takeover   TakeoverBehavior
-	EQ         EQProfile
+	ID              string
+	Kind            Kind
+	Name            string
+	Address         string
+	Model           string
+	Caps            Caps
+	Volume          int
+	Muted           bool
+	VolumeMode      string `json:"volume_mode"`
+	MaxVolume       int    `json:"max_volume"`
+	DLNASyncDelayMs int    `json:"dlna_sync_delay_ms"`
+	Online          bool
+	Takeover        TakeoverBehavior
+	EQ              EQProfile
 	// Standby 已待机（不再收帧、不进同步环）。只存内存，重启后按物理状态重新探测。
 	Standby bool `json:"standby,omitempty"`
 	// Password 受密码保护设备的密码（AirPlay 1 = RTSP HTTP Digest，见

@@ -39,6 +39,7 @@ type PlayerRow struct {
 	TakeoverBehavior string
 	VolumeMode       string
 	MaxVolume        int
+	DLNASyncDelayMs  int
 	// Password 受密码保护设备的密码（AirPlay 1 = HTTP Digest）。
 	// 只进服务端，不出 API；UpsertPlayer 的 ON CONFLICT 不更新它。
 	Password   string
@@ -94,6 +95,7 @@ func playerRowFromSQLc(r sqlc.Player) PlayerRow {
 		VolumeMode:       r.VolumeMode,
 		MaxVolume:        int(r.MaxVolume),
 		Password:         r.Password,
+		DLNASyncDelayMs:  int(r.DlnaSyncDelayMs),
 		CreatedAt:        r.CreatedAt,
 	}
 	if r.LastSeenAt.Valid {
@@ -148,6 +150,7 @@ func (r *PlaybackRepository) UpsertPlayer(ctx context.Context, p PlayerRow) erro
 		VolumeMode:       p.VolumeMode,
 		MaxVolume:        int64(p.MaxVolume),
 		Password:         p.Password,
+		DlnaSyncDelayMs:  int64(p.DLNASyncDelayMs),
 		LastSeenAt:       lastSeen,
 	})
 	if err != nil {
@@ -157,13 +160,18 @@ func (r *PlaybackRepository) UpsertPlayer(ctx context.Context, p PlayerRow) erro
 }
 
 // UpdatePlayerConfig 更新名称、接管行为、音量模式、音量上限与密码
-func (r *PlaybackRepository) UpdatePlayerConfig(ctx context.Context, id, name, takeover, volumeMode string, maxVolume int, password string) error {
+func (r *PlaybackRepository) UpdatePlayerConfig(ctx context.Context, id, name, takeover, volumeMode string, maxVolume int, password string, delay ...int) error {
+	var dlnaDelay sql.NullInt64
+	if len(delay) > 0 {
+		dlnaDelay = sql.NullInt64{Int64: int64(delay[0]), Valid: true}
+	}
 	return r.queries.UpdatePlayerConfig(ctx, sqlc.UpdatePlayerConfigParams{
 		Name:             name,
 		TakeoverBehavior: takeover,
 		VolumeMode:       volumeMode,
 		MaxVolume:        int64(maxVolume),
 		Password:         password,
+		DlnaSyncDelayMs:  dlnaDelay,
 		ID:               id,
 	})
 }

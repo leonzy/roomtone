@@ -45,7 +45,7 @@
 | 能力 | LMS | 本项目 | 判定 |
 |---|---|---|---|
 | 同步组模型 | ✅ `Slim/Player/Sync.pm`，一主多从 | ✅ `groups` + `master_id` + `members` | ✅ |
-| 逐台延迟补偿 | ✅ 每播放器 sync adjustment（ms） | ✅ `delay_ms`，钳制 ±2000ms | ✅ |
+| 逐台延迟补偿 | ✅ 每播放器 sync adjustment（ms） | ✅ DLNA 设备延迟 0–2000ms，按最慢成员自动补偿；单独播放为 0 | ✅ |
 | 逐台音量偏移 | ✅ 每播放器 volume adjustment | ✅ `volume_offset`，叠加在组音量上 | ✅ |
 | 偏差测量方式 | `strm-t` 下发时间戳 → `STAT` 回显 + jiffies 比对 | 周期采样 sink 播放位置 vs 统一时间轴 | ✅ 机制不同，目的相同 |
 | 校正周期 | 事件驱动（STAT 上报即校正） | 950ms 采样，单周期单成员只动一次 | ⚠️ 周期更粗但更稳（避免抖动） |

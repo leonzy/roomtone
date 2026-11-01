@@ -128,6 +128,7 @@ type Player struct {
 	VolumeMode       string
 	MaxVolume        int64
 	Password         string
+	DlnaSyncDelayMs  int64
 }
 
 type PlayerGroup struct {

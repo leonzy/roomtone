@@ -295,3 +295,10 @@ Status: lesson / promotion candidate / promoted (authoritative destination)
 - Rule: return persistence failures without changing live values; report saved-but-not-applied failures explicitly. Pull outputs apply calibration at their next start, and feedback uses active offsets rather than pending settings.
 - Evidence: new tests inject disk failure, assert unchanged memory, restore a Manager from the same store, and verify control start timestamps and calibration-aware feedback.
 - Seen 1× (2026-11-01).
+
+### CAL-002: Separate device characteristics from contextual compensation
+
+- Scope: DLNA/AirPlay calibration design, 2026-11-01. The user noted study needs no delay alone; per-group/per-AirPlay calibration complicated grouping.
+- Rule: store relative lag on DLNA devices, calculate group compensation automatically, add none for solo playback, and do not stack legacy offsets. Retain settings across rediscovery and regrouping.
+- Evidence: solo/exact/mixed/multiple-DLNA/default/standby policy tests plus failure/rediscovery/restore tests passed. Millisecond inputs and unit tests do not prove acoustic accuracy.
+- Seen 1× (2026-11-01).

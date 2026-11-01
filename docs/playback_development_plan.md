@@ -222,7 +222,7 @@ B5-01 ─► B7-01 ─► B7-03 ─► [G4]
 | B5-01 | 组主从与动态成员 | `internal/player/manager.go`、`group.go` | 播放中加入成员，**3 帧（≤70ms）内**新成员收到音频、原成员 `underruns` 不增；移出支持 `continue`/`stop` 两模式且不重开曲 | 2 |
 | B5-02 | SyncTier 判定与准入 | `internal/player/manager.go`、`handlers/playback.go` | `AddMember` 把 `dlna` 加进 `raop/local` 组时返回 **400**，`detail` 含“不支持精确同步”；纯 RAOP 组恒为 `exact`；成员变化后 `sync_tier` 实时更新 | 0.5 |
 | B5-03 | 能力协商 | `internal/player/player.go` | 采样率取组内最小；编码降级 `l16→aac→mp3`；2ch 上混（单声道源升 2ch 后两路样本相等） | 1 |
-| B5-04 | 延迟补偿与音量偏移 | `internal/player/group.go`、`sink/*` | `delay_ms` 换算成帧数写入 sink 起播偏移，假 sink 断言偏移误差 **≤1 帧**；`volume_offset` 与设备音量叠加（`clamp(base+offset,0,100)`）有上下边界用例 | 1.5 |
+| B5-04 | DLNA 自动同步补偿与音量偏移 | `internal/player/dlna_calibration.go`、`sink/*` | DLNA 设备保存 0–2000ms 额外延迟；按最慢成员补偿，单独播放/无 DLNA 为 0，待机成员不作参考，旧组延迟不叠加。多 DLNA 1000/600ms 对应 0/400ms，AirPlay 为 1000ms；PCM 分发断言真实帧偏移。`volume_offset` 保留原语义 | 1.5 |
 | B5-05 | 转移与拆分 | `internal/player/transfer.go` | `only_player_id` 拆分；目标首帧位置 − 源当前位置 **∈ [780,820]ms**（假 sink 断言）；补偿只做一次，连续两次转移不叠加 | 1.5 |
 | B5-06 | **同步精度测试** | `scripts/tests/sync_correlation.py`（新增） | 两个 shairport-sync 实例各 pipe 到独立文件，互相关求峰值延迟，断言 `< 20ms`；连续 10 分钟不漂移；结果写进 `docs/playback_compat_matrix.md`。**已完成脚本与自检：`--selftest` 注入 12ms 测得 12.0ms（相关 1.000），`--window 2` 分段无漂移；真实双实例 Not run** | 2 |
 | B5-07 | 主控切换 | `internal/player/manager.go` | 切换主控不断流（时间轴不变，仅换持有者）；单成员组返回 400 | 0.5 |

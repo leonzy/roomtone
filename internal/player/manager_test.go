@@ -31,6 +31,61 @@ type failingCalibrationStore struct {
 	fail bool
 }
 
+type failingDeviceCalibrationStore struct {
+	*memStore
+	fail bool
+}
+
+func (s *failingDeviceCalibrationStore) UpdatePlayerConfig(ctx context.Context, p player.Player) error {
+	if s.fail {
+		return errors.New("disk full")
+	}
+	return s.memStore.UpdatePlayerConfig(ctx, p)
+}
+func TestDLNADeviceCalibrationRestoreRediscoveryAndSaveFailure(t *testing.T) {
+	ctx := context.Background()
+	store := &failingDeviceCalibrationStore{memStore: newMemStore()}
+	m := player.NewManager(player.ManagerDeps{Store: store})
+	p := player.Player{ID: "d", Kind: player.KindDLNA, Name: "小爱"}
+	if err := m.RegisterPlayer(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	value := 1000
+	if _, err := m.UpdatePlayer(ctx, "d", player.PlayerUpdate{DLNASyncDelayMs: &value}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterPlayer(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := m.GetPlayer("d")
+	if got.DLNASyncDelayMs != 1000 {
+		t.Fatal("rediscovery reset calibration")
+	}
+	restored := player.NewManager(player.ManagerDeps{Store: store})
+	if err := restored.Restore(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = restored.GetPlayer("d")
+	if got.DLNASyncDelayMs != 1000 {
+		t.Fatal("restore reset calibration")
+	}
+	store.fail = true
+	value = 1500
+	if _, err := m.UpdatePlayer(ctx, "d", player.PlayerUpdate{DLNASyncDelayMs: &value}); err == nil {
+		t.Fatal("save failure hidden")
+	}
+	got, _ = m.GetPlayer("d")
+	if got.DLNASyncDelayMs != 1000 {
+		t.Fatal("failed save mutated calibration")
+	}
+	store.fail = false
+	for _, bad := range []int{-1, 2001} {
+		if _, err := m.UpdatePlayer(ctx, "d", player.PlayerUpdate{DLNASyncDelayMs: &bad}); err == nil {
+			t.Fatalf("accepted %d", bad)
+		}
+	}
+}
+
 func (s *failingCalibrationStore) SaveMember(ctx context.Context, id string, member player.Member) error {
 	if s.fail {
 		return errors.New("disk full")
@@ -409,7 +464,7 @@ func TestAddMemberMidPlayback(t *testing.T) {
 }
 
 // TestMemberDelayB04 checks actual musical PCM presentation, not just Start arguments.
-func TestMemberDelayB04(t *testing.T) {
+func TestLegacyMemberDelayDoesNotAffectExactPlayback(t *testing.T) {
 	m, builder, _ := newTestManager(t, "a", "b")
 	ctx := context.Background()
 	gid := m.GroupIDOf("a")
@@ -442,8 +497,8 @@ func TestMemberDelayB04(t *testing.T) {
 	af, _ := firstSignal(a)
 	bf, _ := firstSignal(b)
 	diff := bf.PlayAt.Sub(af.PlayAt)
-	if diff < 40*time.Millisecond || diff > 80*time.Millisecond {
-		t.Fatalf("delay_ms=60 的起播偏移是 %v，误差超过 1 帧", diff)
+	if diff != 0 {
+		t.Fatalf("legacy manual delay affected exact-only group: %v", diff)
 	}
 	if !a.StartedAt().Equal(b.StartedAt()) {
 		t.Fatal("member delay was applied twice through Start and PCM")
