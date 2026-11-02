@@ -323,3 +323,7 @@ Status: lesson / promotion candidate / promoted (authoritative destination)
 ### DTS-001: Validate real multichannel decoding, not only routing tables
 
 2026-11-02: A real DTS-ES 6.1 sample exposed stereo `aformat` constraints propagating through `asplit` into the shared decode, discarding discrete channels. A 7.1 constant-PCM routing fixture did not reveal it. Isolate stereo conversion with explicit `aresample`, compare all seven channels against independent native PCM sample by sample, keep missing channels silent and preserve FFmpeg's normal stereo mix. Carry the internal bus width through framing, crossfade and prefetch format checks without changing the negotiated speaker format. Seen 1×.
+
+### JS-TEST-001: Assert asynchronous registration after observing registry state
+
+2026-11-02: Release checks exposed an immediate post-reload registration assertion. Public lyrics/covers helpers dispatch bridge calls without returning the Promise; plugin load or HTTP completion is not a side-effect barrier. Lifecycle tests should wait within a bounded deadline for both real provider states while retaining registration, unregister, reload and disable assertions. Do not replace the assertions with fixed sleeps. Twenty repetitions pass on Windows and in the Linux container; plugin runtime code is unchanged. Seen 1×.

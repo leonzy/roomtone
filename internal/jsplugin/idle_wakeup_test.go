@@ -88,6 +88,19 @@ func TestIdleWakeup_SearchLyricsWakesSleepingProvider(t *testing.T) {
 
 	manager := NewManager(repo, pluginsDir, dataDir, "", nil, nil)
 	t.Cleanup(func() { manager.Close() })
+	// The public registration helpers dispatch bridge calls without returning
+	// their Promise. Load/HTTP completion is not a registration barrier.
+	waitForProviderState := func(want bool) {
+		t.Helper()
+		for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+			_, cover := manager.coverProviders.Load(entryPath)
+			if manager.HasLyricProvider() == want && cover == want {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatalf("provider bridge state did not settle: want registered=%v", want)
+	}
 
 	if err := manager.LoadPlugin(ctx, plugin); err != nil {
 		t.Skipf("LoadPlugin failed (may need QuickJS runtime): %v", err)
@@ -95,6 +108,7 @@ func TestIdleWakeup_SearchLyricsWakesSleepingProvider(t *testing.T) {
 
 	// 模拟插件在 onInit 里 registerProvider('lyrics') 的效果：注册为歌词提供者。
 	manager.RegisterLyricProvider(entryPath)
+	waitForProviderState(true)
 
 	// Exercise the actual health-check eviction path, including onDeinit cleanup.
 	// Drain queued initialization before aging the last-activity timestamp.
@@ -148,6 +162,7 @@ func TestIdleWakeup_SearchLyricsWakesSleepingProvider(t *testing.T) {
 	if _, _, _, err := manager.InvokeHTTP(ctx, entryPath, "GET", "/disable-search", nil, nil); err != nil {
 		t.Fatal(err)
 	}
+	waitForProviderState(false)
 	if manager.HasLyricProvider() {
 		t.Fatal("explicit runtime unregister must remove the provider")
 	}
@@ -157,12 +172,14 @@ func TestIdleWakeup_SearchLyricsWakesSleepingProvider(t *testing.T) {
 	if err := manager.ReloadPlugin(ctx, entryPath); err != nil {
 		t.Fatal(err)
 	}
+	waitForProviderState(true)
 	if !manager.HasLyricProvider() {
 		t.Fatal("reloaded plugin must register again")
 	}
 	if err := manager.DisablePlugin(ctx, plugin.ID); err != nil {
 		t.Fatal(err)
 	}
+	waitForProviderState(false)
 	if manager.HasLyricProvider() {
 		t.Fatal("disabled plugin must not remain a provider")
 	}
