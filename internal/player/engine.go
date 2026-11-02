@@ -127,15 +127,16 @@ type Engine struct {
 	targets   *sink.Set
 	format    Format
 	// sourceFormat 当前曲目的源格式摘要（signal_path 用）；空串表示未知。
-	sourceFormat string
-	cancel       context.CancelFunc
-	runCtx       context.Context
-	running      bool
-	delegated    bool // active loop has no PCM producer; must change when first push target joins
-	release      func()
-	underruns    int64
-	preload      Decoder
-	preloadID    int64
+	sourceFormat  string
+	cancel        context.CancelFunc
+	runCtx        context.Context
+	running       bool
+	delegated     bool // active loop has no PCM producer; must change when first push target joins
+	release       func()
+	underruns     int64
+	preload       Decoder
+	preloadID     int64
+	preloadFormat Format
 	// sinksOpen 当前 sink 会话已经打开（下一曲可以走 gapless 接续）。
 	sinksOpen bool
 	lastErr   error
@@ -244,7 +245,8 @@ func (e *Engine) Targets() *sink.Set { return e.targets }
 func (e *Engine) SetTargets(ctx context.Context, ts []sink.Target) error {
 	e.mu.Lock()
 	running := e.running
-	modeChanged := running && ((e.delegated && len(ts) > 0) || (!e.delegated && len(ts) == 0 && len(e.controls) > 0))
+	previousTargets, _ := e.targets.Snapshot()
+	modeChanged := running && ((e.delegated && len(ts) > 0) || (!e.delegated && len(ts) == 0 && len(e.controls) > 0) || surroundTargets(previousTargets) != surroundTargets(ts))
 	if modeChanged {
 		// Open/Start alone cannot feed a newly joined AirPlay sink while the
 		// active loop only follows a DLNA/Web player's position. Rebuild the
@@ -278,6 +280,7 @@ func (e *Engine) SetTargets(ctx context.Context, ts []sink.Target) error {
 		if old, ok := e.targets.Get(t.PlayerID); ok {
 			old.EQ = t.EQ
 			old.Delay = t.Delay
+			old.ChannelMode = t.ChannelMode
 			e.targets.Add(old)
 			continue
 		}
@@ -920,7 +923,9 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			e.mu.Unlock()
 		}
 
-		dec, err := e.openDecoder(ctx, track, position, format)
+		decodeTargets, _ := e.targets.Snapshot()
+		pcmFormat := decodeFormat(format, decodeTargets)
+		dec, err := e.openDecoder(ctx, track, position, pcmFormat)
 		if err != nil {
 			e.fail(ctx, err)
 			return
@@ -1061,6 +1066,13 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		runner := e.deps.Runners(timeline, e.targets, sampleBase, func(idx int64, at time.Time) {
 			e.onProgress(ctx, idx, at, track.Duration, format.SampleRate)
 		})
+		if configurable, ok := runner.(interface{ SetPCMChannels(int) }); ok {
+			configurable.SetPCMChannels(pcmFormat.Channels)
+		} else if pcmFormat.Channels != 2 {
+			_ = dec.Close()
+			e.fail(ctx, errors.New("播放分发器不支持多声道 PCM"))
+			return
+		}
 		if resume && canGapless(targets) {
 			if state, ok := runner.(interface {
 				ResumeContentDelays(map[string]time.Duration)
@@ -1103,10 +1115,10 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		var xf *crossfadeReader
 		if fade > 0 {
 			if nextID, ok := e.queue.PeekNext(); ok && nextID != track.SongID {
-				// 帧字节数固定 4（s16le 双声道），与 pipeline 保持一致。
-				xf = newCrossfadeReader(dec, crossfadeFrames(fade.Seconds(), format.SampleRate), 4,
+				// Internal PCM width follows the decoder; device output remains stereo.
+				xf = newCrossfadeReader(dec, crossfadeFrames(fade.Seconds(), format.SampleRate), pcmFormat.Channels*2,
 					func() (io.ReadCloser, error) {
-						return e.openCrossfadeNext(ctx, nextID, format)
+						return e.openCrossfadeNext(ctx, nextID, pcmFormat)
 					})
 				src = xf
 			}
@@ -1396,15 +1408,9 @@ func (e *Engine) crossfadeDuration() time.Duration {
 // 这一步发生在当前曲 EOF 处，分发器还有 2s 缓冲兜着，几十毫秒的开销
 // 不会传到设备侧。返回的 decoder 由 crossfadeReader 负责 Close。
 func (e *Engine) openCrossfadeNext(ctx context.Context, songID int64, format Format) (io.ReadCloser, error) {
-	e.mu.Lock()
-	if e.preload != nil && e.preloadID == songID {
-		d := e.preload
-		e.preload = nil
-		e.preloadID = 0
-		e.mu.Unlock()
+	if d := e.takePrefetched(songID, format); d != nil {
 		return d, nil
 	}
-	e.mu.Unlock()
 	track, err := e.resolve(ctx, songID)
 	if err != nil {
 		return nil, err

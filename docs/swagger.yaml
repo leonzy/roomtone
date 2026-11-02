@@ -488,6 +488,22 @@ definitions:
     type: object
   handlers.memberUpdateRequest:
     properties:
+      channel_mode:
+        enum:
+        - stereo
+        - left
+        - right
+        - mono
+        - front_left
+        - front_right
+        - center
+        - lfe
+        - back_left
+        - back_right
+        - back_center
+        - side_left
+        - side_right
+        type: string
       delay_ms:
         type: integer
       volume_offset:
@@ -1621,6 +1637,12 @@ definitions:
     type: object
   player.EQProfile:
     properties:
+      attenuation_db:
+        description: 独立的手动衰减，0..24 dB；关闭 EQ 仍生效
+        example: 6
+        maximum: 24
+        minimum: 0
+        type: number
       bands:
         description: 10 段增益 dB
         items:
@@ -1629,7 +1651,7 @@ definitions:
       enabled:
         type: boolean
       preamp:
-        description: 服务端算出的前级衰减，防削波
+        description: 服务端计算的总前级增益：防削波补偿减手动衰减
         type: number
       preset:
         type: string
@@ -1702,6 +1724,24 @@ definitions:
     - KindRAAT
   player.Member:
     properties:
+      channel_mode:
+        default: stereo
+        description: 可选声道分配；默认立体声，仅多成员组生效
+        enum:
+        - stereo
+        - left
+        - right
+        - mono
+        - front_left
+        - front_right
+        - center
+        - lfe
+        - back_left
+        - back_right
+        - back_center
+        - side_left
+        - side_right
+        type: string
       delay_ms:
         type: integer
       player_id:
@@ -3256,7 +3296,9 @@ paths:
     patch:
       consumes:
       - application/json
-      description: delay_ms 为"该设备比主控晚出声多少毫秒"（-2000~2000，正值=更晚），音量偏移 -100~100。改动立即生效：延迟通过重新挂载该路目标写入起播偏移，不需要重新起播。
+      description: 可选字段只更新传入项，其余保持原值。volume_offset 为 -100..100，delay_ms 为旧客户端兼容字段。channel_mode
+        支持 stereo（默认）、left/right/mono 及 front_left/front_right/center/lfe/back_left/back_right/back_center/side_left/side_right
+        离散声道。仅多成员组的 AirPlay/RAAT 推流音箱支持分配；单独播放恢复立体声。所选声道复制到音箱两路，源文件缺失该离散声道时静音，不改文件。
       parameters:
       - description: 组 ID
         in: path
@@ -5119,7 +5161,8 @@ paths:
       - 播放控制
   /players/{id}/eq:
     get:
-      description: 返回该音箱的 10 段 EQ 配置与服务端计算的前级衰减 preamp（用于防削波）。
+      description: 返回该音箱的 10 段 EQ、独立手动衰减 attenuation_db（0..24dB）和只读总前级增益 preamp。手动衰减在关闭
+        EQ 时仍生效。
       parameters:
       - description: 设备 ID
         in: path
@@ -5147,7 +5190,9 @@ paths:
     put:
       consumes:
       - application/json
-      description: 保存 10 段 EQ。服务端会把增益钳到 ±12dB、重算 preamp 并回填。任一频段非 0 时该组强制走服务端解码管线，占用一个解码槽位。
+      description: 保存 10 段 EQ 和独立手动衰减 attenuation_db（0..24dB，目前支持 AirPlay/RAAT 推流输出）。服务端计算
+        preamp = 自动防削波增益 - 手动衰减。关闭 EQ 保留手动衰减；省略 attenuation_db 时保留旧值，显式传 0 清除。preamp
+        为只读回填。
       parameters:
       - description: 设备 ID
         in: path

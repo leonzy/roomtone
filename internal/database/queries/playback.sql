@@ -56,11 +56,12 @@ SELECT * FROM player_group_members ORDER BY group_id, position, player_id;
 SELECT * FROM player_group_members WHERE group_id = ? ORDER BY position, player_id;
 
 -- name: InsertGroupMember :exec
-INSERT INTO player_group_members (group_id, player_id, delay_ms, volume_offset, position)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO player_group_members (group_id, player_id, delay_ms, volume_offset, position, channel_mode)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(group_id, player_id) DO UPDATE SET
     delay_ms = excluded.delay_ms,
-    volume_offset = excluded.volume_offset;
+    volume_offset = excluded.volume_offset,
+    channel_mode = excluded.channel_mode;
 
 -- name: UpdateGroupMemberPosition :exec
 UPDATE player_group_members SET position = ? WHERE group_id = ? AND player_id = ?;

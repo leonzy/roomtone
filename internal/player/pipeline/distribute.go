@@ -14,7 +14,7 @@ import (
 // Distributor 把一条 PCM 流切成 20ms 帧分发给所有推送目标。
 //
 // 关键性质（都有测试守着）：
-//   - 每帧固定 FrameSamples 个采样，字节数 = FrameSamples × 4（16bit 双声道）；
+//   - 每帧固定 FrameSamples 个采样；内部 PCM 可为环绕总线，各设备仍收 16bit 双声道；
 //   - SampleIndex 连续单调，跨曲目也不归零（无缝续播的地基）；
 //   - 欠载补静音：落后于时间轴时插入静音帧把序号追平，**不推迟后续帧**；
 //   - 发送节奏按"领先播放时刻不超过 BufferDepth"，不会一口气灌满设备缓冲；
@@ -23,6 +23,7 @@ import (
 //   - **目标集合可热替换**：Targets 是 *sink.Set，播放中增删成员下一帧生效。
 type Distributor struct {
 	Rate         int
+	Channels     int // internal decoded bus; sinks always receive stereo
 	FrameSamples int
 	// Targets 推送目标集合（可热替换）。为空返回 ErrNoSinks。
 	Targets  *sink.Set
@@ -78,7 +79,14 @@ func (d *Distributor) Run(ctx context.Context, r io.Reader) (int, error) {
 	if frameSamples <= 0 {
 		frameSamples = DefaultFrameSamples
 	}
-	frameBytes := frameSamples * 2 * 2 // s16le 双声道
+	channels := d.Channels
+	if channels == 0 {
+		channels = 2
+	}
+	if channels != 2 && channels != player.SurroundPCMChannels {
+		return 0, errors.New("distributor: unsupported PCM bus")
+	}
+	frameBytes := frameSamples * channels * 2
 	depth := d.BufferDepth
 	if depth <= 0 {
 		depth = DefaultBufferDepth
@@ -124,7 +132,7 @@ func (d *Distributor) Run(ctx context.Context, r io.Reader) (int, error) {
 	push := func(pcm []byte, idx int64, playAt time.Time) {
 		targets, version := d.Targets.Snapshot()
 		out.reconcile(targets, version)
-		out.push(sink.Frame{SampleIndex: idx, PlayAt: playAt, Data: pcm})
+		out.pushPCM(sink.Frame{SampleIndex: idx, PlayAt: playAt, Data: pcm}, channels)
 	}
 
 	for {
@@ -179,6 +187,9 @@ func (d *Distributor) Run(ctx context.Context, r io.Reader) (int, error) {
 		}
 	}
 }
+
+// SetPCMChannels is called before Run, independently of sink negotiation.
+func (d *Distributor) SetPCMChannels(channels int) { d.Channels = channels }
 
 // SetGain 设置线性增益（player.gainSetter，由引擎在 Run 之前调用）。
 //
@@ -330,12 +341,24 @@ func (f *fanout) reconcile(targets []sink.Target, version uint64) {
 
 // push 把一帧投递给每一路。数据按路拷贝：读缓冲会被复用，且 EQ 就地处理。
 func (f *fanout) push(frame sink.Frame) {
+	f.pushPCM(frame, 2)
+}
+
+func (f *fanout) pushPCM(frame sink.Frame, channels int) {
 	// 持锁投递：reconcile 会关闭队列，出锁后并发写会打到已关闭的 channel。
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, w := range f.writers {
-		data := make([]byte, len(frame.Data))
-		copy(data, frame.Data)
+		var data []byte
+		if channels == player.SurroundPCMChannels {
+			w.mu.Lock()
+			mode := w.channelMode
+			w.mu.Unlock()
+			data = player.RouteSurround(frame.Data, mode)
+		} else {
+			data = make([]byte, len(frame.Data))
+			copy(data, frame.Data)
+		}
 		w.push(sink.Frame{SampleIndex: frame.SampleIndex, PlayAt: frame.PlayAt, Data: data})
 	}
 }
@@ -410,14 +433,15 @@ const drainTimeout = 3 * time.Second
 
 // sinkWriter 单路写协程：独立队列 + 独立 WriteFrame 调用。
 type sinkWriter struct {
-	id      string
-	ch      chan sink.Frame
-	done    chan struct{}
-	queue   int
-	rate    int
-	samples int
-	onErr   func(string, error)
-	onDrop  func(string, int)
+	channelMode string
+	id          string
+	ch          chan sink.Frame
+	done        chan struct{}
+	queue       int
+	rate        int
+	samples     int
+	onErr       func(string, error)
+	onDrop      func(string, int)
 
 	mu      sync.Mutex
 	sink    sink.PushSink
@@ -434,17 +458,18 @@ type sinkWriter struct {
 
 func newSinkWriter(t sink.Target, queue, rate, samples int, onErr func(string, error), onDrop func(string, int)) *sinkWriter {
 	w := &sinkWriter{
-		id:      t.PlayerID,
-		ch:      make(chan sink.Frame, queue),
-		done:    make(chan struct{}),
-		queue:   queue,
-		rate:    rate,
-		samples: samples,
-		onErr:   onErr,
-		onDrop:  onDrop,
-		sink:    t.Sink,
-		eq:      t.EQ,
-		delay:   t.Delay,
+		channelMode: t.ChannelMode,
+		id:          t.PlayerID,
+		ch:          make(chan sink.Frame, queue),
+		done:        make(chan struct{}),
+		queue:       queue,
+		rate:        rate,
+		samples:     samples,
+		onErr:       onErr,
+		onDrop:      onDrop,
+		sink:        t.Sink,
+		eq:          t.EQ,
+		delay:       t.Delay,
 	}
 	if t.Delay > 0 {
 		w.padFor(t.Delay)
@@ -469,6 +494,7 @@ func (w *sinkWriter) update(t sink.Target) {
 		w.skip += int64(-delta) * int64(w.rate) / int64(time.Second)
 	}
 	w.eq = t.EQ
+	w.channelMode = t.ChannelMode
 	w.delay = t.Delay
 	w.mu.Unlock()
 }

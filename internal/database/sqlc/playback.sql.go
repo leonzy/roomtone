@@ -220,11 +220,12 @@ func (q *Queries) InsertGroup(ctx context.Context, arg InsertGroupParams) error 
 }
 
 const insertGroupMember = `-- name: InsertGroupMember :exec
-INSERT INTO player_group_members (group_id, player_id, delay_ms, volume_offset, position)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO player_group_members (group_id, player_id, delay_ms, volume_offset, position, channel_mode)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(group_id, player_id) DO UPDATE SET
     delay_ms = excluded.delay_ms,
-    volume_offset = excluded.volume_offset
+    volume_offset = excluded.volume_offset,
+    channel_mode = excluded.channel_mode
 `
 
 type InsertGroupMemberParams struct {
@@ -233,6 +234,7 @@ type InsertGroupMemberParams struct {
 	DelayMs      int64
 	VolumeOffset int64
 	Position     int64
+	ChannelMode  string
 }
 
 func (q *Queries) InsertGroupMember(ctx context.Context, arg InsertGroupMemberParams) error {
@@ -242,6 +244,7 @@ func (q *Queries) InsertGroupMember(ctx context.Context, arg InsertGroupMemberPa
 		arg.DelayMs,
 		arg.VolumeOffset,
 		arg.Position,
+		arg.ChannelMode,
 	)
 	return err
 }
@@ -283,7 +286,7 @@ func (q *Queries) InsertQueueItem(ctx context.Context, arg InsertQueueItemParams
 }
 
 const listAllGroupMembers = `-- name: ListAllGroupMembers :many
-SELECT group_id, player_id, delay_ms, volume_offset, position FROM player_group_members ORDER BY group_id, position, player_id
+SELECT group_id, player_id, delay_ms, volume_offset, position, channel_mode FROM player_group_members ORDER BY group_id, position, player_id
 `
 
 func (q *Queries) ListAllGroupMembers(ctx context.Context) ([]PlayerGroupMember, error) {
@@ -301,6 +304,7 @@ func (q *Queries) ListAllGroupMembers(ctx context.Context) ([]PlayerGroupMember,
 			&i.DelayMs,
 			&i.VolumeOffset,
 			&i.Position,
+			&i.ChannelMode,
 		); err != nil {
 			return nil, err
 		}
@@ -316,7 +320,7 @@ func (q *Queries) ListAllGroupMembers(ctx context.Context) ([]PlayerGroupMember,
 }
 
 const listGroupMembers = `-- name: ListGroupMembers :many
-SELECT group_id, player_id, delay_ms, volume_offset, position FROM player_group_members WHERE group_id = ? ORDER BY position, player_id
+SELECT group_id, player_id, delay_ms, volume_offset, position, channel_mode FROM player_group_members WHERE group_id = ? ORDER BY position, player_id
 `
 
 func (q *Queries) ListGroupMembers(ctx context.Context, groupID string) ([]PlayerGroupMember, error) {
@@ -334,6 +338,7 @@ func (q *Queries) ListGroupMembers(ctx context.Context, groupID string) ([]Playe
 			&i.DelayMs,
 			&i.VolumeOffset,
 			&i.Position,
+			&i.ChannelMode,
 		); err != nil {
 			return nil, err
 		}

@@ -69,8 +69,17 @@ func buildSignalPath(players []*Player, output Format, source string, loudness b
 	// EQ 是逐成员的：组内任一成员开了非 flat 曲线，整条链路就算经过 DSP。
 	// 多个成员用不同预设时合并展示，避免同一段重复写 "EQ: ..."。
 	presets := make([]string, 0, len(players))
+	attenuations := make([]string, 0, len(players))
 	for _, p := range players {
-		if p.EQ.Flat() {
+		if p.EQ.AttenuationDB > 0 {
+			attenuations = append(attenuations, fmt.Sprintf("%s −%g dB", p.Name, p.EQ.AttenuationDB))
+		}
+		if !p.EQ.Enabled {
+			continue
+		}
+		curve := p.EQ
+		curve.AttenuationDB = 0
+		if curve.Flat() {
 			continue
 		}
 		preset := strings.TrimSpace(p.EQ.Preset)
@@ -84,6 +93,10 @@ func buildSignalPath(players []*Player, output Format, source string, loudness b
 	}
 
 	dsp := make([]string, 0, 2)
+	if len(attenuations) > 0 {
+		dsp = append(dsp, "前级衰减: "+strings.Join(attenuations, ", "))
+		kind = SignalKindEnhanced
+	}
 	if len(presets) > 0 {
 		dsp = append(dsp, "EQ: "+strings.Join(presets, ", "))
 		kind = SignalKindEnhanced

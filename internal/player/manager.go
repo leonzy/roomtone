@@ -598,14 +598,26 @@ func validVolumeMode(mode string) bool {
 
 // SetEQ 更新某设备的 EQ，重算 preamp 并回填。
 func (m *Manager) SetEQ(ctx context.Context, id string, eq EQProfile) (EQProfile, error) {
+	eq = eq.normalized()
 	m.mu.Lock()
 	p, ok := m.players[id]
 	if !ok {
 		m.mu.Unlock()
 		return EQProfile{}, ErrPlayerNotFound
 	}
-	p.EQ = eq
+	if eq.AttenuationDB > 0 && (p.Kind == KindDLNA || p.Kind == KindLocal) {
+		m.mu.Unlock()
+		return EQProfile{}, invalidArg("该输出尚不支持前级衰减，请使用 AirPlay 音箱")
+	}
 	out := *p
+	out.EQ = eq
+	if m.deps.Store != nil {
+		if err := m.deps.Store.UpdatePlayerEQ(ctx, out); err != nil {
+			m.mu.Unlock()
+			return EQProfile{}, err
+		}
+	}
+	p.EQ = eq
 	groups := make([]string, 0, 1)
 	for _, g := range m.groups {
 		if g.HasMember(id) {
@@ -614,9 +626,6 @@ func (m *Manager) SetEQ(ctx context.Context, id string, eq EQProfile) (EQProfile
 	}
 	m.mu.Unlock()
 
-	if m.deps.Store != nil {
-		_ = m.deps.Store.UpdatePlayerEQ(ctx, out)
-	}
 	if m.deps.Bus != nil {
 		enabled := eq.Enabled
 		m.deps.Bus.Publish(Event{Type: EventEQChanged, PlayerID: id, Enabled: &enabled, Preset: eq.Preset})
@@ -718,6 +727,30 @@ func (m *Manager) groupViewLocked(g *Group) GroupView {
 		source = e.SourceFormat()
 	}
 	view.SignalPath = buildSignalPath(players, output, source, m.loudnessEnabledLocked())
+	if len(g.Members) > 1 {
+		for _, mem := range g.Members {
+			if mem.ChannelMode == "" || mem.ChannelMode == "stereo" {
+				continue
+			}
+			label := map[string]string{"left": "左声道", "right": "右声道", "mono": "单声道", "front_left": "前左", "front_right": "前右", "center": "中置", "lfe": "低音", "back_left": "后左", "back_right": "后右", "back_center": "后中", "side_left": "侧左", "side_right": "侧右"}[mem.ChannelMode]
+			if label == "" {
+				continue
+			}
+			name := mem.PlayerID
+			if p := m.players[mem.PlayerID]; p != nil {
+				name = p.Name
+			}
+			if view.SignalPath.Stages[2].Detail == "直通" {
+				view.SignalPath.Stages[2].Detail = ""
+			} else {
+				view.SignalPath.Stages[2].Detail += ", "
+			}
+			view.SignalPath.Stages[2].Detail += name + " " + label
+			if view.SignalPath.Kind == SignalKindLossless {
+				view.SignalPath.Kind = SignalKindEnhanced
+			}
+		}
+	}
 	return view
 }
 
@@ -746,7 +779,7 @@ func (m *Manager) ensureSoloGroup(ctx context.Context, playerID string) error {
 	if _, exists := m.groups[gid]; exists || m.retiredGroups[gid] {
 		gid = fmt.Sprintf("grp-%s-%d", playerID, time.Now().UnixNano())
 	}
-	g := &Group{ID: gid, Name: p.Name, MasterID: playerID, Members: []Member{{PlayerID: playerID}}}
+	g := &Group{ID: gid, Name: p.Name, MasterID: playerID, Members: []Member{{PlayerID: playerID, ChannelMode: "stereo"}}}
 	m.groups[gid] = g
 	snapshot := *g
 	m.mu.Unlock()
@@ -811,7 +844,7 @@ func (m *Manager) CreateGroup(ctx context.Context, name string, memberIDs []stri
 	}
 	g := &Group{ID: gid, Name: name, MasterID: master}
 	for _, id := range memberIDs {
-		g.Members = append(g.Members, Member{PlayerID: id})
+		g.Members = append(g.Members, Member{PlayerID: id, ChannelMode: "stereo"})
 	}
 	m.groups[gid] = g
 	snapshot := *g
@@ -942,6 +975,19 @@ func (m *Manager) AddMember(ctx context.Context, groupID, playerID string) (Grou
 		m.mu.Unlock()
 		return GroupView{}, ErrDuplicateMember
 	}
+	// A new grouping starts in stereo, even if an old split pair left a solo
+	// anchor behind. Non-stereo roles require a fresh explicit member update.
+	if len(g.Members) == 1 && g.Members[0].ChannelMode != "" && g.Members[0].ChannelMode != "stereo" {
+		mem := g.Members[0]
+		mem.ChannelMode = "stereo"
+		if m.deps.Store != nil {
+			if err := m.deps.Store.SaveMember(ctx, groupID, mem); err != nil {
+				m.mu.Unlock()
+				return GroupView{}, err
+			}
+		}
+		g.Members[0] = mem
+	}
 	// 精确同步组（RAOP / 本机）不能塞进只能对齐起播的设备（DLNA）：
 	// 混进来整组都会降级成"起播对齐、之后随便漂"，用户却以为还在精确组。
 	if joining, ok := m.players[playerID]; ok {
@@ -975,7 +1021,7 @@ func (m *Manager) AddMember(ctx context.Context, groupID, playerID string) (Grou
 		delete(m.groups, id)
 	}
 	// 新成员排在最后：顺序决定"主控候选"，先入组的更靠前。
-	newMember := Member{PlayerID: playerID, Position: len(g.Members)}
+	newMember := Member{PlayerID: playerID, Position: len(g.Members), ChannelMode: "stereo"}
 	g.Members = append(g.Members, newMember)
 	snapshot := *g
 	m.mu.Unlock()
@@ -1090,7 +1136,10 @@ func (m *Manager) groupTierLocked(g *Group) SyncTier {
 // delay_ms 作为旧客户端兼容字段保留；实际同步由 DLNA 设备配置自动计算。
 // volume_offset 让每台设备在自己
 // 的音量基准上做微调（书架箱和吸顶喇叭灵敏度差 6dB 很常见）。
-func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, delayMs, volumeOffset int) (GroupView, error) {
+func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, delayMs, volumeOffset int, channelMode ...string) (GroupView, error) {
+	if len(channelMode) > 0 && !validChannelMode(channelMode[0]) {
+		return GroupView{}, invalidArg("无效声道，请选择立体声、左右声道或环绕声道")
+	}
 	if delayMs < -2000 {
 		delayMs = -2000
 	}
@@ -1109,11 +1158,28 @@ func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, de
 		m.mu.Unlock()
 		return GroupView{}, ErrGroupNotFound
 	}
+	if len(channelMode) > 0 && channelMode[0] != "" && channelMode[0] != "stereo" {
+		p := m.players[playerID]
+		if p == nil {
+			m.mu.Unlock()
+			return GroupView{}, ErrPlayerNotFound
+		}
+		if p.Kind == KindDLNA || p.Kind == KindLocal {
+			m.mu.Unlock()
+			return GroupView{}, invalidArg("该设备暂不支持声道分配，请使用 AirPlay 或 RAAT 音箱")
+		}
+	}
 	found := false
 	for i := range g.Members {
 		if g.Members[i].PlayerID == playerID {
+			member := g.Members[i]
+			if len(channelMode) > 0 {
+				member.ChannelMode = channelMode[0]
+				if member.ChannelMode == "" {
+					member.ChannelMode = "stereo"
+				}
+			}
 			if m.deps.Store != nil {
-				member := g.Members[i]
 				member.DelayMs, member.VolumeOffset = delayMs, volumeOffset
 				if err := m.deps.Store.SaveMember(ctx, groupID, member); err != nil {
 					m.mu.Unlock()
@@ -1122,6 +1188,7 @@ func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, de
 			}
 			g.Members[i].DelayMs = delayMs
 			g.Members[i].VolumeOffset = volumeOffset
+			g.Members[i].ChannelMode = member.ChannelMode
 			found = true
 		}
 	}
@@ -1249,6 +1316,12 @@ func (m *Manager) RemoveMember(ctx context.Context, groupID, playerID, mode stri
 		return fmt.Errorf("%w: %s", ErrPlayerNotFound, playerID)
 	}
 	g.Members = removeMember(g.Members, playerID)
+	var soloReset *Member
+	if len(g.Members) == 1 {
+		g.Members[0].ChannelMode = "stereo"
+		mem := g.Members[0]
+		soloReset = &mem
+	}
 	if s, ok := m.sinks[playerID]; ok {
 		_ = s.Stop()
 		if mode == "stop" {
@@ -1268,8 +1341,12 @@ func (m *Manager) RemoveMember(ctx context.Context, groupID, playerID, mode stri
 	}
 	m.mu.Unlock()
 
+	var channelSaveErr error
 	if m.deps.Store != nil {
 		_ = m.deps.Store.DeleteMember(ctx, groupID, playerID)
+		if soloReset != nil {
+			channelSaveErr = m.deps.Store.SaveMember(ctx, groupID, *soloReset)
+		}
 		if empty {
 			_ = m.deps.Store.DeleteGroup(ctx, groupID)
 		}
@@ -1291,7 +1368,7 @@ func (m *Manager) RemoveMember(ctx context.Context, groupID, playerID, mode stri
 	if mode != "stop" {
 		_ = m.ensureSoloGroup(ctx, playerID)
 	}
-	return nil
+	return channelSaveErr
 }
 
 // TransferCompensation 转移时给目标组的前置补偿（源位置 + 这个值）。
@@ -1315,7 +1392,7 @@ func (m *Manager) Transfer(ctx context.Context, fromGroupID, toGroupID, onlyPlay
 		gid := fmt.Sprintf("grp-%d", time.Now().UnixNano())
 		m.mu.Lock()
 		p := m.players[onlyPlayerID]
-		g := &Group{ID: gid, Name: p.Name, MasterID: onlyPlayerID, Members: []Member{{PlayerID: onlyPlayerID}}}
+		g := &Group{ID: gid, Name: p.Name, MasterID: onlyPlayerID, Members: []Member{{PlayerID: onlyPlayerID, ChannelMode: "stereo"}}}
 		m.groups[gid] = g
 		snapshot := *g
 		m.mu.Unlock()
@@ -1431,6 +1508,7 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) error {
 	}
 	e := m.engines["group:"+groupID]
 	delays := m.groupDelaysLocked(g)
+	members := append([]Member(nil), g.Members...)
 	m.mu.RUnlock()
 	if e == nil {
 		return nil
@@ -1472,10 +1550,11 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) error {
 			continue
 		}
 		targets = append(targets, sink.Target{
-			PlayerID: p.ID,
-			Sink:     ps,
-			EQ:       m.eqChainFor(p, format.SampleRate),
-			Delay:    delays[p.ID],
+			ChannelMode: memberChannel(members, p.ID),
+			PlayerID:    p.ID,
+			Sink:        ps,
+			EQ:          groupProcessor(m.eqChainFor(p, format.SampleRate), members, p.ID),
+			Delay:       delays[p.ID],
 		})
 	}
 	e.SetControlDelays(controlDelays)
@@ -1492,11 +1571,11 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) error {
 
 // eqSettingsFor 把设备 EQ 翻成下发结构（客户端与 WS 共用一份口径）。
 func eqSettingsFor(p *Player, appliedBy string) sink.EQSettings {
-	bands := dsp.NormalizeBands(p.EQ.Bands)
+	eq := p.EQ.effective()
 	return sink.EQSettings{
 		Enabled:   !p.EQ.Flat(),
-		Bands:     bands,
-		Preamp:    p.EQ.Preamp,
+		Bands:     eq.Bands,
+		Preamp:    eq.Preamp,
 		AppliedBy: appliedBy,
 	}
 }
@@ -1523,13 +1602,14 @@ func (m *Manager) syncControlEQ(s sink.Sink, p *Player) {
 // 每台设备一条独立链：同一组里书架箱和吸顶喇叭的补偿完全不同，
 // 共享一条滤镜链只能有一个声音。采样率变化（组协商结果变了）时重建。
 func (m *Manager) eqChainFor(p *Player, rate int) sink.SampleProcessor {
+	eq := p.EQ.effective()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if chain, ok := m.eqChains[p.ID]; ok {
-		chain.SetBands(p.EQ.Bands, p.EQ.Preamp)
+		chain.SetBands(eq.Bands, eq.Preamp)
 		return chain
 	}
-	chain := dsp.NewEQ(rate, 2, p.EQ.Bands, p.EQ.Preamp)
+	chain := dsp.NewEQ(rate, 2, eq.Bands, eq.Preamp)
 	m.eqChains[p.ID] = chain
 	return chain
 }

@@ -19,6 +19,8 @@
 
 ## PLAY-009: Crossfade must return track ownership at the current track boundary
 
+- Test correction on 2026-11-02: explicitly block the failed writer and acknowledge each healthy write instead of racing an unpaced 120-frame input against a 108-frame queue. Also assert actual bounded drops on the failed route. Twenty repetitions pass. Production fanout policy is unchanged; this follow-up does not increase the incident count.
+
 - On 2026-10-31 leonFN had three-second crossfade enabled. The dining server state reported 415.37 seconds for a 246.77-second track while the user heard the next song. `crossfadeReader` emitted the entire remainder of the next song, delaying queue advancement until both ended. The old unit test incorrectly treated both tracks minus overlap as the length of one reader invocation. The constructor also interpreted sample frames as bytes: three seconds mixed only 0.75 seconds, but playback resumed at three seconds.
 - Emit only the current track and overlap, then EOF; resume the next track at the actual consumed frame offset, handling short tracks and data returned with EOF. Test the real engine's song ID, queue cursor, resume offset and per-track PCM byte counts, not only the mix formula. Three regressions fail against the old implementation; all eight crossfade regressions, including actual FFmpeg decoding, pass after repair. Output is captured in memory without speaker playback. Seen 1×.
 - Validation on 2026-11-01: capable outputs retain their Continue session after mixing, avoiding TEARDOWN loss of buffered audio. Full player and pipeline tests pass inside the leonFN image. Windows exhibits the existing scheduling-sensitive `TestStalledSinkDoesNotBlockOthers` failure (instant input fills its 108-frame queue); one serial rerun passed and another failed, so the full Windows suite is not claimed stable. That test does not call the changed mixing path. Logs: `crossfade-linux-final.log`, `crossfade-final-suite.log`.
@@ -310,3 +312,14 @@ Status: lesson / promotion candidate / promoted (authoritative destination)
 - Evidence: dual-tag regression failed before the fix and passed afterward; tag suite and services/handlers/app tests passed. Read-only NAS parsing recovered the original tags. Targeted recovery verifies SHA-256 and avoids a whole-library reimport.
 - Dependency: keep module github.com/hanxi/tag; the Git submodule uses leonzy/tag's compatibility fix, retaining upstream as a remote.
 - Seen 1× (2026-11-01).
+
+## DSP-002: Persist manual attenuation separately from EQ headroom
+
+- 2026-11-01: The study speaker's low hardware volume steps were too coarse. The editable Lynx preamp field was overwritten on save, while server PCM EQ still used stored bands with EQ disabled.
+- Store attenuation_db (0..24 dB) per push speaker; derive total preamp from clipping headroom minus manual attenuation. Disabling EQ zeros the effective bands but retains attenuation. Presets, band reset and legacy requests preserve attenuation. Failed persistence leaves live settings unchanged. Reject unsupported DLNA pull/local outputs instead of reporting ineffective changes as saved.
+- Two regressions failed against the old implementation. Tests cover actual PCM gain, speaker isolation, repeated saves, legacy HTTP requests, combined headroom, signal path and persistence failure. Full Linux player/pipeline suites passed. Windows encountered the pre-existing scheduling-sensitive TestStalledSinkDoesNotBlockOthers failure recorded in PLAY-009; unrelated distributor code was left unchanged. Speaker listening validation was not performed. Seen 1×.
+
+
+### DTS-001: Validate real multichannel decoding, not only routing tables
+
+2026-11-02: A real DTS-ES 6.1 sample exposed stereo `aformat` constraints propagating through `asplit` into the shared decode, discarding discrete channels. A 7.1 constant-PCM routing fixture did not reveal it. Isolate stereo conversion with explicit `aresample`, compare all seven channels against independent native PCM sample by sample, keep missing channels silent and preserve FFmpeg's normal stereo mix. Carry the internal bus width through framing, crossfade and prefetch format checks without changing the negotiated speaker format. Seen 1×.

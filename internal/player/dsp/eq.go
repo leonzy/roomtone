@@ -250,8 +250,8 @@ func clampPreamp(p float64) float64 {
 	if math.IsNaN(p) || math.IsInf(p, 0) || p > 0 {
 		return 0
 	}
-	if p < -24 {
-		return -24
+	if p < -48 {
+		return -48
 	}
 	return p
 }

@@ -164,7 +164,7 @@ type volumeRequest struct {
 
 // GetEQ 读取设备 EQ
 // @Summary 获取设备均衡器配置
-// @Description 返回该音箱的 10 段 EQ 配置与服务端计算的前级衰减 preamp（用于防削波）。
+// @Description 返回该音箱的 10 段 EQ、独立手动衰减 attenuation_db（0..24dB）和只读总前级增益 preamp。手动衰减在关闭 EQ 时仍生效。
 // @Tags 播放控制
 // @Produce json
 // @Param id path string true "设备 ID"
@@ -183,7 +183,7 @@ func (h *PlaybackHandler) GetEQ(w http.ResponseWriter, r *http.Request) {
 
 // SetEQ 保存设备 EQ
 // @Summary 保存设备均衡器配置
-// @Description 保存 10 段 EQ。服务端会把增益钳到 ±12dB、重算 preamp 并回填。任一频段非 0 时该组强制走服务端解码管线，占用一个解码槽位。
+// @Description 保存 10 段 EQ 和独立手动衰减 attenuation_db（0..24dB，目前支持 AirPlay/RAAT 推流输出）。服务端计算 preamp = 自动防削波增益 - 手动衰减。关闭 EQ 保留手动衰减；省略 attenuation_db 时保留旧值，显式传 0 清除。preamp 为只读回填。
 // @Tags 播放控制
 // @Accept json
 // @Produce json
@@ -195,14 +195,26 @@ func (h *PlaybackHandler) GetEQ(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /players/{id}/eq [put]
 func (h *PlaybackHandler) SetEQ(w http.ResponseWriter, r *http.Request) {
-	var req player.EQProfile
+	var req struct {
+		player.EQProfile
+		Attenuation *float64 `json:"attenuation_db"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
 		return
 	}
+	if req.Attenuation != nil {
+		req.EQProfile.AttenuationDB = *req.Attenuation
+	} else {
+		p, err := h.mgr.GetPlayer(chi.URLParam(r, "id"))
+		if err != nil {
+			playbackFail(w, err)
+			return
+		}
+		req.EQProfile.AttenuationDB = p.EQ.AttenuationDB
+	}
 	req.Bands = dsp.NormalizeBands(req.Bands)
-	req.Preamp = dsp.ComputePreamp(req.Bands)
-	out, err := h.mgr.SetEQ(r.Context(), chi.URLParam(r, "id"), req)
+	out, err := h.mgr.SetEQ(r.Context(), chi.URLParam(r, "id"), req.EQProfile)
 	if err != nil {
 		playbackFail(w, err)
 		return
@@ -354,13 +366,14 @@ type memberRequest struct {
 }
 
 type memberUpdateRequest struct {
-	DelayMs      int `json:"delay_ms"`
-	VolumeOffset int `json:"volume_offset"`
+	DelayMs      *int    `json:"delay_ms"`
+	VolumeOffset *int    `json:"volume_offset"`
+	ChannelMode  *string `json:"channel_mode" enums:"stereo,left,right,mono,front_left,front_right,center,lfe,back_left,back_right,back_center,side_left,side_right"`
 }
 
 // UpdateMember 调整成员的延迟补偿与音量偏移
 // @Summary 调整组成员的延迟补偿与音量偏移
-// @Description delay_ms 为"该设备比主控晚出声多少毫秒"（-2000~2000，正值=更晚），音量偏移 -100~100。改动立即生效：延迟通过重新挂载该路目标写入起播偏移，不需要重新起播。
+// @Description 可选字段只更新传入项，其余保持原值。volume_offset 为 -100..100，delay_ms 为旧客户端兼容字段。channel_mode 支持 stereo（默认）、left/right/mono 及 front_left/front_right/center/lfe/back_left/back_right/back_center/side_left/side_right 离散声道。仅多成员组的 AirPlay/RAAT 推流音箱支持分配；单独播放恢复立体声。所选声道复制到音箱两路，源文件缺失该离散声道时静音，不改文件。
 // @Tags 播放控制
 // @Accept json
 // @Produce json
@@ -378,7 +391,28 @@ func (h *PlaybackHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
 		return
 	}
-	g, err := h.mgr.UpdateMember(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "player_id"), req.DelayMs, req.VolumeOffset)
+	current, err := h.mgr.GetGroup(chi.URLParam(r, "id"))
+	if err != nil {
+		playbackFail(w, err)
+		return
+	}
+	delay, offset := 0, 0
+	for _, m := range current.Members {
+		if m.PlayerID == chi.URLParam(r, "player_id") {
+			delay, offset = m.DelayMs, m.VolumeOffset
+		}
+	}
+	if req.DelayMs != nil {
+		delay = *req.DelayMs
+	}
+	if req.VolumeOffset != nil {
+		offset = *req.VolumeOffset
+	}
+	modes := []string{}
+	if req.ChannelMode != nil {
+		modes = append(modes, *req.ChannelMode)
+	}
+	g, err := h.mgr.UpdateMember(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "player_id"), delay, offset, modes...)
 	if err != nil {
 		playbackFail(w, err)
 		return

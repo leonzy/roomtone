@@ -146,6 +146,7 @@ type PlayerGroupMember struct {
 	DelayMs      int64
 	VolumeOffset int64
 	Position     int64
+	ChannelMode  string
 }
 
 type Playlist struct {

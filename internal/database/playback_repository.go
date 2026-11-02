@@ -64,7 +64,8 @@ type GroupMemberRow struct {
 	DelayMs      int
 	VolumeOffset int
 	// Position 组内显示顺序（决定"主控候选"顺序）。0 表示未显式指定。
-	Position int
+	Position    int
+	ChannelMode string
 }
 
 // PlaybackStateRow 播放状态行（断点续播的落库形态）
@@ -289,7 +290,7 @@ func (r *PlaybackRepository) ListAllGroupMembers(ctx context.Context) ([]GroupMe
 	}
 	out := make([]GroupMemberRow, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, GroupMemberRow{GroupID: row.GroupID, PlayerID: row.PlayerID, DelayMs: int(row.DelayMs), VolumeOffset: int(row.VolumeOffset), Position: int(row.Position)})
+		out = append(out, GroupMemberRow{GroupID: row.GroupID, PlayerID: row.PlayerID, DelayMs: int(row.DelayMs), VolumeOffset: int(row.VolumeOffset), Position: int(row.Position), ChannelMode: row.ChannelMode})
 	}
 	return out, nil
 }
@@ -302,19 +303,23 @@ func (r *PlaybackRepository) ListGroupMembers(ctx context.Context, groupID strin
 	}
 	out := make([]GroupMemberRow, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, GroupMemberRow{GroupID: row.GroupID, PlayerID: row.PlayerID, DelayMs: int(row.DelayMs), VolumeOffset: int(row.VolumeOffset), Position: int(row.Position)})
+		out = append(out, GroupMemberRow{GroupID: row.GroupID, PlayerID: row.PlayerID, DelayMs: int(row.DelayMs), VolumeOffset: int(row.VolumeOffset), Position: int(row.Position), ChannelMode: row.ChannelMode})
 	}
 	return out, nil
 }
 
 // UpsertGroupMember 加入成员（重复加入按最新 delay/volume_offset 覆盖）
 func (r *PlaybackRepository) UpsertGroupMember(ctx context.Context, m GroupMemberRow) error {
+	if m.ChannelMode == "" {
+		m.ChannelMode = "stereo"
+	}
 	return r.queries.InsertGroupMember(ctx, sqlc.InsertGroupMemberParams{
 		GroupID:      m.GroupID,
 		PlayerID:     m.PlayerID,
 		DelayMs:      int64(m.DelayMs),
 		VolumeOffset: int64(m.VolumeOffset),
 		Position:     int64(m.Position),
+		ChannelMode:  m.ChannelMode,
 	})
 }
 

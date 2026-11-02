@@ -64,14 +64,18 @@ const EQBandCount = 10
 
 // EQProfile 每音箱均衡器配置。存 players.eq_profile。
 type EQProfile struct {
-	Enabled bool      `json:"enabled"`
-	Preset  string    `json:"preset"`
-	Bands   []float64 `json:"bands"`  // 10 段增益 dB
-	Preamp  float64   `json:"preamp"` // 服务端算出的前级衰减，防削波
+	Enabled       bool      `json:"enabled"`
+	Preset        string    `json:"preset"`
+	Bands         []float64 `json:"bands"`                                               // 10 段增益 dB
+	Preamp        float64   `json:"preamp"`                                              // 服务端计算的总前级增益：防削波补偿减手动衰减
+	AttenuationDB float64   `json:"attenuation_db" minimum:"0" maximum:"24" example:"6"` // 独立的手动衰减，0..24 dB；关闭 EQ 仍生效
 }
 
 // Flat 是否等价于不处理（决定要不要强制走解码管线）。
 func (p EQProfile) Flat() bool {
+	if p.AttenuationDB > 0 {
+		return false
+	}
 	if !p.Enabled {
 		return true
 	}
@@ -123,7 +127,8 @@ type Member struct {
 	DelayMs      int    `json:"delay_ms"`
 	VolumeOffset int    `json:"volume_offset"`
 	// Position 组内顺序，决定列表顺序与"主控候选"顺序（0 起）。
-	Position int `json:"position"`
+	Position    int    `json:"position"`
+	ChannelMode string `json:"channel_mode" default:"stereo" enums:"stereo,left,right,mono,front_left,front_right,center,lfe,back_left,back_right,back_center,side_left,side_right"` // 可选声道分配；默认立体声，仅多成员组生效
 }
 
 // Group 同步组。单机也有一个只含自己的组——队列与传输逻辑只写一份。

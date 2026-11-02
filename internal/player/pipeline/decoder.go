@@ -81,7 +81,8 @@ func (f *FFmpegDecoderFactory) Open(ctx context.Context, track player.Track, sta
 //
 // **不带任何 -af**：EQ 在分发之后由 Go 逐样本处理（internal/player/dsp）。
 // 每台音箱各起一个带滤镜的 ffmpeg 会退回多解码源，同步地基直接崩掉；
-// 一条共享滤镜链又只能有一个声音，所以滤镜方案整体否决。
+// Per-speaker EQ is never a shared filter. The optional surround filter below
+// only packages the decoded source channels and its independent stereo mix.
 func decoderArgs(track player.Track, startAt time.Duration, format sink.Format) []string {
 	args := []string{"-nostdin", "-hide_banner", "-loglevel", "error"}
 	if startAt > 0 {
@@ -93,11 +94,18 @@ func decoderArgs(track player.Track, startAt time.Duration, format sink.Format) 
 	} else {
 		args = append(args, "-i", track.Path)
 	}
+	if format.Channels == player.SurroundPCMChannels {
+		// The unnamed nine-channel pan preserves discrete channels including 6.1
+		// back-center. amerge concatenates overlapping layouts in input order.
+		// A separate FFmpeg stereo branch retains its standard downmix behavior.
+		args = append(args, "-filter_complex", "[0:a:0]asplit=2[d][s];[d]pan=9C|c0=FL|c1=FR|c2=FC|c3=LFE|c4=BL|c5=BR|c6=BC|c7=SL|c8=SR[p];[s]aresample=out_chlayout=stereo:osf=s16[q];[p][q]amerge=inputs=2[out]", "-map", "[out]")
+	} else {
+		args = append(args, "-map", "0:a:0", "-ac", fmt.Sprintf("%d", format.Channels))
+	}
 	args = append(args, "-vn",
 		"-f", "s16le",
 		"-acodec", "pcm_s16le",
 		"-ar", fmt.Sprintf("%d", format.SampleRate),
-		"-ac", fmt.Sprintf("%d", format.Channels),
 		"pipe:1",
 	)
 	return args

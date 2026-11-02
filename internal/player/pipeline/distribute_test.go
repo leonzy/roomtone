@@ -20,15 +20,20 @@ import (
 // recSink 在 fake 之上记录 PCM 原始字节，并可注入写延迟。
 type recSink struct {
 	*fake.Sink
-	delay time.Duration
-	mu    sync.Mutex
-	data  [][]byte
-	wrote int64
+	delay   time.Duration
+	block   <-chan struct{}
+	onWrite func()
+	mu      sync.Mutex
+	data    [][]byte
+	wrote   int64
 }
 
 func newRecSink(id string) *recSink { return &recSink{Sink: fake.New(id)} }
 
 func (r *recSink) WriteFrame(f sink.Frame) error {
+	if r.block != nil {
+		<-r.block
+	}
 	if r.delay > 0 {
 		time.Sleep(r.delay)
 	}
@@ -36,7 +41,11 @@ func (r *recSink) WriteFrame(f sink.Frame) error {
 	r.data = append(r.data, append([]byte(nil), f.Data...))
 	r.wrote++
 	r.mu.Unlock()
-	return r.Sink.WriteFrame(f)
+	err := r.Sink.WriteFrame(f)
+	if r.onWrite != nil {
+		r.onWrite()
+	}
+	return err
 }
 
 func (r *recSink) count() int {
@@ -95,13 +104,18 @@ func newDistributor(clock *tickClock, set *sink.Set) *Distributor {
 }
 
 // TestStalledSinkDoesNotBlockOthers B5-09 验收：
-// 一台设备每帧卡 500ms，另一台照常收帧，不欠载、不丢帧。
+// 一台设备被明确阻塞，另一台照常收帧，不欠载、不丢帧。
 func TestStalledSinkDoesNotBlockOthers(t *testing.T) {
 	const total = 120
 	clock := newTickClock()
 	fast := newRecSink("fast")
 	stalled := newRecSink("stalled")
-	stalled.delay = 500 * time.Millisecond
+	blocked := make(chan struct{})
+	stalled.block = blocked
+	var unblock sync.Once
+	defer unblock.Do(func() { close(blocked) })
+	ack := make(chan struct{}, 1)
+	fast.onWrite = func() { ack <- struct{}{} }
 	set := sink.NewSet(
 		sink.Target{PlayerID: "fast", Sink: fast},
 		sink.Target{PlayerID: "stalled", Sink: stalled},
@@ -110,15 +124,40 @@ func TestStalledSinkDoesNotBlockOthers(t *testing.T) {
 
 	var underruns int64
 	d.OnUnderrun = func(int) { atomic.AddInt64(&underruns, 1) }
+	var stalledDrops int64
+	d.OnSinkDrop = func(id string, frames int) {
+		if id == "stalled" {
+			atomic.AddInt64(&stalledDrops, int64(frames))
+		}
+	}
 
-	src := bytes.NewReader(pcmTone(total, 0.2))
+	// Do not race an unpaced 120-frame burst against a 108-frame queue.
+	// Acknowledge each healthy write, while the failed writer cannot progress.
+	// A shared/blocking fanout would stop delivering and fail the deadline below.
+	src, producer := io.Pipe()
+	defer src.Close()
+	defer producer.Close()
+	go func() {
+		defer producer.Close()
+		pcm := pcmTone(total, 0.2)
+		for i := 0; i < total; i++ {
+			if _, err := producer.Write(pcm[i*DefaultFrameSamples*4 : (i+1)*DefaultFrameSamples*4]); err != nil {
+				return
+			}
+			select {
+			case <-ack:
+			case <-time.After(2 * time.Second):
+				return
+			}
+		}
+	}()
 	done := make(chan struct{})
 	go func() {
 		_, _ = d.Run(context.Background(), src)
 		close(done)
 	}()
 
-	// 快速那一路应当在 2s 内收齐全部帧（卡住那一路最多收几十帧）。
+	// 快速那一路应在截止时间内收齐全部帧，与故障设备解锁无关。
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if fast.count() >= total {
@@ -133,17 +172,10 @@ func TestStalledSinkDoesNotBlockOthers(t *testing.T) {
 		t.Fatalf("出现 %d 次欠载：分发被阻塞", got)
 	}
 
-	// 卡住的设备队列有界，必须丢帧而不是无限堆积。
-	stats := map[string]SinkStats{}
-	for _, s := range d.Stats() {
-		stats[s.PlayerID] = s
+	if atomic.LoadInt64(&stalledDrops) == 0 {
+		t.Fatal("故障设备队列未受压，未验证有界丢帧")
 	}
-	if stats["stalled"].Dropped == 0 && stalled.count() > 0 {
-		// 允许它恰好没满（取决于调度），但队列深度不得超过上限。
-		if stats["stalled"].Queued > DefaultQueueFrames+8 {
-			t.Fatalf("卡住的设备队列无界增长：%d", stats["stalled"].Queued)
-		}
-	}
+	unblock.Do(func() { close(blocked) })
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):

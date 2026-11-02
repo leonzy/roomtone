@@ -283,6 +283,10 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 		}
 	}
 
+	if ext := strings.ToLower(filepath.Ext(filePath)); ext == ".dts" || ext == ".dtshd" {
+		metadata.Format = strings.TrimPrefix(ext, ".")
+	}
+
 	// 智能合并文件名和刮削标题
 	rawFileName := strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
 	fileName := tag.FixEncoding([]byte(rawFileName))
@@ -291,12 +295,20 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 	// 仅在 tag 库未能获取时长时，回退到 ffprobe 补充技术参数
 	cfg := m.config.Load()
 	var probe *FFProbeOutput
-	if metadata.Duration == 0 && cfg.FFProbePath != "" {
+	if (metadata.Duration == 0 || strings.EqualFold(filepath.Ext(filePath), ".wav") || strings.EqualFold(filepath.Ext(filePath), ".dts") || strings.EqualFold(filepath.Ext(filePath), ".dtshd")) && cfg.FFProbePath != "" {
 		probeOutput, err := m.runFFProbe(ctx, filePath)
 		if err != nil {
 			slog.Warn("ffprobe failed, continuing without probe data", "filePath", filePath, "err", err)
 		} else {
 			probe = probeOutput
+			for _, stream := range probeOutput.Streams {
+				if stream.CodecType == "audio" {
+					if stream.CodecName == "dts" {
+						metadata.Format = "dts"
+					}
+					break
+				}
+			}
 			if probeOutput.Format.Duration != "" {
 				if duration, err := parseDuration(probeOutput.Format.Duration); err == nil {
 					metadata.Duration = duration

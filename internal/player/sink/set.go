@@ -12,6 +12,8 @@ import (
 type Target struct {
 	PlayerID string
 	Sink     PushSink
+	// ChannelMode selects a discrete source channel before stereo EQ/output.
+	ChannelMode string
 	// EQ 该设备独立的均衡器，nil 表示直通。逐样本处理，样本数不变。
 	EQ SampleProcessor
 	// Delay 该设备的固定延迟补偿（正值 = 比主控晚出声）。起播时刻与校正环都要用。

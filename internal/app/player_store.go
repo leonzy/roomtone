@@ -110,13 +110,13 @@ func (s *playbackStore) ListAllMembers(ctx context.Context) (map[string][]player
 	}
 	out := make(map[string][]player.Member, len(rows))
 	for _, r := range rows {
-		out[r.GroupID] = append(out[r.GroupID], player.Member{PlayerID: r.PlayerID, DelayMs: r.DelayMs, VolumeOffset: r.VolumeOffset, Position: r.Position})
+		out[r.GroupID] = append(out[r.GroupID], player.Member{PlayerID: r.PlayerID, DelayMs: r.DelayMs, VolumeOffset: r.VolumeOffset, Position: r.Position, ChannelMode: r.ChannelMode})
 	}
 	return out, nil
 }
 
 func (s *playbackStore) SaveMember(ctx context.Context, groupID string, m player.Member) error {
-	return s.repo.UpsertGroupMember(ctx, database.GroupMemberRow{GroupID: groupID, PlayerID: m.PlayerID, DelayMs: m.DelayMs, VolumeOffset: m.VolumeOffset, Position: m.Position})
+	return s.repo.UpsertGroupMember(ctx, database.GroupMemberRow{GroupID: groupID, PlayerID: m.PlayerID, DelayMs: m.DelayMs, VolumeOffset: m.VolumeOffset, Position: m.Position, ChannelMode: m.ChannelMode})
 }
 
 func (s *playbackStore) UpdateMemberPosition(ctx context.Context, groupID, playerID string, position int) error {

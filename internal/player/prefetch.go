@@ -35,16 +35,32 @@ func canGapless(targets []sink.Target) bool {
 // 预取命中时**必须**把 e.preload 清空：否则下一次 stopLocked 会去 Close
 // 一个已经被播放协程接管的解码器，正在播的声音会被一起关掉。
 func (e *Engine) openDecoder(ctx context.Context, track Track, position time.Duration, format Format) (Decoder, error) {
+	if position == 0 {
+		if d := e.takePrefetched(track.SongID, format); d != nil {
+			return d, nil
+		}
+	}
+	return e.deps.Decoder.Open(ctx, track, position, format)
+}
+
+// A prefetched stereo stream must never be interpreted as an eleven-channel
+// bus after a grouping change. Reuse requires the complete PCM format to match.
+func (e *Engine) takePrefetched(songID int64, format Format) Decoder {
 	e.mu.Lock()
-	if e.preload != nil && e.preloadID == track.SongID && position == 0 {
+	if e.preload != nil && e.preloadID == songID {
 		d := e.preload
+		matches := e.preloadFormat == format
 		e.preload = nil
 		e.preloadID = 0
 		e.mu.Unlock()
-		return d, nil
+		if matches {
+			return d
+		}
+		_ = d.Close()
+		return nil
 	}
 	e.mu.Unlock()
-	return e.deps.Decoder.Open(ctx, track, position, format)
+	return nil
 }
 
 // maybePrefetch 曲末预开下一曲。在每帧回调里调用，幂等。
@@ -71,6 +87,9 @@ func (e *Engine) maybePrefetch(sampleIndex int64, duration time.Duration, rate i
 		return
 	}
 	format := e.format
+	targets, _ := e.targets.Snapshot()
+	format = decodeFormat(format, targets)
+	playCtx := e.runCtx
 	e.mu.Unlock()
 
 	track, err := e.resolve(context.WithoutCancel(context.Background()), next)
@@ -91,13 +110,14 @@ func (e *Engine) maybePrefetch(sampleIndex int64, duration time.Duration, rate i
 		}
 		e.mu.Lock()
 		// 期间用户可能已经切歌 / 停止：这时直接丢掉，别覆盖新的预取。
-		if !e.running || e.preload != nil {
+		if !e.running || e.preload != nil || e.runCtx != playCtx {
 			e.mu.Unlock()
 			_ = d.Close()
 			return
 		}
 		e.preload = d
 		e.preloadID = next
+		e.preloadFormat = format
 		e.mu.Unlock()
 	}()
 }
