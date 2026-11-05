@@ -33,6 +33,11 @@ type PositionReporter interface {
 	PlaybackPosition() (time.Duration, bool)
 }
 
+// PlaybackErrorReporter reports failures from asynchronous control startup.
+type PlaybackErrorReporter interface {
+	PlaybackError() error
+}
+
 // Set 可热替换的推送目标集合。
 //
 // 播放中加入/移除成员必须"下一帧生效"：引擎持有同一个 Set 指针，

@@ -1,5 +1,9 @@
 # Roomtone DLNA 输出与 AirConnect 对照
 
+同日静音实机跟进：小度→小爱已由 WAV Range 证明保留非零进度；反向小度受到共享启动超时影响。两台设备非零续播均改为可验证的 WAV 表示；整体启动与每条命令分别设有上限。委派播放检测异步定位错误，不再继续显示假进度。普通零位置起播仍保留原格式。下方最初只对 S12 强制 WAV 的描述被本条取代。
+
+English: Muted hardware confirmed nonzero DuerOS-to-S12 transfer through actual WAV ranges; reverse transfer hit a shared startup deadline. Both renderers now resume nonzero positions through verifiable WAV. Whole-startup and individual-command budgets are bounded separately; delegated playback surfaces asynchronous seek errors instead of showing false progress. Zero-position playback retains originals. This supersedes the initial S12-only WAV rule below.
+
 2026-11-05 转移修正：DuerOS-Render（小度 3150）在 Play 后等待就绪、执行整秒定位并核对返回位置。小爱 S12 非零进度续播使用 WAV 及真实 HTTP Range 验证，避免压缩音频计数与实际音频不一致；从零起播保留原格式。设备明确不支持 WAV 时返回兼容性错误，不默默从头播放。转移日志包含来源/目标、歌曲、队列游标和定位秒数。两个新回归在旧实现失败，Windows 播放器全树、app、handlers、vet 通过；静音实机记录独立于自动化测试。
 
 English: DuerOS-Render resumes by seeking after Play/readiness and verifying whole-second position. Nonzero S12 resumes use WAV and actual HTTP ranges; zero-position playback retains its original format. Explicit lack of WAV support returns an error instead of silently restarting. Structured transfer logs include source/target, track, cursor and position. Both regressions fail on the previous implementation; player subtree/app/handlers/vet pass on Windows. Muted hardware results are recorded separately.

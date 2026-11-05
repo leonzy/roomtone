@@ -14,6 +14,46 @@ import (
 
 type transientPlayTransport struct{ attempts atomic.Int32 }
 
+type slowStartCommands struct{}
+
+func (slowStartCommands) RoundTrip(r *http.Request) (*http.Response, error) {
+	if action := r.Header.Get("SOAPAction"); strings.Contains(action, "#Play\"") || strings.Contains(action, "#Seek\"") {
+		timer := time.NewTimer(100 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-r.Context().Done():
+			return nil, r.Context().Err()
+		case <-timer.C:
+		}
+	}
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+func TestStartKeepsSeparateCommandBudgetsForPlayAndSeek(t *testing.T) {
+	f := newFakeRenderer(t)
+	dev := f.device(t)
+	dev.ModelName = "DuerOS-Render"
+	s := New("slow-start", dev, &Client{HC: &http.Client{Transport: slowStartCommands{}}}, Options{PollInterval: time.Hour, CommandTimeout: 150 * time.Millisecond})
+	defer s.Close()
+	if err := s.Open(context.Background(), sink.StreamPlan{StreamURL: "http://example.invalid/song.wav", Position: 30 * time.Second}); err != nil {
+		t.Fatal(err)
+	}
+	s.Start(time.Now())
+	for {
+		select {
+		case event := <-s.Events():
+			if event.Type == sink.EventError {
+				t.Fatal(event.Err)
+			}
+			if event.Type == sink.EventPlaying {
+				return
+			}
+		case <-time.After(time.Second):
+			t.Fatal("startup timed out")
+		}
+	}
+}
+
 func (tr *transientPlayTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if strings.Contains(r.Header.Get("SOAPAction"), "#Play\"") && tr.attempts.Add(1) == 1 {
 		body := `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><detail><UPnPError><errorCode>701</errorCode><errorDescription>Transition not available</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>`

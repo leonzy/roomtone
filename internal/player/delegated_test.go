@@ -2,6 +2,7 @@ package player
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"testing"
@@ -9,6 +10,23 @@ import (
 
 	"songloft/internal/player/sink"
 )
+
+type failedControlSink struct{ *ctrlSink }
+
+func (failedControlSink) PlaybackError() error { return errors.New("renderer seek failed") }
+
+func TestDelegatedSurfacesAsynchronousSeekFailure(t *testing.T) {
+	e := newDelegatedEngine(t, staticResolver{1: {SongID: 1, Duration: time.Minute}})
+	e.SetControls([]sink.Sink{failedControlSink{newCtrlSink("failed")}})
+	defer e.Stop()
+	if err := e.Load(context.Background(), []int64{1}, 0, 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, e, StateError)
+	if e.Status().Error == "" {
+		t.Fatal("renderer failure was hidden")
+	}
+}
 
 // ctrlSink 控制型 sink：只收指令、不接收 PCM，模拟本机客户端。
 //

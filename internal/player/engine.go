@@ -1321,6 +1321,14 @@ func (e *Engine) waitDelegated(ctx context.Context, duration time.Duration) bool
 			return false
 		case <-ticker.C:
 		}
+		for _, member := range e.controlSinks() {
+			if reporter, ok := member.(sink.PlaybackErrorReporter); ok {
+				if err := reporter.PlaybackError(); err != nil {
+					e.fail(ctx, fmt.Errorf("control sink %s: %w", member.ID(), err))
+					return false
+				}
+			}
+		}
 		if pos, ok := e.reportedPosition(); ok {
 			e.mu.Lock()
 			e.transport.Seek(pos)

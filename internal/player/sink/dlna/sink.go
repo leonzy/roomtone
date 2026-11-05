@@ -46,6 +46,7 @@ type Sink struct {
 	started            bool
 	playing            bool
 	ready              bool
+	playbackErr        error
 	positionFromStream bool
 	closed             bool
 	volume             int
@@ -169,6 +170,7 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	s.plan = plan
 	adopted = true
 	s.ready = false
+	s.playbackErr = nil
 	s.positionFromStream = false
 	s.url = plan.StreamURL
 	if s.url == "" {
@@ -246,7 +248,9 @@ func (s *Sink) Start(at time.Time) error {
 				return
 			}
 		}
-		ctx, cancel := context.WithTimeout(playCtx, s.opts.CommandTimeout)
+		// Startup includes Play, readiness and a separately verified Seek. A
+		// slow Play must not consume the following command's entire budget.
+		ctx, cancel := context.WithTimeout(playCtx, 3*s.opts.CommandTimeout)
 		defer cancel()
 		if err := s.transportWithRetry(ctx, "Play", Arg{"InstanceID", "0"}, Arg{"Speed", "1"}); err != nil {
 			if playCtx.Err() == nil {
@@ -597,6 +601,13 @@ func (s *Sink) PlaybackPosition() (time.Duration, bool) {
 	return position, true
 }
 
+// PlaybackError exposes asynchronous startup/seek failures to the owning engine.
+func (s *Sink) PlaybackError() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.playbackErr
+}
+
 // S12's WAV clock is an estimate after seek; never use it for feedback correction.
 func (s *Sink) PlaybackAlignmentAvailable() bool {
 	s.mu.Lock()
@@ -616,6 +627,8 @@ func (s *Sink) Position() time.Duration {
 func (s *Sink) call(ctx context.Context, svcName, action string, args ...Arg) error {
 	s.commandMu.Lock()
 	defer s.commandMu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, s.opts.CommandTimeout)
+	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -901,6 +914,9 @@ func (s *Sink) onTransportState(st string) {
 
 func (s *Sink) emit(ev sink.Event) {
 	if ev.Type == sink.EventError && ev.Err != nil {
+		s.mu.Lock()
+		s.playbackErr = ev.Err
+		s.mu.Unlock()
 		slog.Warn("DLNA playback failed", "player_id", s.id, "err", ev.Err)
 	}
 	s.eventsMu.RLock()

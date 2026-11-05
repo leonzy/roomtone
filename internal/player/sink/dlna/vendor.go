@@ -18,7 +18,7 @@ type Patch struct {
 	// use the requested byte range instead of trusting the counter.
 	SeekWholeSeconds bool
 	VerifySeek       bool
-	// SeekWithWAV verifies resumed S12 media using its actual HTTP byte range,
+	// SeekWithWAV verifies resumed media using its actual HTTP byte range,
 	// rather than the renderer's unreliable compressed-audio time counter.
 	SeekWithWAV bool
 	// DisableEvents true 表示跳过 SUBSCRIBE，直接轮询。
@@ -36,7 +36,7 @@ var vendors = []struct {
 	patch Patch
 }{
 	{"s12", Patch{SeekUnit: "REL_TIME", SeekAfterPlay: true, SeekWholeSeconds: true, VerifySeek: true, SeekWithWAV: true}},
-	{"dueros-render", Patch{SeekUnit: "REL_TIME", SeekAfterPlay: true, SeekWholeSeconds: true, VerifySeek: true}},
+	{"dueros-render", Patch{SeekUnit: "REL_TIME", SeekAfterPlay: true, SeekWholeSeconds: true, VerifySeek: true, SeekWithWAV: true}},
 	{"sonos", Patch{TolerateEmptyMetadata: true, SeekUnit: "REL_TIME", SkipSetNext: true}},
 	{"kodi", Patch{SeekUnit: "REL_TIME", DisableEvents: false}},
 	{"xbmc", Patch{SeekUnit: "REL_TIME", DisableEvents: false}},
