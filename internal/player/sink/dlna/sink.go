@@ -128,6 +128,12 @@ func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	defer s.openMu.Unlock()
 	plan.AcceptedCodecs = s.dev.Codecs
 	if s.opts.ResolveStream != nil {
+		if s.patch.SeekWithWAV && plan.Position > 0 && !plan.Live {
+			if SelectCodec("wav", s.dev.Codecs) != sink.CodecWAV {
+				return errors.New("dlna: renderer cannot provide byte-verifiable resumed playback (WAV unsupported)")
+			}
+			plan.AcceptedCodecs = []sink.Codec{sink.CodecWAV}
+		}
 		var err error
 		plan, err = s.opts.ResolveStream(ctx, plan)
 		if err != nil {
@@ -595,7 +601,7 @@ func (s *Sink) PlaybackPosition() (time.Duration, bool) {
 func (s *Sink) PlaybackAlignmentAvailable() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return !(s.patch.SeekWholeSeconds && s.plan.Format.Codec == sink.CodecWAV)
+	return !(s.patch.SeekWithWAV && s.plan.Format.Codec == sink.CodecWAV)
 }
 
 // Position 当前播放位置（轮询/事件更新的最近值）。
@@ -705,6 +711,7 @@ func (s *Sink) seekTo(ctx context.Context, pos time.Duration) error {
 				if value, valid := parseDurationOK(values["RelTime"]); valid {
 					actual = value
 					if delta := actual - pos; delta >= -1500*time.Millisecond && delta <= 1500*time.Millisecond {
+						slog.Info("DLNA seek confirmed by renderer", "player_id", s.id, "target_seconds", pos.Seconds(), "reported_seconds", actual.Seconds())
 						return nil
 					}
 				}

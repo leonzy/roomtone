@@ -123,13 +123,14 @@ func TestFormatAndParseDuration(t *testing.T) {
 
 // fakeRenderer 假 DLNA 设备。
 type fakeRenderer struct {
-	srv        *httptest.Server
-	mu         sync.Mutex
-	acts       []string
-	fail       bool
-	position   string
-	ignoreSeek bool
-	state      string
+	srv         *httptest.Server
+	mu          sync.Mutex
+	acts        []string
+	fail        bool
+	position    string
+	ignoreSeek  bool
+	resetOnPlay bool
+	state       string
 }
 
 func newFakeRenderer(t *testing.T) *fakeRenderer {
@@ -158,6 +159,9 @@ func newFakeRenderer(t *testing.T) *fakeRenderer {
 				}
 			case "Play":
 				f.state = "PLAYING"
+				if f.resetOnPlay {
+					f.position = "0:00:01"
+				}
 			case "Pause":
 				f.state = "PAUSED_PLAYBACK"
 			case "Stop":

@@ -513,7 +513,7 @@ func TestTransferCompensationB05(t *testing.T) {
 	to := m.GroupIDOf("b")
 
 	e, _ := m.Engine(from)
-	if err := e.Load(ctx, []int64{1}, 0, 0); err != nil {
+	if err := e.Load(ctx, []int64{1}, 0, 135*time.Second); err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	if err := e.Play(ctx); err != nil {
@@ -537,7 +537,7 @@ func TestTransferCompensationB05(t *testing.T) {
 	if err := m.Transfer(ctx, to, from, ""); err != nil {
 		t.Fatalf("transfer back: %v", err)
 	}
-	waitFor(t, "回切挂载", 2*time.Second, func() bool { return builder.get("a").Plan().Position > 0 })
+	waitFor(t, "回切挂载", 2*time.Second, func() bool { return builder.get("a").Plan().Position > posBefore })
 	got = builder.get("a").Plan().Position
 	if delta := got - posBefore; delta < 780*time.Millisecond || delta > 820*time.Millisecond {
 		t.Fatalf("第二次转移补偿仍应是 800ms，实际 %v", delta)

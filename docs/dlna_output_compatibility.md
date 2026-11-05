@@ -1,5 +1,9 @@
 # Roomtone DLNA 输出与 AirConnect 对照
 
+2026-11-05 转移修正：DuerOS-Render（小度 3150）在 Play 后等待就绪、执行整秒定位并核对返回位置。小爱 S12 非零进度续播使用 WAV 及真实 HTTP Range 验证，避免压缩音频计数与实际音频不一致；从零起播保留原格式。设备明确不支持 WAV 时返回兼容性错误，不默默从头播放。转移日志包含来源/目标、歌曲、队列游标和定位秒数。两个新回归在旧实现失败，Windows 播放器全树、app、handlers、vet 通过；静音实机记录独立于自动化测试。
+
+English: DuerOS-Render resumes by seeking after Play/readiness and verifying whole-second position. Nonzero S12 resumes use WAV and actual HTTP ranges; zero-position playback retains its original format. Explicit lack of WAV support returns an error instead of silently restarting. Structured transfer logs include source/target, track, cursor and position. Both regressions fail on the previous implementation; player subtree/app/handlers/vet pass on Windows. Muted hardware results are recorded separately.
+
 2026-11-01。仅对照 Roomtone 自己向 renderer 播放的输出路径。英文版：[English](dlna_output_compatibility.en.md)。
 
 依据：[AirConnect af345def](https://github.com/philippe44/AirConnect/tree/af345def2e862f69e2c47fcd46b3ec3ec9b542f3)，重点为 `airupnp/src/airupnp.c`、`avt_util.c`、`common/libraop/src/raop_streamer.c` 和 README 的 HTTP/缓冲说明。采用独立实现，没有引入 AirPlay 接收器或复制其源码。

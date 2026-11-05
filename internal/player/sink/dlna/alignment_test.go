@@ -16,6 +16,65 @@ type seekCaptureTransport struct {
 	ranges  chan time.Duration
 }
 
+func TestDuerOSTransferSeeksAfterPlayReset(t *testing.T) {
+	f := newFakeRenderer(t)
+	f.resetOnPlay = true
+	dev := f.device(t)
+	dev.ModelName = "DuerOS-Render"
+	s := New("dueros", dev, nil, Options{PollInterval: time.Hour})
+	defer s.Close()
+	if err := s.Open(context.Background(), sink.StreamPlan{StreamURL: "http://example.invalid/song.flac", Position: 135 * time.Second}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Start(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case ev := <-s.Events():
+			if ev.Type == sink.EventError {
+				t.Fatal(ev.Err)
+			}
+			if ev.Type == sink.EventPlaying {
+				s.poll(context.Background())
+				position, ok := s.PlaybackPosition()
+				if !ok || position < 135*time.Second || position > 136*time.Second {
+					t.Fatalf("Play reset the transferred position: %v (%v)", position, ok)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("transfer did not finish seeking")
+		}
+	}
+}
+
+func TestS12ResumeRequiresByteVerifiableRepresentation(t *testing.T) {
+	for _, position := range []time.Duration{0, 135 * time.Second} {
+		f := newFakeRenderer(t)
+		dev := f.device(t)
+		dev.ModelName = "S12"
+		dev.Codecs = []sink.Codec{sink.CodecFLAC, sink.CodecWAV}
+		var accepted []sink.Codec
+		s := New("s12", dev, nil, Options{ResolveStream: func(_ context.Context, plan sink.StreamPlan) (sink.StreamPlan, error) {
+			accepted = plan.AcceptedCodecs
+			return plan, nil
+		}})
+		if err := s.Open(context.Background(), sink.StreamPlan{StreamURL: "http://example.invalid/song.flac", Position: position}); err != nil {
+			t.Fatal(err)
+		}
+		s.Close()
+		codec := SelectCodec("flac", accepted)
+		if position > 0 && codec != sink.CodecWAV {
+			t.Fatalf("resume still trusts compressed counter: %s", codec)
+		}
+		if position == 0 && codec != sink.CodecFLAC {
+			t.Fatalf("normal start unnecessarily converted: %s", codec)
+		}
+	}
+}
+
 func (tr *seekCaptureTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if strings.Contains(r.Header.Get("SOAPAction"), "#Seek") && r.GetBody != nil {
 		body, err := r.GetBody()

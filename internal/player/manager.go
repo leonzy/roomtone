@@ -1428,6 +1428,9 @@ func (m *Manager) Transfer(ctx context.Context, fromGroupID, toGroupID, onlyPlay
 	// 不补这段就会听出一次明显的停顿。补偿从**源组的实时位置**算，不落库、
 	// 不累加，所以连续转移不会越转越靠后。
 	pos := time.Duration(st.Position*float64(time.Second)) + TransferCompensation
+	m.deps.Logger.Info("transfer playback", "from_group", fromGroupID, "to_group", toGroupID,
+		"song_id", st.SongID, "queue_index", idx, "source_position_seconds", st.Position,
+		"target_position_seconds", pos.Seconds())
 	if err := to.Load(ctx, songIDs, idx, pos); err != nil {
 		return err
 	}
