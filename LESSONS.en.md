@@ -1,5 +1,9 @@
 # Development Lessons
 
+## NAS-002: A running container does not prove fnOS launcher registration
+
+On 2026-11-06 the container and HTTP were healthy, but fnOS remained in start after Docker was unavailable during boot. Recovery/deployment called compose up before appcenter start, taking the already-running shortcut without restoring the launcher. Recreate with compose create while stopped, let appcenter start own startup/registration, and verify status=running. For a healthy binding stuck in requested-start for 90 seconds, the guard uses official stop/start; reboot resets grace and explicit stop/nostart stays stopped. Two ordering regressions fail before the fix; nine guard tests pass. Official stop/start restored running on the NAS. Deployment helpers now use create/start and verify fnOS state, beyond HTTP or launcher JSON. Seen 1× (2026-11-06).
+
 ## DLNA-001: Match renderer codecs and HTTP representations
 
 - Same-day muted hardware test: DuerOS 135.29s to S12 136.13s and the actual WAV range passed; reverse DuerOS Seek timed out. New regressions expose a shared startup deadline consumed by Play/readiness, plus unobserved asynchronous errors leaving delegated UI playing. Bound complete startup separately from per-command timeouts, use verified WAV for nonzero DuerOS resumes too, and surface optional PlaybackErrorReporter failures in delegated playback. Both regressions fail before the fix; related packages and vet pass. Subsequent hardware results are recorded independently.

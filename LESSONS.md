@@ -1,5 +1,9 @@
 # 开发经验
 
+## NAS-002：容器正常不代表飞牛入口已登记
+
+2026-11-06：启动时 Docker 未就绪，应用状态留在 start；恢复脚本先 compose up 后 appcenter start 又触发 already running 快捷路径，桌面入口未恢复。先停止应用，compose create（不启动）重建绑定，再由 appcenter start 完成启动和登记，并核对 status=running。守护程序对正确绑定但 start 持续 90 秒的实例通过官方停/启恢复登记；重启重置等待，用户 stop/nostart 不自动启动。旧顺序两项回归失败，新 9 项测试通过；现场官方停/启后已为 running。部署辅助脚本同步改为 create/start，并验证飞牛状态，不能只验证端口或入口 JSON。Seen 1×（2026-11-06）。
+
 ## DLNA-001：拉流格式与 HTTP 表示必须匹配接收器
 
 - 同日静音硬件验证：小度 135.29 秒 → 小爱 136.13 秒及真实 WAV Range 通过，反向小度 Seek 超时。新回归证实 Start 的同一个 10 秒上下文被 Play/就绪消耗，后续 Seek 没有独立预算；同时异步错误没有被委派循环读取，UI 仍显示 playing。改为有界完整启动预算及逐命令上限，DuerOS 非零续播也使用可验证 WAV，委派循环消费可选 PlaybackErrorReporter 并暴露错误。两项新回归旧实现失败，相关整包及 vet 通过；后续实机结果以独立记录为准。
@@ -286,6 +290,7 @@ Seen N× (YYYY-MM-DD, YYYY-MM-DD)
 - Seen 1×（2026-10-29）。
 
 ### NAS-001：宿主目录存在不代表容器绑定仍然有效
+
 
 - 范围：leonFN 外接音乐盘、容器播放与日志，2026-10-31。
 - 证据：宿主歌曲存在，容器 `/app/music` 却为空；AirPlay 握手成功但 `samples=0`，ffmpeg 报文件不存在。重建容器绑定后同一首歌静默解码成功。不能把随后失效会话的 broken pipe 当成最初的音箱故障。
