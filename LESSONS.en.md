@@ -1,5 +1,9 @@
 # Development Lessons
 
+## MEM-001: Embedded-CUE discovery must not load complete artwork
+
+2026-11-06: leonFN had about 42 MiB live Go heap and an 872 MiB process high-water mark; allocation profiling attributed about 66% of cumulative allocation to FLAC pictures read from processEmbeddedCueSheets. Use tag.ReadFLACCUESheet to parse STREAMINFO/binary CUESHEET and seek over pictures/comments/other blocks; retain normal cover extraction for actual CUE import. Do not clear system-wide page cache to improve a displayed metric. An 8 MiB artwork fixture drops to 1152 B/op; a read-only 32-file NAS comparison drops from 8,149,632 to 19,648 B with equal CUE/sample-rate results. The forbidden-payload regression fails under full reading. Tag tests and service scan/metadata tests pass. Seen 1×.
+
 ## NAS-002: A running container does not prove fnOS launcher registration
 
 On 2026-11-06 the container and HTTP were healthy, but fnOS remained in start after Docker was unavailable during boot. Recovery/deployment called compose up before appcenter start, taking the already-running shortcut without restoring the launcher. Recreate with compose create while stopped, let appcenter start own startup/registration, and verify status=running. For a healthy binding stuck in requested-start for 90 seconds, the guard uses official stop/start; reboot resets grace and explicit stop/nostart stays stopped. Two ordering regressions fail before the fix; nine guard tests pass. Official stop/start restored running on the NAS. Deployment helpers now use create/start and verify fnOS state, beyond HTTP or launcher JSON. Seen 1× (2026-11-06).

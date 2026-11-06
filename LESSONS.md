@@ -1,5 +1,9 @@
 # 开发经验
 
+## MEM-001：内嵌 CUE 探测不能使用完整封面读取接口
+
+2026-11-06：leonFN 当前 Go 堆约 42 MiB，进程峰值约 872 MiB；分配剖析将约 66% 累计分配归到 processEmbeddedCueSheets 的 FLAC 图片读取。改为 tag.ReadFLACCUESheet，只解析 STREAMINFO 和二进制 CUESHEET，seek 跳过图片、评论及其他块；仅在真正导入 CUE 时按原路径提取封面。禁止为了降低显示值清空整机页缓存。8 MiB 封面夹具检测分配约 8 MiB→1152 B，NAS 32 首只读抽查 8,149,632→19,648 B，CUE/采样率一致；图片载荷读取禁用回归在完整读取模式失败。子模块测试及服务扫描/元数据测试通过。Seen 1×。
+
 ## NAS-002：容器正常不代表飞牛入口已登记
 
 2026-11-06：启动时 Docker 未就绪，应用状态留在 start；恢复脚本先 compose up 后 appcenter start 又触发 already running 快捷路径，桌面入口未恢复。先停止应用，compose create（不启动）重建绑定，再由 appcenter start 完成启动和登记，并核对 status=running。守护程序对正确绑定但 start 持续 90 秒的实例通过官方停/启恢复登记；重启重置等待，用户 stop/nostart 不自动启动。旧顺序两项回归失败，新 9 项测试通过；现场官方停/启后已为 running。部署辅助脚本同步改为 create/start，并验证飞牛状态，不能只验证端口或入口 JSON。Seen 1×（2026-11-06）。

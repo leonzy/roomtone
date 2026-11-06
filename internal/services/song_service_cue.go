@@ -86,7 +86,7 @@ func (s *SongService) processEmbeddedCueSheets(ctx context.Context, audioFiles [
 		if err != nil {
 			continue
 		}
-		tagMeta, err := tag.ReadFrom(f)
+		tagMeta, err := tag.ReadFLACCUESheet(f)
 		f.Close()
 		if err != nil {
 			continue
