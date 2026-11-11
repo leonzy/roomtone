@@ -200,38 +200,45 @@ func TestUpdateMetadataDMAP(t *testing.T) {
 // TestUpdateProgress 进度体为 progress: start/cur/end\r\n（RTP 时间戳），
 // cur-start=位置×采样率、end-cur=剩余×采样率（cur 取发送时刻，容差 4410）。
 func TestUpdateProgress(t *testing.T) {
-	f := newRecordingRTSP(t)
-	s := openStarted(t, f)
+	for _, base := range []uint32{0, ^uint32(0) - 2_000_000} {
+		t.Run(fmt.Sprint(base), func(t *testing.T) {
+			f := newRecordingRTSP(t)
+			s := openStarted(t, f)
+			s.mu.Lock()
+			s.rtpBase = base
+			s.mu.Unlock()
 
-	if err := s.UpdateProgress(30*time.Second, 180*time.Second); err != nil {
-		t.Fatalf("UpdateProgress: %v", err)
-	}
-	reqs := waitForReqs(t, "进度推送", f, "text/parameters", 1)
-	r := reqs[len(reqs)-1]
-	body := string(r.body)
-	if !strings.HasPrefix(body, "progress: ") || !strings.HasSuffix(body, "\r\n") {
-		t.Fatalf("进度体格式不符: %q", body)
-	}
-	fields := strings.Split(strings.TrimSpace(strings.TrimPrefix(body, "progress: ")), "/")
-	if len(fields) != 3 {
-		t.Fatalf("进度体应为三段: %q", body)
-	}
-	vals := make([]int64, 3)
-	for i, fs := range fields {
-		v, err := strconv.ParseInt(fs, 10, 64)
-		if err != nil {
-			t.Fatalf("进度值 %q 非数字: %v", fs, err)
-		}
-		vals[i] = v
-	}
-	start, cur, end := vals[0], vals[1], vals[2]
-	// 位置 30s：cur-start = 30×44100（cur 取发送时刻，容差 4410 ≈ 100ms）
-	if d := cur - start - int64(30*44100); d < -4410 || d > 4410 {
-		t.Fatalf("cur-start = %d，期望 %d±4410", cur-start, 30*44100)
-	}
-	// 剩余 150s：end-cur = 150×44100（同一 cur 推出，精确）
-	if d := end - cur - int64(150*44100); d != 0 {
-		t.Fatalf("end-cur = %d，期望 %d", end-cur, 150*44100)
+			if err := s.UpdateProgress(30*time.Second, 180*time.Second); err != nil {
+				t.Fatalf("UpdateProgress: %v", err)
+			}
+			reqs := waitForReqs(t, "进度推送", f, "text/parameters", 1)
+			r := reqs[len(reqs)-1]
+			body := string(r.body)
+			if !strings.HasPrefix(body, "progress: ") || !strings.HasSuffix(body, "\r\n") {
+				t.Fatalf("进度体格式不符: %q", body)
+			}
+			fields := strings.Split(strings.TrimSpace(strings.TrimPrefix(body, "progress: ")), "/")
+			if len(fields) != 3 {
+				t.Fatalf("进度体应为三段: %q", body)
+			}
+			vals := make([]uint32, 3)
+			for i, fs := range fields {
+				v, err := strconv.ParseUint(fs, 10, 32)
+				if err != nil {
+					t.Fatalf("进度值 %q 非数字: %v", fs, err)
+				}
+				vals[i] = uint32(v)
+			}
+			start, cur, end := vals[0], vals[1], vals[2]
+			// 位置 30s：cur-start = 30×44100（cur 取发送时刻，容差 4410 ≈ 100ms）
+			if d := int64(cur-start) - int64(30*44100); d < -4410 || d > 4410 {
+				t.Fatalf("cur-start = %d，期望 %d±4410", cur-start, 30*44100)
+			}
+			// 剩余 150s：end-cur = 150×44100（同一 cur 推出，精确）
+			if d := int64(end-cur) - int64(150*44100); d != 0 {
+				t.Fatalf("end-cur = %d，期望 %d", end-cur, 150*44100)
+			}
+		})
 	}
 }
 

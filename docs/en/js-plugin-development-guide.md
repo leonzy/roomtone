@@ -1589,3 +1589,7 @@ Async chains detached from `ExecuteJS` (background loops started in `onInit`, wo
 ## Appendix: Complete Example
 
 See the [plugin-toolchain/examples/basic](https://github.com/songloft-org/plugin-toolchain/tree/main/examples/basic) directory for complete example plugin code based on the official toolchain.
+
+### Batched directory metadata (Roomtone)
+
+`await songloft.fs.readdir(path, {withStats: true})` optionally adds `size` (bytes) and `modTime` (Unix milliseconds). The default call still returns only `name/isDir`, without extra stat calls. Symlinks and entries whose metadata cannot be read omit these fields; use `fs.stat` when needed to retain normal path permission checks. Plugins should support missing fields for compatibility with older hosts.

@@ -56,3 +56,6 @@
 [submodule "clients/themes"]
 	path = clients/themes
 	url = git@github.com:songloft-org/songloft-themes.git
+[submodule "plugins/src/songloft-plugin-audiobook"]
+	path = plugins/src/songloft-plugin-audiobook
+	url = https://github.com/leonzy/roomtone-plugin-audiobook.git

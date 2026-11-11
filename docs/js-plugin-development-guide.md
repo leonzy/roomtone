@@ -1587,3 +1587,7 @@ async function useTranslation(text) {
 ## 附录：完整示例
 
 参见 [plugin-toolchain/examples/basic](https://github.com/songloft-org/plugin-toolchain/tree/main/examples/basic) 目录，包含基于官方工具链的完整示例插件代码。
+
+### 批量目录元数据（Roomtone）
+
+`await songloft.fs.readdir(path, {withStats: true})` 可选返回每项的 `size`（字节）和 `modTime`（Unix 毫秒）。默认调用只返回 `name/isDir`，不额外 stat。符号链接及读取元数据失败的项目不附带这两个字段；需要时通过 `fs.stat` 走原有路径权限检查。插件应兼容字段缺失，以支持旧宿主。

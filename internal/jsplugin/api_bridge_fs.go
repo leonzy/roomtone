@@ -256,7 +256,8 @@ func (h *BridgeHandler) fsAppendFile(data string) (string, error) {
 
 func (h *BridgeHandler) fsReaddir(data string) (string, error) {
 	var req struct {
-		Path string `json:"path"`
+		Path      string `json:"path"`
+		WithStats bool   `json:"withStats"`
 	}
 	if err := json.Unmarshal([]byte(data), &req); err != nil {
 		return "", fmt.Errorf("fs.readdir: %w", err)
@@ -273,12 +274,23 @@ func (h *BridgeHandler) fsReaddir(data string) (string, error) {
 	}
 
 	type dirEntry struct {
-		Name  string `json:"name"`
-		IsDir bool   `json:"isDir"`
+		Name    string `json:"name"`
+		IsDir   bool   `json:"isDir"`
+		Size    *int64 `json:"size,omitempty"`
+		ModTime *int64 `json:"modTime,omitempty"`
 	}
 	result := make([]dirEntry, 0, len(entries))
 	for _, e := range entries {
-		result = append(result, dirEntry{Name: e.Name(), IsDir: e.IsDir()})
+		entry := dirEntry{Name: e.Name(), IsDir: e.IsDir()}
+		// Optional metadata batches file stats into one bridge round trip. Do not
+		// follow symlinks here; fs.stat must apply its normal path permission check.
+		if req.WithStats && e.Type()&os.ModeSymlink == 0 {
+			if info, err := e.Info(); err == nil {
+				size, modified := info.Size(), info.ModTime().UnixMilli()
+				entry.Size, entry.ModTime = &size, &modified
+			}
+		}
+		result = append(result, entry)
 	}
 
 	out, _ := json.Marshal(result)

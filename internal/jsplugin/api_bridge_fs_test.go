@@ -2,6 +2,7 @@ package jsplugin
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,9 +63,10 @@ func TestResolveFSPath_RelativePath_NoPermission(t *testing.T) {
 func TestResolveFSPath_MusicPath(t *testing.T) {
 	h := newTestBridgeHandler(t, []string{PermFSMusic}, "test-plugin")
 	musicDir := t.TempDir()
+	pathJSON, _ := json.Marshal(map[string]string{"path": musicDir})
 	err := h.db.ConfigRepository().Set(context.Background(), &models.Config{
 		Key:   "music_path",
-		Value: `{"path":"` + musicDir + `"}`,
+		Value: string(pathJSON),
 	})
 	if err != nil {
 		t.Fatalf("set music_path: %v", err)
@@ -130,7 +132,7 @@ func TestResolveFSPath_AbsolutePath_DirItself(t *testing.T) {
 
 func TestResolveFSPath_AbsolutePath_NoPermission(t *testing.T) {
 	h := newTestBridgeHandler(t, []string{PermFS}, "test-plugin")
-	_, err := h.resolveFSPath("/some/external/path")
+	_, err := h.resolveFSPath(filepath.Join(t.TempDir(), "external.wav"))
 	if err == nil {
 		t.Fatal("expected error for missing fs:external permission")
 	}
@@ -159,5 +161,64 @@ func TestResolveFSPath_AbsolutePath_EscapeAllowed(t *testing.T) {
 	_, err := h.resolveFSPath(extDir)
 	if err == nil {
 		t.Fatal("expected error for path escaping allowed dir")
+	}
+}
+
+func TestFSReaddirOptionalStats(t *testing.T) {
+	h := newTestBridgeHandler(t, []string{PermFS}, "stats-test")
+	dir := h.pluginDataDir()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "chapter.wav"), []byte("audio"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(dir, "chapter.wav"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, withStats := range []bool{false, true} {
+		req, _ := json.Marshal(map[string]any{"path": ".", "withStats": withStats})
+		body, err := h.fsReaddir(string(req))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entries []map[string]any
+		if err := json.Unmarshal([]byte(body), &entries); err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 1 || entries[0]["name"] != "chapter.wav" {
+			t.Fatalf("unexpected entries: %v", entries)
+		}
+		e := entries[0]
+		if withStats {
+			if e["size"] != float64(5) || e["modTime"] != float64(info.ModTime().UnixMilli()) {
+				t.Fatalf("missing or inaccurate batch stats: %v", e)
+			}
+		} else if _, ok := e["size"]; ok {
+			t.Fatal("legacy readdir must not stat every file")
+		}
+	}
+	// Batch metadata must not follow a symlink outside the permission boundary.
+	outside := filepath.Join(t.TempDir(), "private.wav")
+	if err := os.WriteFile(outside, []byte("private"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "link.wav")); err == nil {
+		body, err := h.fsReaddir(`{"path":".","withStats":true}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entries []map[string]any
+		if err := json.Unmarshal([]byte(body), &entries); err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			if e["name"] == "link.wav" {
+				if _, ok := e["size"]; ok {
+					t.Fatal("batch stat followed symlink")
+				}
+			}
+		}
 	}
 }

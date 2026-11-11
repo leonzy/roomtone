@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -520,6 +521,7 @@ const (
 // 多等 500ms，AI 问答这种十几跳的链路会因此平白累积数秒延迟。
 // 使用 TryLock（在 ProcessTimers 内）确保不阻塞 HTTP 请求处理。
 func (s *JSService) runTimerProcessor(timerStop <-chan struct{}) {
+	pprof.SetGoroutineLabels(pprof.WithLabels(context.Background(), pprof.Labels("plugin", s.plugin.EntryPath)))
 	signal := s.jsManager.AsyncSignal(s.envID)
 	timer := time.NewTimer(idleWakeInterval)
 	defer timer.Stop()

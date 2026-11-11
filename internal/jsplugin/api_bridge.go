@@ -462,8 +462,8 @@ songloft.fs = {
         var enc = (options && options.encoding) || 'utf8';
         await __callBridge('fs.appendFile', JSON.stringify({path: path, data: data, encoding: enc}));
     },
-    readdir: async function(path) {
-        var s = await __callBridge('fs.readdir', JSON.stringify({path: path}));
+    readdir: async function(path, options) {
+        var s = await __callBridge('fs.readdir', JSON.stringify({path: path, withStats: !!(options && options.withStats)}));
         return s ? JSON.parse(s) : [];
     },
     unlink: async function(path) {
