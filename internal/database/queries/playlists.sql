@@ -48,9 +48,21 @@ INSERT INTO playlists (type, name, description, cover_path, cover_url, labels)
 VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: ListAutoCreatedPlaylists :many
-SELECT id, name, cover_path, cover_url FROM playlists
+SELECT id, name, description, cover_path, cover_url FROM playlists
 WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'auto_created');
 
 -- name: UpdateAutoCreatedPlaylistMeta :execrows
 UPDATE playlists SET name = ?, description = ?, cover_path = ?, cover_url = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
+
+-- name: ListAutoPlaylistSongs :many
+SELECT id, title, album, file_path, cover_path, cover_url, cue_source_path, cue_track_index
+FROM songs WHERE type = 'local'
+ORDER BY added_at DESC;
+
+-- name: ListAutoPlaylistMemberships :many
+SELECT ps.playlist_id, ps.song_id, ps.position
+FROM playlist_songs ps
+JOIN playlists p ON p.id = ps.playlist_id
+WHERE EXISTS (SELECT 1 FROM json_each(p.labels) WHERE value = 'auto_created')
+ORDER BY ps.playlist_id, ps.position;

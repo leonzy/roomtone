@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -313,17 +314,22 @@ func (r *PlaylistRepository) BatchUpdatePositions(ctx context.Context, playlistI
 }
 
 // AutoCreate 根据本地歌曲的目录结构批量生成歌单，并把每首歌写入对应歌单。
-// 写操作集中在单一事务里：清理旧的 auto_created 歌单 → 插入新歌单 → 批量插入 playlist_songs。
+// 仅加载分组所需字段；事务内比较元数据和有序成员，跳过未变化的歌单，保留已有 ID 和封面。
 // playlistMode: "directory"（按文件夹）、"top_level"（按顶层文件夹合并）、"bubble_up"（向上冒泡）。
 // excludeDirs 指定在自动创建歌单时要排除的目录名称（按名称匹配，路径中任何层级包含该名称都会被排除）。
 func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string, excludeDirs []string, coverStoragePath string, musicPath string) (*models.AutoCreatePlaylistsResponse, error) {
-	songRepo := NewSongRepository(r.db)
-	songs, err := songRepo.List(ctx, &SongFilter{
-		Type:  models.TypeLocal,
-		Limit: models.MaxPaginationLimit,
-	})
+	started := time.Now()
+	// Grouping only needs paths, titles and covers, not fingerprints or lyrics.
+	// All local songs participate without the public API pagination cap.
+	rows, err := r.queries.ListAutoPlaylistSongs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list songs: %w", err)
+		return nil, fmt.Errorf("list auto-playlist songs: %w", err)
+	}
+	songs := make([]*models.Song, 0, len(rows))
+	for _, row := range rows {
+		songs = append(songs, &models.Song{ID: row.ID, Title: row.Title, Album: row.Album,
+			FilePath: row.FilePath, CoverPath: row.CoverPath, CoverURL: row.CoverUrl,
+			CueSourcePath: row.CueSourcePath, CueTrackIndex: int(row.CueTrackIndex)})
 	}
 
 	if len(songs) == 0 {
@@ -512,6 +518,7 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 	}
 	allPlaylistSongs := make([]playlistSongEntry, 0)
 
+	changed, unchanged := 0, 0
 	err = r.runInTx(ctx, func(dbtx sqlc.DBTX, q *sqlc.Queries) error {
 		// 加载已有的 auto_created 歌单（name -> id），用于按名字复用歌单 ID，
 		// 避免每次扫描都 DELETE+重建导致 ID 变化（外部消费者如 miot 插件会缓存 ID）。
@@ -522,13 +529,23 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 		// 记录已有自动歌单的 ID 及其当前封面：重建时保留已有非空封面
 		// （含用户手动上传到自动歌单的封面），避免每次扫描覆盖导致封面跳变。
 		type existingAuto struct {
-			id        int64
-			coverPath string
-			coverURL  string
+			id          int64
+			coverPath   string
+			coverURL    string
+			description string
 		}
 		existingAutoMap := make(map[string]existingAuto, len(existingAutoList))
 		for _, p := range existingAutoList {
-			existingAutoMap[p.Name] = existingAuto{id: p.ID, coverPath: p.CoverPath, coverURL: p.CoverUrl}
+			existingAutoMap[p.Name] = existingAuto{id: p.ID, coverPath: p.CoverPath, coverURL: p.CoverUrl, description: p.Description}
+		}
+
+		members, err := q.ListAutoPlaylistMemberships(ctx)
+		if err != nil {
+			return fmt.Errorf("load auto-playlist memberships: %w", err)
+		}
+		byPlaylist := make(map[int64][]sqlc.ListAutoPlaylistMembershipsRow)
+		for _, member := range members {
+			byPlaylist[member.PlaylistID] = append(byPlaylist[member.PlaylistID], member)
 		}
 
 		// 收集非 auto_created 歌单的名字（用户手动建/内置歌单），用于消歧。
@@ -561,6 +578,22 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 				if existing.coverPath != "" || existing.coverURL != "" {
 					writeCoverPath, writeCoverURL = existing.coverPath, existing.coverURL
 				}
+				current := byPlaylist[existing.id]
+				sameMembers := len(current) == len(songIDs)
+				if sameMembers {
+					for i, songID := range songIDs {
+						if current[i].SongID != songID || current[i].Position != int64(i+1) {
+							sameMembers = false
+							break
+						}
+					}
+				}
+				if sameMembers && existing.description == desc && existing.coverPath == writeCoverPath && existing.coverURL == writeCoverURL {
+					delete(existingAutoMap, name)
+					response.Playlists = append(response.Playlists, models.PlaylistInfo{PlaylistID: existing.id, Name: name, SongCount: len(songIDs)})
+					unchanged++
+					return nil
+				}
 				if _, err := q.UpdateAutoCreatedPlaylistMeta(ctx, sqlc.UpdateAutoCreatedPlaylistMetaParams{
 					Name:        name,
 					Description: desc,
@@ -590,6 +623,7 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 				playlistID = newID
 			}
 
+			changed++
 			for i, songID := range songIDs {
 				allPlaylistSongs = append(allPlaylistSongs, playlistSongEntry{
 					playlistID: playlistID,
@@ -674,6 +708,7 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 	}
 
 	response.Total = len(response.Playlists)
+	slog.Info("auto playlists synchronized", "songs", len(songs), "changed", changed, "unchanged", unchanged, "elapsed", time.Since(started))
 	return response, nil
 }
 

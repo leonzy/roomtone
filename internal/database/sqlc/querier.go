@@ -93,6 +93,8 @@ type Querier interface {
 	ListAllGroupMembers(ctx context.Context) ([]PlayerGroupMember, error)
 	ListAllPlaylistNames(ctx context.Context) ([]string, error)
 	ListAutoCreatedPlaylists(ctx context.Context) ([]ListAutoCreatedPlaylistsRow, error)
+	ListAutoPlaylistMemberships(ctx context.Context) ([]ListAutoPlaylistMembershipsRow, error)
+	ListAutoPlaylistSongs(ctx context.Context) ([]ListAutoPlaylistSongsRow, error)
 	ListCueAudioPaths(ctx context.Context, cueSourcePath string) ([]string, error)
 	ListCueSources(ctx context.Context) ([]string, error)
 	ListDuplicateFingerprints(ctx context.Context) ([]ListDuplicateFingerprintsRow, error)

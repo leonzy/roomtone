@@ -203,15 +203,16 @@ func (q *Queries) ListAllPlaylistNames(ctx context.Context) ([]string, error) {
 }
 
 const listAutoCreatedPlaylists = `-- name: ListAutoCreatedPlaylists :many
-SELECT id, name, cover_path, cover_url FROM playlists
+SELECT id, name, description, cover_path, cover_url FROM playlists
 WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'auto_created')
 `
 
 type ListAutoCreatedPlaylistsRow struct {
-	ID        int64
-	Name      string
-	CoverPath string
-	CoverUrl  string
+	ID          int64
+	Name        string
+	Description string
+	CoverPath   string
+	CoverUrl    string
 }
 
 func (q *Queries) ListAutoCreatedPlaylists(ctx context.Context) ([]ListAutoCreatedPlaylistsRow, error) {
@@ -226,8 +227,95 @@ func (q *Queries) ListAutoCreatedPlaylists(ctx context.Context) ([]ListAutoCreat
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
+			&i.Description,
 			&i.CoverPath,
 			&i.CoverUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAutoPlaylistMemberships = `-- name: ListAutoPlaylistMemberships :many
+SELECT ps.playlist_id, ps.song_id, ps.position
+FROM playlist_songs ps
+JOIN playlists p ON p.id = ps.playlist_id
+WHERE EXISTS (SELECT 1 FROM json_each(p.labels) WHERE value = 'auto_created')
+ORDER BY ps.playlist_id, ps.position
+`
+
+type ListAutoPlaylistMembershipsRow struct {
+	PlaylistID int64
+	SongID     int64
+	Position   int64
+}
+
+func (q *Queries) ListAutoPlaylistMemberships(ctx context.Context) ([]ListAutoPlaylistMembershipsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAutoPlaylistMemberships)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAutoPlaylistMembershipsRow{}
+	for rows.Next() {
+		var i ListAutoPlaylistMembershipsRow
+		if err := rows.Scan(&i.PlaylistID, &i.SongID, &i.Position); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAutoPlaylistSongs = `-- name: ListAutoPlaylistSongs :many
+SELECT id, title, album, file_path, cover_path, cover_url, cue_source_path, cue_track_index
+FROM songs WHERE type = 'local'
+ORDER BY added_at DESC
+`
+
+type ListAutoPlaylistSongsRow struct {
+	ID            int64
+	Title         string
+	Album         string
+	FilePath      string
+	CoverPath     string
+	CoverUrl      string
+	CueSourcePath string
+	CueTrackIndex int64
+}
+
+func (q *Queries) ListAutoPlaylistSongs(ctx context.Context) ([]ListAutoPlaylistSongsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAutoPlaylistSongs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAutoPlaylistSongsRow{}
+	for rows.Next() {
+		var i ListAutoPlaylistSongsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Album,
+			&i.FilePath,
+			&i.CoverPath,
+			&i.CoverUrl,
+			&i.CueSourcePath,
+			&i.CueTrackIndex,
 		); err != nil {
 			return nil, err
 		}

@@ -1,5 +1,9 @@
 # Development Lessons
 
+## CPU-001: Automatic playlists must not load full song payloads or rewrite unchanged memberships
+
+2026-11-11: Hourly scans on leonFN triggered AutoCreate; 97.6% of a 20-second CPU sample was in AutoCreate→SongRepository.List. Its default sort included fingerprints, lyrics and other large fields, saturating roughly one core (25% of a four-core host). Use an uncapped, purpose-specific lightweight query and compare descriptions, preserved covers and ordered memberships inside the transaction, updating changed playlists only. Real SQLite poisoned-column and write-audit regressions fail under the old implementation. A 79,703-song/5,343-playlist library snapshot synchronized twice in about 10 seconds with zero total_changes delta. Preserve scan/fingerprint settings and system page cache; a warm cache or post-restart low CPU alone is not optimization evidence. Seen 1×.
+
 ## MEM-001: Embedded-CUE discovery must not load complete artwork
 
 2026-11-06: leonFN had about 42 MiB live Go heap and an 872 MiB process high-water mark; allocation profiling attributed about 66% of cumulative allocation to FLAC pictures read from processEmbeddedCueSheets. Use tag.ReadFLACCUESheet to parse STREAMINFO/binary CUESHEET and seek over pictures/comments/other blocks; retain normal cover extraction for actual CUE import. Do not clear system-wide page cache to improve a displayed metric. An 8 MiB artwork fixture drops to 1152 B/op; a read-only 32-file NAS comparison drops from 8,149,632 to 19,648 B with equal CUE/sample-rate results. The forbidden-payload regression fails under full reading. Tag tests and service scan/metadata tests pass. Seen 1×.
