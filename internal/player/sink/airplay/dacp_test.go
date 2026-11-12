@@ -158,3 +158,15 @@ func TestDACPServerIdentity(t *testing.T) {
 		t.Fatal("两个 DACPServer 的 ID 不应相同")
 	}
 }
+
+func TestDACPImmediateCloseKeepsServeInstance(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		d := NewDACPServer(nil)
+		if err := d.Start(); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

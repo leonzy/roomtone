@@ -65,8 +65,9 @@ func (d *DACPServer) Start() error {
 	}
 	d.ln = ln
 	d.httpSrv = &http.Server{Handler: http.HandlerFunc(d.serveHTTP)}
+	server := d.httpSrv
 	go func() {
-		if err := d.httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
 			slog.Warn("DACP http server exited", "err", err)
 		}
 	}()
