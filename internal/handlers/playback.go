@@ -779,12 +779,12 @@ type transportRequest struct {
 
 // SetSleepTimer 设置区域睡眠定时器
 // @Summary 设置区域睡眠定时器
-// @Description 为指定区域设置一次性睡眠定时器，到点后暂停该区域的播放并广播 state 事件。minutes=0 取消已有定时器；有效范围 1~720 分钟，超出返回 400。定时器只存在内存中，服务重启后失效。
+// @Description 为指定区域设置一次性睡眠定时器，到点后暂停该区域的播放并广播 state 事件。minutes=0 取消已有定时器；有效范围 1~720 分钟，超出返回 400。也可用 songs=1~1000 在当前歌曲起自然播完指定首数后暂停，手动切歌不扣减。minutes 与 songs 互斥，设置一种会替换另一种。定时器只存在内存中，服务重启后失效。
 // @Tags 播放控制
 // @Accept json
 // @Produce json
 // @Param id path string true "组 ID"
-// @Param request body sleepTimerRequest true "分钟数（0 取消）"
+// @Param request body sleepTimerRequest true "minutes 或 songs（二选一，0 取消）"
 // @Success 200 {object} sleepTimerStatus "定时器状态"
 // @Failure 400 {object} map[string]string "minutes 不合法或请求格式错误"
 // @Failure 404 {object} map[string]string "组不存在"
@@ -796,12 +796,18 @@ func (h *PlaybackHandler) SetSleepTimer(w http.ResponseWriter, r *http.Request) 
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
 		return
 	}
-	if req.Minutes < 0 || req.Minutes > 720 {
-		respondError(w, http.StatusBadRequest, "minutes 需为 0（取消）或 1~720", nil)
+	if req.Minutes < 0 || req.Minutes > 720 || (req.Songs != nil && (*req.Songs < 0 || *req.Songs > 1000 || req.Minutes != 0)) {
+		respondError(w, http.StatusBadRequest, "minutes 需为 0~720，songs 需为 0~1000，且不可同时设置", nil)
 		return
 	}
 	gid := chi.URLParam(r, "id")
-	if err := h.mgr.SetSleepTimer(gid, time.Duration(req.Minutes)*time.Minute); err != nil {
+	var err error
+	if req.Songs != nil {
+		err = h.mgr.SetSleepAfterSongs(gid, *req.Songs)
+	} else {
+		err = h.mgr.SetSleepTimer(gid, time.Duration(req.Minutes)*time.Minute)
+	}
+	if err != nil {
 		playbackFail(w, err)
 		return
 	}
@@ -810,7 +816,7 @@ func (h *PlaybackHandler) SetSleepTimer(w http.ResponseWriter, r *http.Request) 
 
 // GetSleepTimer 读取区域睡眠定时器
 // @Summary 获取区域睡眠定时器
-// @Description 返回剩余秒数与是否有活动定时器。remaining_seconds 向上取整；定时器到点或取消后 active=false、remaining_seconds=0。
+// @Description 返回模式、剩余秒数或剩余歌曲数及活动状态。mode=duration 时 remaining_seconds 向上取整；mode=songs 时 remaining_songs 为剩余首数（包含当前歌曲）。到点或取消后 active=false。
 // @Tags 播放控制
 // @Produce json
 // @Param id path string true "组 ID"
@@ -829,6 +835,9 @@ func (h *PlaybackHandler) GetSleepTimer(w http.ResponseWriter, r *http.Request) 
 
 // sleepTimerStatus 把截止时刻换算成客户端直接可用的剩余秒数。
 func (h *PlaybackHandler) sleepTimerStatus(groupID string) sleepTimerStatus {
+	if n, ok := h.mgr.SleepSongs(groupID); ok {
+		return sleepTimerStatus{Active: true, Mode: "songs", RemainingSongs: n}
+	}
 	deadline, ok := h.mgr.SleepTimer(groupID)
 	if !ok {
 		return sleepTimerStatus{}
@@ -838,18 +847,22 @@ func (h *PlaybackHandler) sleepTimerStatus(groupID string) sleepTimerStatus {
 		remaining = 0
 	}
 	return sleepTimerStatus{
+		Mode:             "duration",
 		RemainingSeconds: int(math.Ceil(remaining.Seconds())),
 		Active:           true,
 	}
 }
 
 type sleepTimerRequest struct {
-	Minutes int `json:"minutes"`
+	Minutes int  `json:"minutes"`
+	Songs   *int `json:"songs,omitempty"`
 }
 
 type sleepTimerStatus struct {
-	RemainingSeconds int  `json:"remaining_seconds"`
-	Active           bool `json:"active"`
+	Mode             string `json:"mode,omitempty"`
+	RemainingSongs   int    `json:"remaining_songs"`
+	RemainingSeconds int    `json:"remaining_seconds"`
+	Active           bool   `json:"active"`
 }
 
 // Playback 全量对齐

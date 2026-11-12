@@ -27,13 +27,15 @@ type Controller interface {
 
 // Command 下发给客户端的一条指令。
 type Command struct {
-	Cmd        string `json:"cmd"`
-	SongID     int64  `json:"song_id,omitempty"`
-	PositionMs int64  `json:"position_ms,omitempty"`
-	PlayAtMs   int64  `json:"play_at_ms,omitempty"`
-	Volume     int    `json:"volume,omitempty"`
-	Muted      bool   `json:"muted,omitempty"`
-	Format     string `json:"format,omitempty"`
+	Cmd             string `json:"cmd"`
+	Songs           *int   `json:"songs,omitempty"`
+	SleepGeneration uint64 `json:"sleep_generation,omitempty"`
+	SongID          int64  `json:"song_id,omitempty"`
+	PositionMs      int64  `json:"position_ms,omitempty"`
+	PlayAtMs        int64  `json:"play_at_ms,omitempty"`
+	Volume          int    `json:"volume,omitempty"`
+	Muted           bool   `json:"muted,omitempty"`
+	Format          string `json:"format,omitempty"`
 	// EQ 该设备的均衡器状态。AppliedBy 告诉客户端"这条曲线谁来执行"：
 	// 本机是自拉流，服务端拿不到它的 PCM，所以是 client——客户端必须
 	// 按 Bands/Preamp 应用，且只应用一次。
@@ -286,4 +288,8 @@ func ValidateCommand(cmd string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown local command %q", cmd)
+}
+
+func (s *Sink) SetSleepAfterSongs(songs int, generation uint64) error {
+	return s.ctl.SendCommand(Command{Cmd: "sleep_after_songs", Songs: &songs, SleepGeneration: generation})
 }

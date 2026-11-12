@@ -125,3 +125,33 @@ func TestSleepTimerValidation(t *testing.T) {
 		t.Fatalf("GET 不存在组状态码 = %d，期望 404：%s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestSleepSongEndpoints(t *testing.T) {
+	h := newPlaybackHandlerForTest(t)
+	if err := h.mgr.RegisterPlayer(context.Background(), player.Player{ID: "sleep", Kind: player.KindRAOP, Name: "Sleep"}); err != nil {
+		t.Fatal(err)
+	}
+	gid := h.mgr.GroupIDOf("sleep")
+	for _, tc := range []struct {
+		body  string
+		code  int
+		songs int
+	}{
+		{`{"songs":3}`, 200, 3}, {`{"minutes":1,"songs":2}`, 400, 0}, {`{"songs":-1}`, 400, 0}, {`{"songs":1001}`, 400, 0}, {`{"songs":1.5}`, 400, 0}, {`{"songs":0}`, 200, 0},
+	} {
+		rr := httptest.NewRecorder()
+		h.SetSleepTimer(rr, withURLParams(httptest.NewRequest("POST", "/", bytes.NewBufferString(tc.body)), "id", gid))
+		if rr.Code != tc.code {
+			t.Fatalf("%s: status=%d %s", tc.body, rr.Code, rr.Body.String())
+		}
+		if tc.code == 200 {
+			var st sleepTimerStatus
+			if err := json.Unmarshal(rr.Body.Bytes(), &st); err != nil {
+				t.Fatal(err)
+			}
+			if st.RemainingSongs != tc.songs || st.Active != (tc.songs > 0) || (tc.songs > 0 && st.Mode != "songs") {
+				t.Fatalf("wrong status: %+v", st)
+			}
+		}
+	}
+}

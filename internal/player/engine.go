@@ -108,6 +108,9 @@ type EngineDeps struct {
 	// OnTrackFinished reports a natural completion once per engine, not per speaker.
 	// Pause, seek, stop and decoder failures must not invoke it.
 	OnTrackFinished func(Track)
+	// OnSongSleep returns true when a natural completion should pause this zone.
+	OnSongSleep         func(context.Context, time.Time) bool
+	SleepSongsRemaining func() int
 }
 
 // Engine 一个 owner（组或派对）的播放引擎：队列 + 传输状态机 + 解码分发。
@@ -138,8 +141,9 @@ type Engine struct {
 	preloadID     int64
 	preloadFormat Format
 	// sinksOpen 当前 sink 会话已经打开（下一曲可以走 gapless 接续）。
-	sinksOpen bool
-	lastErr   error
+	sinksOpen        bool
+	lastErr          error
+	resumeAfterSleep bool
 	// curPlan / planBase / cursor 是"播放中加入成员"所需的现场：
 	// 新设备要按当前曲目与当前进度 Open，并 Start 到当前时间轴位置。
 	curPlan  sink.StreamPlan
@@ -478,6 +482,7 @@ func (e *Engine) Load(ctx context.Context, songIDs []int64, index int, position 
 // 保存"这个区域现在排了什么"。播放仍由客户端驱动，状态靠上报镜像。
 func (e *Engine) SetQueue(songIDs []int64, index int) error {
 	e.mu.Lock()
+	e.resumeAfterSleep = false
 	prevID, prevErr := e.queue.CurrentSong()
 	e.queue.Replace(songIDs, index)
 	nextID, nextErr := e.queue.CurrentSong()
@@ -510,6 +515,11 @@ func (e *Engine) Play(ctx context.Context) error {
 	if e.transport.State() == StatePaused {
 		// 恢复：从暂停位置重建解码器（ffmpeg 不暂停，直接停掉重开）。
 		pos := e.transport.Position()
+		if e.resumeAfterSleep {
+			e.resumeAfterSleep = false
+			e.queue.Next(true)
+			pos = 0
+		}
 		if e.running {
 			e.stopLocked()
 		}
@@ -799,6 +809,7 @@ func (e *Engine) pushMetadata(ctx context.Context) {
 }
 
 func (e *Engine) stopLocked() {
+	e.resumeAfterSleep = false
 	e.runCtx = nil
 	if e.cancel != nil {
 		e.cancel()
@@ -1158,6 +1169,26 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 			e.deps.OnTrackFinished(track)
 		}
 
+		if e.deps.OnSongSleep != nil {
+			finishAt := e.timeline.At(uint64(sampleBase))
+			var tailDelay time.Duration
+			for _, delay := range carriedDelays {
+				if delay > tailDelay {
+					tailDelay = delay
+				}
+			}
+			sleepTargets, _ := e.targets.Snapshot()
+			for _, target := range sleepTargets {
+				if target.Delay > tailDelay {
+					tailDelay = target.Delay
+				}
+			}
+			if e.pauseAfterSleepSong(ctx, finishAt.Add(tailDelay), track.Duration) {
+				return
+			}
+
+		}
+
 		// 自然播完：auto=true 时 repeat=one 原地重播。
 		// 做过交叉淡化时，下一曲只跳过已经混入的头部，不能跳过配置的固定时长。
 		position = consumedNext
@@ -1285,6 +1316,10 @@ func (e *Engine) runDelegated(ctx context.Context, startAt time.Duration) {
 		}
 		if e.deps.OnTrackFinished != nil {
 			e.deps.OnTrackFinished(track)
+		}
+
+		if e.pauseAfterSleepSong(ctx, e.deps.Clock(), track.Duration) {
+			return
 		}
 
 		position = 0
@@ -1416,6 +1451,9 @@ func (e *Engine) crossfadeDuration() time.Duration {
 // 这一步发生在当前曲 EOF 处，分发器还有 2s 缓冲兜着，几十毫秒的开销
 // 不会传到设备侧。返回的 decoder 由 crossfadeReader 负责 Close。
 func (e *Engine) openCrossfadeNext(ctx context.Context, songID int64, format Format) (io.ReadCloser, error) {
+	if e.deps.SleepSongsRemaining != nil && e.deps.SleepSongsRemaining() == 1 {
+		return nil, errors.New("sleep after current song: skip crossfade")
+	}
 	if d := e.takePrefetched(songID, format); d != nil {
 		return d, nil
 	}
@@ -1606,4 +1644,34 @@ func clockParticipantID(cp sink.ClockParticipant) string {
 		return s.ID()
 	}
 	return ""
+}
+
+// pauseAfterSleepSong leaves the completed entry selected. A later Play moves
+// to the next entry; native heartbeat reports cannot undo that future selection.
+func (e *Engine) pauseAfterSleepSong(ctx context.Context, finishAt time.Time, duration time.Duration) bool {
+	if e.deps.OnSongSleep == nil || !e.deps.OnSongSleep(ctx, finishAt) {
+		return ctx.Err() != nil
+	}
+	if ctx.Err() != nil {
+		return true
+	}
+	e.mu.Lock()
+	if e.runCtx != ctx {
+		e.mu.Unlock()
+		return true
+	}
+	e.transport.RestorePaused(e.transport.SongID(), duration)
+	wait := e.dispatchControls("sleep", append([]sink.Sink(nil), e.controls...), func(s sink.Sink) error {
+		if p, ok := s.(interface{ Pause() error }); ok {
+			return p.Pause()
+		}
+		return s.Stop()
+	})
+	e.stopLocked()
+	e.resumeAfterSleep = true
+	e.mu.Unlock()
+	wait()
+	e.persistState()
+	e.emitState()
+	return true
 }

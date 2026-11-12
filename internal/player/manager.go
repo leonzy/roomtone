@@ -160,7 +160,9 @@ type Manager struct {
 	sleepTimers map[string]*time.Timer
 	// sleepDeadlines 与 sleepTimers 一一对应，供 GET 计算剩余时间，
 	// 同时作为回调的代际标记（旧定时器到点后发现 deadline 不匹配就退出）。
-	sleepDeadlines map[string]time.Time
+	sleepDeadlines  map[string]time.Time
+	sleepSongs      map[string]*songSleepTimer
+	sleepGeneration uint64
 }
 
 // NewManager 创建管理器。
@@ -187,11 +189,13 @@ func NewManager(deps ManagerDeps) *Manager {
 		eqChains:  make(map[string]*dsp.EQ),
 		partySync: make(map[string]*partySyncState),
 
-		metrics:        NewMetrics(),
-		syncPending:    make(map[string]time.Time),
-		retiredGroups:  make(map[string]bool),
-		sleepTimers:    make(map[string]*time.Timer),
-		sleepDeadlines: make(map[string]time.Time),
+		metrics:         NewMetrics(),
+		syncPending:     make(map[string]time.Time),
+		retiredGroups:   make(map[string]bool),
+		sleepTimers:     make(map[string]*time.Timer),
+		sleepDeadlines:  make(map[string]time.Time),
+		sleepSongs:      make(map[string]*songSleepTimer),
+		sleepGeneration: uint64(time.Now().UnixMilli()) << 10,
 	}
 }
 
@@ -1476,19 +1480,21 @@ func (m *Manager) ensureEngine(ctx context.Context, g Group) {
 		return
 	}
 	e := NewEngine("group", g.ID, EngineDeps{
-		Decoder:         m.deps.Decoder,
-		Runners:         m.deps.Runners,
-		Resolver:        m.deps.Resolver,
-		Budget:          m.deps.Budget,
-		Bus:             m.deps.Bus,
-		Store:           m.deps.Store,
-		Logger:          m.deps.Logger,
-		Clock:           m.deps.Clock,
-		Latency:         m.deps.Latency,
-		Metrics:         m.metrics,
-		ReplayGain:      m.deps.ReplayGain,
-		Crossfade:       m.deps.Crossfade,
-		OnTrackFinished: m.deps.OnTrackFinished,
+		Decoder:             m.deps.Decoder,
+		Runners:             m.deps.Runners,
+		Resolver:            m.deps.Resolver,
+		Budget:              m.deps.Budget,
+		Bus:                 m.deps.Bus,
+		Store:               m.deps.Store,
+		Logger:              m.deps.Logger,
+		Clock:               m.deps.Clock,
+		Latency:             m.deps.Latency,
+		Metrics:             m.metrics,
+		ReplayGain:          m.deps.ReplayGain,
+		Crossfade:           m.deps.Crossfade,
+		OnTrackFinished:     m.deps.OnTrackFinished,
+		SleepSongsRemaining: func() int { n, _ := m.SleepSongs(g.ID); return n },
+		OnSongSleep:         func(ctx context.Context, at time.Time) bool { return m.completeSleepSong(ctx, g.ID, at) },
 	})
 	m.engines[key] = e
 	m.mu.Unlock()

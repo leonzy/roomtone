@@ -800,3 +800,9 @@ Roon's model is **the zone owns the queue**: every Zone has its own play queue, 
 | Resume after restart | `slimserver/Slim/Networking/Slimproto.pm:305 persistPlaybackStateForPowerOff` |
 | RAOP receiver (reverse reference) | shairport-sync |
 | RAOP sender | OwnTone `src/outputs/raop.c` |
+
+### Zone sleep: duration or song count
+
+`POST /groups/{id}/sleep` accepts mutually exclusive `minutes` (0–720) or `songs` (0–1000); zero cancels. Song count includes the current song and decrements only on natural completion, including repeat-one iterations. Pause, seek, manual navigation and failures do not decrement it. On the final song, pushed playback drains buffered audio and suppresses next-track crossfade before pausing the zone. The queue is retained; resuming selects the next entry. Plans are in memory and do not survive a server restart.
+
+Local clients receive `sleep_after_songs` with `songs/sleep_generation`, count native completion events and suppress eager auto-next. Heartbeats include `sleep_generation/sleep_remaining`. The server accepts decreasing reports for the current generation only in single-member local zones whose engine is not running; server-driven playback ignores these fields to avoid double counting. Changing modes replaces the previous plan.

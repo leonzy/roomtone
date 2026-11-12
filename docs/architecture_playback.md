@@ -800,3 +800,9 @@ Roon 的模型是**区域拥有队列**：每个 Zone 有一条独立的 play qu
 | 断点续播 | `slimserver/Slim/Networking/Slimproto.pm:305 persistPlaybackStateForPowerOff` |
 | RAOP 接收端（反向对照） | shairport-sync |
 | RAOP 发送端 | OwnTone `src/outputs/raop.c` |
+
+### 区域休眠：时间或歌曲首数
+
+`POST /groups/{id}/sleep` 接受互斥的 `minutes`（0–720）或 `songs`（0–1000），0 取消。按首数包含当前曲，只计自然完成，暂停、定位、手动上一首/下一首及失败不扣减；单曲循环的每次完整播放计一次。推流最后一首等待已缓冲音频播放完毕，禁用该边界的下一曲交叉淡化，再暂停整组；队列保留，继续播放从下一项起播。设置只存内存，重启不恢复。
+
+本机客户端通过 `sleep_after_songs` 命令接收 `songs/sleep_generation`，在原生完成事件中计数并禁止到点自动下一首；心跳携带 `sleep_generation/sleep_remaining`。服务端仅在单成员本机区域且未运行引擎时接受同一代次的递减上报，服务端驱动时忽略该字段，避免重复扣减。切换模式会替换旧设置。

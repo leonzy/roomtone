@@ -429,12 +429,14 @@ type playerWSMessage struct {
 	MaxRate int                 `json:"max_sample_rate"`
 	Caps    *playerRegisterCaps `json:"caps"`
 	// report
-	SongID     int64  `json:"song_id"`
-	PositionMs int64  `json:"position_ms"`
-	Buffering  bool   `json:"buffering"`
-	Volume     int    `json:"volume"`
-	State      string `json:"state"`
-	RTTMs      int64  `json:"rtt_ms"`
+	SongID          int64  `json:"song_id"`
+	PositionMs      int64  `json:"position_ms"`
+	Buffering       bool   `json:"buffering"`
+	Volume          int    `json:"volume"`
+	State           string `json:"state"`
+	RTTMs           int64  `json:"rtt_ms"`
+	SleepGeneration uint64 `json:"sleep_generation"`
+	SleepRemaining  *int   `json:"sleep_remaining"`
 }
 
 type playerRegisterCaps struct {
@@ -516,6 +518,7 @@ func (a *App) handlePlayerMessage(c *ws.Client, payload []byte) {
 			slog.Warn("注册播放设备失败", "id", msg.ID, "err", err)
 			return
 		}
+		a.playerManager.RestoreSleepForPlayer(msg.ID)
 	case "unregister_player":
 		id := msg.ID
 		if id == "" {
@@ -545,6 +548,7 @@ func (a *App) handlePlayerMessage(c *ws.Client, payload []byte) {
 			}
 			// 客户端自己起播时服务端没有解码协程，组状态靠上报镜像，
 			// 否则区域会一直显示空闲。
+			a.playerManager.ReportSleepSongs(p, msg.SleepGeneration, msg.SleepRemaining)
 			a.playerManager.MirrorReport(p, msg.SongID, msg.State,
 				time.Duration(msg.PositionMs)*time.Millisecond)
 		}

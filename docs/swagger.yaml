@@ -759,12 +759,18 @@ definitions:
     properties:
       minutes:
         type: integer
+      songs:
+        type: integer
     type: object
   handlers.sleepTimerStatus:
     properties:
       active:
         type: boolean
+      mode:
+        type: string
       remaining_seconds:
+        type: integer
+      remaining_songs:
         type: integer
     type: object
   handlers.songArtistsRequest:
@@ -3527,7 +3533,8 @@ paths:
       - 播放控制
   /groups/{id}/sleep:
     get:
-      description: 返回剩余秒数与是否有活动定时器。remaining_seconds 向上取整；定时器到点或取消后 active=false、remaining_seconds=0。
+      description: 返回模式、剩余秒数或剩余歌曲数及活动状态。mode=duration 时 remaining_seconds 向上取整；mode=songs
+        时 remaining_songs 为剩余首数（包含当前歌曲）。到点或取消后 active=false。
       parameters:
       - description: 组 ID
         in: path
@@ -3556,14 +3563,15 @@ paths:
       consumes:
       - application/json
       description: 为指定区域设置一次性睡眠定时器，到点后暂停该区域的播放并广播 state 事件。minutes=0 取消已有定时器；有效范围
-        1~720 分钟，超出返回 400。定时器只存在内存中，服务重启后失效。
+        1~720 分钟，超出返回 400。也可用 songs=1~1000 在当前歌曲起自然播完指定首数后暂停，手动切歌不扣减。minutes 与 songs
+        互斥，设置一种会替换另一种。定时器只存在内存中，服务重启后失效。
       parameters:
       - description: 组 ID
         in: path
         name: id
         required: true
         type: string
-      - description: 分钟数（0 取消）
+      - description: minutes 或 songs（二选一，0 取消）
         in: body
         name: request
         required: true
