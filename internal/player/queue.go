@@ -34,7 +34,8 @@ var ErrQueueIndexOutOfRange = errors.New("queue index out of range")
 type Queue struct {
 	mu      sync.Mutex
 	items   []int64
-	current int // -1 表示未选中
+	current int          // -1 表示未选中
+	started map[int]bool // Successful playback, keyed by queue occurrence.
 	repeat  RepeatMode
 	shuffle bool
 	order   []int // 播放顺序（items 下标的排列）
@@ -152,6 +153,11 @@ func (q *Queue) SetShuffle(on bool) {
 func (q *Queue) Replace(songIDs []int64, first int) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	q.replaceLocked(songIDs, first)
+}
+
+func (q *Queue) replaceLocked(songIDs []int64, first int) {
+	q.started = make(map[int]bool)
 	q.items = append([]int64(nil), songIDs...)
 	if len(q.items) == 0 {
 		q.current = -1
@@ -161,6 +167,63 @@ func (q *Queue) Replace(songIDs []int64, first int) {
 		q.current = first
 	}
 	q.rebuildOrderLocked()
+}
+
+// ReplaceKeepingProgress mirrors client edits without treating every new index
+// heartbeat as a fresh queue. Repeated song IDs retain occurrence order.
+func (q *Queue) ReplaceKeepingProgress(songIDs []int64, first int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	old := make(map[int64][]bool)
+	for i, id := range q.items {
+		old[id] = append(old[id], q.started[i])
+	}
+	q.replaceLocked(songIDs, first)
+	for i, id := range songIDs {
+		if values := old[id]; len(values) > 0 {
+			if values[0] {
+				q.started[i] = true
+			}
+			old[id] = values[1:]
+		}
+	}
+}
+
+func (q *Queue) MarkStarted(songID int64) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.current < 0 || q.current >= len(q.items) || q.items[q.current] != songID {
+		return false
+	}
+	if q.started == nil {
+		q.started = make(map[int]bool)
+	}
+	if q.started[q.current] {
+		return false
+	}
+	q.started[q.current] = true
+	return true
+}
+
+func (q *Queue) SetStarted(indices []int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.started = make(map[int]bool)
+	for _, index := range indices {
+		if index >= 0 && index < len(q.items) {
+			q.started[index] = true
+		}
+	}
+}
+
+func (q *Queue) remapStartedLocked(indexOf func(int) int) {
+	started := make(map[int]bool)
+	for index := range q.started {
+		if next := indexOf(index); next >= 0 {
+			started[next] = true
+		}
+	}
+	q.started = started
 }
 
 // Append 追加歌曲，返回新长度。
@@ -198,6 +261,12 @@ func (q *Queue) InsertNextMany(songIDs ...int64) int {
 		return 0
 	}
 	at := q.current + 1
+	q.remapStartedLocked(func(i int) int {
+		if i >= at {
+			return i + len(songIDs)
+		}
+		return i
+	})
 	items := make([]int64, 0, len(q.items)+len(songIDs))
 	items = append(items, q.items[:at]...)
 	items = append(items, songIDs...)
@@ -219,6 +288,15 @@ func (q *Queue) Remove(index int) error {
 		return ErrQueueIndexOutOfRange
 	}
 	q.items = append(q.items[:index], q.items[index+1:]...)
+	q.remapStartedLocked(func(i int) int {
+		if i == index {
+			return -1
+		}
+		if i > index {
+			return i - 1
+		}
+		return i
+	})
 	if len(q.items) == 0 {
 		q.current = -1
 	} else if index < q.current {
@@ -241,18 +319,23 @@ func (q *Queue) Move(from, to int) error {
 	if from == to {
 		return nil
 	}
-	cur := q.items[q.current]
+	indexOf := func(i int) int {
+		if i == from {
+			return to
+		}
+		if from < to && i > from && i <= to {
+			return i - 1
+		}
+		if from > to && i >= to && i < from {
+			return i + 1
+		}
+		return i
+	}
+	q.current = indexOf(q.current)
+	q.remapStartedLocked(indexOf)
 	item := q.items[from]
 	q.items = append(q.items[:from], q.items[from+1:]...)
 	q.items = append(q.items[:to], append([]int64{item}, q.items[to:]...)...)
-	for i, id := range q.items {
-		if id == cur && i >= 0 {
-			// 用 id 反查可能撞重复歌曲，这里以"移动前当前项的内容"为准已足够，
-			// 重复 id 时取第一个，行为稳定。
-			q.current = i
-			break
-		}
-	}
 	q.rebuildOrderLocked()
 	return nil
 }
@@ -406,6 +489,7 @@ type QueueSnapshot struct {
 	Current int        `json:"current"`
 	Repeat  RepeatMode `json:"repeat"`
 	Shuffle bool       `json:"shuffle"`
+	Started []int      `json:"started_indices"`
 }
 
 // Snapshot 取快照。
@@ -414,7 +498,13 @@ func (q *Queue) Snapshot() QueueSnapshot {
 	defer q.mu.Unlock()
 	items := make([]int64, len(q.items))
 	copy(items, q.items)
-	return QueueSnapshot{Items: items, Current: q.current, Repeat: q.repeat, Shuffle: q.shuffle}
+	started := make([]int, 0, len(q.started))
+	for i := range q.items {
+		if q.started[i] {
+			started = append(started, i)
+		}
+	}
+	return QueueSnapshot{Items: items, Current: q.current, Repeat: q.repeat, Shuffle: q.shuffle, Started: started}
 }
 
 // Restore 从快照恢复。
@@ -422,6 +512,12 @@ func (q *Queue) Restore(s QueueSnapshot) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.items = append([]int64(nil), s.Items...)
+	q.started = make(map[int]bool)
+	for _, i := range s.Started {
+		if i >= 0 && i < len(q.items) {
+			q.started[i] = true
+		}
+	}
 	if len(q.items) == 0 {
 		q.current = -1
 	} else if s.Current < 0 || s.Current >= len(q.items) {

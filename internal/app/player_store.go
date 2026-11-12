@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -140,14 +141,23 @@ func (s *playbackStore) LoadQueue(ctx context.Context, ownerKind, ownerID string
 }
 
 func (s *playbackStore) SaveState(ctx context.Context, ownerKind, ownerID string, st player.StateSnapshot) error {
+	progress := ""
+	if st.QueueProgress != nil {
+		encoded, err := json.Marshal(st.QueueProgress)
+		if err != nil {
+			return err
+		}
+		progress = string(encoded)
+	}
 	return s.repo.SaveState(ctx, database.PlaybackStateRow{
-		OwnerKind:  ownerKind,
-		OwnerID:    ownerID,
-		SongID:     st.SongID,
-		Position:   st.Position,
-		State:      st.State,
-		RepeatMode: st.RepeatMode,
-		Shuffle:    st.Shuffle,
+		OwnerKind:     ownerKind,
+		OwnerID:       ownerID,
+		SongID:        st.SongID,
+		Position:      st.Position,
+		State:         st.State,
+		RepeatMode:    st.RepeatMode,
+		Shuffle:       st.Shuffle,
+		QueueProgress: progress,
 	})
 }
 
@@ -159,12 +169,18 @@ func (s *playbackStore) LoadState(ctx context.Context, ownerKind, ownerID string
 	if err != nil {
 		return player.StateSnapshot{}, err
 	}
+	var progress *player.QueueSnapshot
+	if row.QueueProgress != "" {
+		// Ignore a corrupt optional history record; queue/resume still work.
+		_ = json.Unmarshal([]byte(row.QueueProgress), &progress)
+	}
 	return player.StateSnapshot{
-		SongID:     row.SongID,
-		Position:   row.Position,
-		State:      row.State,
-		RepeatMode: row.RepeatMode,
-		Shuffle:    row.Shuffle,
+		SongID:        row.SongID,
+		Position:      row.Position,
+		State:         row.State,
+		RepeatMode:    row.RepeatMode,
+		Shuffle:       row.Shuffle,
+		QueueProgress: progress,
 	}, nil
 }
 

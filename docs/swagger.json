@@ -14052,6 +14052,12 @@
                     "items": {
                         "type": "integer"
                     }
+                },
+                "started_indices": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },
@@ -15878,6 +15884,12 @@
                 },
                 "shuffle": {
                     "type": "boolean"
+                },
+                "started_indices": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },

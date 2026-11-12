@@ -1435,7 +1435,7 @@ func (m *Manager) Transfer(ctx context.Context, fromGroupID, toGroupID, onlyPlay
 	m.deps.Logger.Info("transfer playback", "from_group", fromGroupID, "to_group", toGroupID,
 		"song_id", st.SongID, "queue_index", idx, "source_position_seconds", st.Position,
 		"target_position_seconds", pos.Seconds())
-	if err := to.Load(ctx, songIDs, idx, pos); err != nil {
+	if err := to.loadWithProgress(ctx, songIDs, idx, pos, st.Queue.Started); err != nil {
 		return err
 	}
 	if m.deps.Bus != nil {

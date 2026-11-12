@@ -646,7 +646,13 @@ func (h *PlaybackHandler) ReplaceQueue(w http.ResponseWriter, r *http.Request) {
 		playbackFail(w, err)
 		return
 	}
-	if err := e.SetQueue(req.SongIDs, req.Index); err != nil {
+	for _, index := range req.Started {
+		if index < 0 || index >= len(req.SongIDs) {
+			respondError(w, http.StatusBadRequest, "已播放条目的下标无效", nil)
+			return
+		}
+	}
+	if err := e.SetQueueWithProgress(req.SongIDs, req.Index, req.Started); err != nil {
 		playbackFail(w, err)
 		return
 	}
@@ -656,6 +662,7 @@ func (h *PlaybackHandler) ReplaceQueue(w http.ResponseWriter, r *http.Request) {
 type queueReplaceRequest struct {
 	SongIDs []int64 `json:"song_ids"`
 	Index   int     `json:"index"`
+	Started []int   `json:"started_indices"`
 }
 
 // ReorderQueue 重排队列

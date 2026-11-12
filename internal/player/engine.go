@@ -71,11 +71,12 @@ type StateStore interface {
 
 // StateSnapshot 断点续播所需的全部状态。
 type StateSnapshot struct {
-	SongID     int64
-	Position   float64
-	State      string
-	RepeatMode string
-	Shuffle    bool
+	SongID        int64
+	Position      float64
+	State         string
+	RepeatMode    string
+	Shuffle       bool
+	QueueProgress *QueueSnapshot
 }
 
 // CorrectionRunner 由分发器实现：把自身暴露成同步校正的执行者。
@@ -454,6 +455,10 @@ func (e *Engine) Status() Status {
 
 // Load 用给定队列开播。songIDs 为规范顺序，index 为起始下标。
 func (e *Engine) Load(ctx context.Context, songIDs []int64, index int, position time.Duration) error {
+	return e.loadWithProgress(ctx, songIDs, index, position, nil)
+}
+
+func (e *Engine) loadWithProgress(ctx context.Context, songIDs []int64, index int, position time.Duration, started []int) error {
 	if len(songIDs) == 0 {
 		return ErrQueueEmpty
 	}
@@ -463,6 +468,7 @@ func (e *Engine) Load(ctx context.Context, songIDs []int64, index int, position 
 	e.mu.Lock()
 	e.stopLocked()
 	e.queue.Replace(songIDs, index)
+	e.queue.SetStarted(started)
 	release, err := e.acquireLocked()
 	if err != nil {
 		e.mu.Unlock()
@@ -481,10 +487,19 @@ func (e *Engine) Load(ctx context.Context, songIDs []int64, index int, position 
 // 客户端是队列的编辑者（选歌、拖拽、删除都在客户端完成），服务端只负责
 // 保存"这个区域现在排了什么"。播放仍由客户端驱动，状态靠上报镜像。
 func (e *Engine) SetQueue(songIDs []int64, index int) error {
+	return e.SetQueueWithProgress(songIDs, index, nil)
+}
+
+// SetQueueWithProgress accepts an explicit occurrence history from a local player.
+// A nil history preserves legacy client mirror behavior; [] starts a fresh round.
+func (e *Engine) SetQueueWithProgress(songIDs []int64, index int, started []int) error {
 	e.mu.Lock()
 	e.resumeAfterSleep = false
 	prevID, prevErr := e.queue.CurrentSong()
-	e.queue.Replace(songIDs, index)
+	e.queue.ReplaceKeepingProgress(songIDs, index)
+	if started != nil {
+		e.queue.SetStarted(started)
+	}
 	nextID, nextErr := e.queue.CurrentSong()
 	// 正在解码时当前曲目被换掉（含清空队列）：停掉解码落到 paused，
 	// 否则服务端会继续播一首已经不在队列里的歌。
@@ -505,6 +520,7 @@ func (e *Engine) SetQueue(songIDs []int64, index int) error {
 	}
 	e.mu.Unlock()
 	e.persistQueue()
+	e.persistState()
 	e.emitState()
 	return nil
 }
@@ -1308,7 +1324,9 @@ func (e *Engine) runDelegated(ctx context.Context, startAt time.Duration) {
 		_ = e.transport.Load(track.SongID, position)
 		_ = e.transport.MarkBuffering()
 		_ = e.transport.Play()
+		e.queue.MarkStarted(track.SongID)
 		e.mu.Unlock()
+		e.persistState()
 		e.emitState()
 
 		if !e.waitDelegated(ctx, track.Duration) {
@@ -1427,8 +1445,12 @@ func (e *Engine) MirrorReport(songID int64, state string, position time.Duration
 		e.mu.Unlock()
 		return
 	}
+	started := state == "playing" && e.queue.MarkStarted(songID)
 	changed := e.transport.State() != prev
 	e.mu.Unlock()
+	if started || changed {
+		e.persistState()
+	}
 	if changed {
 		e.emitState()
 	}
@@ -1511,7 +1533,9 @@ func (e *Engine) onProgress(ctx context.Context, sampleIndex int64, playAt time.
 			ahead = 0
 		}
 		if e.transport.ReportWatermark(ahead) {
+			e.queue.MarkStarted(e.transport.SongID())
 			e.mu.Unlock()
+			e.persistState()
 			e.emitState()
 			return
 		}
@@ -1585,11 +1609,12 @@ func (e *Engine) persistState() {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), 5*time.Second)
 	defer cancel()
 	err := e.deps.Store.SaveState(ctx, e.ownerKind, e.ownerID, StateSnapshot{
-		SongID:     st.SongID,
-		Position:   st.Position,
-		State:      string(st.State),
-		RepeatMode: string(st.Repeat),
-		Shuffle:    st.Shuffle,
+		SongID:        st.SongID,
+		Position:      st.Position,
+		State:         string(st.State),
+		RepeatMode:    string(st.Repeat),
+		Shuffle:       st.Shuffle,
+		QueueProgress: &st.Queue,
 	})
 	if err != nil && e.deps.Logger != nil {
 		e.deps.Logger.Warn("save playback state failed", "owner", e.ownerID, "err", err)
@@ -1620,6 +1645,13 @@ func (e *Engine) Restore(ctx context.Context) error {
 		}
 	}
 	e.queue.Replace(songIDs, idx)
+	if progress := st.QueueProgress; progress != nil && sameQueueItems(songIDs, progress.Items) {
+		e.queue.SetStarted(progress.Started)
+		if progress.Current >= 0 && progress.Current < len(songIDs) && songIDs[progress.Current] == st.SongID {
+			idx = progress.Current
+			_ = e.queue.Jump(idx)
+		}
+	}
 	e.queue.SetRepeat(RepeatMode(st.RepeatMode))
 	e.queue.SetShuffle(st.Shuffle)
 	// 恢复后停在暂停态：不自动出声，用户点播放再继续。
@@ -1637,6 +1669,18 @@ func (e *Engine) Restore(ctx context.Context) error {
 
 // ErrNoState 没有可恢复的状态。
 var ErrNoState = errors.New("no saved playback state")
+
+func sameQueueItems(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
 
 // clockParticipantID 取 ClockParticipant 的 sink ID（master 选举用）。
 func clockParticipantID(cp sink.ClockParticipant) string {

@@ -14058,6 +14058,12 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "started_indices": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },
@@ -15884,6 +15890,12 @@ const docTemplate = `{
                 },
                 "shuffle": {
                     "type": "boolean"
+                },
+                "started_indices": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },

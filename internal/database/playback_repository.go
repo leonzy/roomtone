@@ -70,14 +70,15 @@ type GroupMemberRow struct {
 
 // PlaybackStateRow 播放状态行（断点续播的落库形态）
 type PlaybackStateRow struct {
-	OwnerKind  string
-	OwnerID    string
-	SongID     int64
-	Position   float64
-	State      string
-	RepeatMode string
-	Shuffle    bool
-	UpdatedAt  time.Time
+	OwnerKind     string
+	OwnerID       string
+	SongID        int64
+	Position      float64
+	State         string
+	RepeatMode    string
+	Shuffle       bool
+	UpdatedAt     time.Time
+	QueueProgress string
 }
 
 func playerRowFromSQLc(r sqlc.Player) PlayerRow {
@@ -443,15 +444,20 @@ func (r *PlaybackRepository) GetState(ctx context.Context, ownerKind, ownerID st
 	if err != nil {
 		return PlaybackStateRow{}, fmt.Errorf("get state: %w", err)
 	}
+	progress, progressErr := r.queries.GetConfig(ctx, playbackProgressKey(ownerKind, ownerID))
+	if progressErr != nil && !errors.Is(progressErr, sql.ErrNoRows) {
+		return PlaybackStateRow{}, progressErr
+	}
 	return PlaybackStateRow{
-		OwnerKind:  row.OwnerKind,
-		OwnerID:    row.OwnerID,
-		SongID:     row.SongID,
-		Position:   row.Position,
-		State:      row.State,
-		RepeatMode: row.RepeatMode,
-		Shuffle:    row.Shuffle != 0,
-		UpdatedAt:  row.UpdatedAt,
+		OwnerKind:     row.OwnerKind,
+		OwnerID:       row.OwnerID,
+		SongID:        row.SongID,
+		Position:      row.Position,
+		State:         row.State,
+		RepeatMode:    row.RepeatMode,
+		Shuffle:       row.Shuffle != 0,
+		UpdatedAt:     row.UpdatedAt,
+		QueueProgress: progress.Value,
 	}, nil
 }
 
@@ -466,7 +472,7 @@ func (r *PlaybackRepository) SaveState(ctx context.Context, s PlaybackStateRow) 
 	if s.State == "" {
 		s.State = "idle"
 	}
-	return r.queries.UpsertState(ctx, sqlc.UpsertStateParams{
+	if err := r.queries.UpsertState(ctx, sqlc.UpsertStateParams{
 		OwnerKind:  s.OwnerKind,
 		OwnerID:    s.OwnerID,
 		SongID:     s.SongID,
@@ -475,8 +481,21 @@ func (r *PlaybackRepository) SaveState(ctx context.Context, s PlaybackStateRow) 
 		RepeatMode: s.RepeatMode,
 		Shuffle:    boolToInt64(s.Shuffle),
 		UpdatedAt:  s.UpdatedAt,
-	})
+	}); err != nil {
+		return err
+	}
+	key := playbackProgressKey(s.OwnerKind, s.OwnerID)
+	previous, err := r.queries.GetConfig(ctx, key)
+	if err == nil && previous.Value == s.QueueProgress {
+		return nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	return r.queries.SetConfig(ctx, sqlc.SetConfigParams{Key: key, Value: s.QueueProgress})
 }
+
+func playbackProgressKey(kind, id string) string { return "playback_queue_progress:" + kind + ":" + id }
 
 // DeleteState 删除播放状态
 func (r *PlaybackRepository) DeleteState(ctx context.Context, ownerKind, ownerID string) error {

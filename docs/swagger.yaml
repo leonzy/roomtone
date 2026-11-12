@@ -603,6 +603,10 @@ definitions:
         items:
           type: integer
         type: array
+      started_indices:
+        items:
+          type: integer
+        type: array
     type: object
   handlers.registryInstallRequest:
     properties:
@@ -1918,6 +1922,10 @@ definitions:
         $ref: '#/definitions/player.RepeatMode'
       shuffle:
         type: boolean
+      started_indices:
+        items:
+          type: integer
+        type: array
     type: object
   player.RepeatMode:
     enum:
