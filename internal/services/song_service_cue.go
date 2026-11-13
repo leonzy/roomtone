@@ -50,6 +50,12 @@ func (s *SongService) processCueFiles(ctx context.Context, cueFiles []string, re
 // processEmbeddedCueSheets 检测 FLAC 文件中的内嵌 CUESHEET block。
 func (s *SongService) processEmbeddedCueSheets(ctx context.Context, audioFiles []string, reimport bool) {
 	existingSources := s.listCueSourceSet(ctx)
+	negative := newNegativeCUECheckpoints(s.configService)
+	defer negative.save(ctx, s.configService)
+	skipped, checked := 0, 0
+	defer func() {
+		slog.Info("embedded CUE directory checkpoints", "unchanged_files", skipped, "headers_checked", checked)
+	}()
 
 	for _, filePath := range audioFiles {
 		select {
@@ -59,6 +65,10 @@ func (s *SongService) processEmbeddedCueSheets(ctx context.Context, audioFiles [
 		}
 
 		if !strings.HasSuffix(strings.ToLower(filePath), ".flac") {
+			continue
+		}
+		if !reimport && negative.unchanged(ctx, filePath) {
+			skipped++
 			continue
 		}
 
@@ -86,6 +96,7 @@ func (s *SongService) processEmbeddedCueSheets(ctx context.Context, audioFiles [
 		if err != nil {
 			continue
 		}
+		checked++
 		tagMeta, err := tag.ReadFLACCUESheet(f)
 		f.Close()
 		if err != nil {
@@ -98,6 +109,7 @@ func (s *SongService) processEmbeddedCueSheets(ctx context.Context, audioFiles [
 		}
 		cueData := provider.CUESheetBlock()
 		if cueData == nil || len(cueData.Tracks) == 0 {
+			negative.remember(ctx, filePath)
 			continue
 		}
 

@@ -564,6 +564,10 @@ func fileModTimeMatches(stored *time.Time, current time.Time) bool {
 	return stored.Unix() == current.Unix()
 }
 
+func scanFileStampMatches(stored database.LocalPathInfo, current ScanFileStamp) bool {
+	return fileModTimeMatches(stored.FileModifiedAt, current.Modified) && (stored.FileSize <= 0 || stored.FileSize == current.Size)
+}
+
 // doScanAndImport 执行实际的扫描和导入操作
 // 优化策略：
 //  1. 预过滤：快速跳过已存在的文件，减少不必要的处理
@@ -598,6 +602,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeR
 		return
 	}
 	files := scanResult.AudioFiles
+	ctx = fileutil.WithDirectoryStamps(ctx, scanResult.DirectoryStamps)
 
 	select {
 	case <-cancelCh:
@@ -640,8 +645,15 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeR
 		// 避免导入正在拷贝中的不完整文件。
 		var currentModTime time.Time
 		var haveStat bool
-		if stat, err := os.Stat(filePath); err == nil {
-			currentModTime = stat.ModTime()
+		stamp, haveStamp := scanResult.FileStamps[filePath]
+		if !haveStamp {
+			if stat, err := os.Stat(filePath); err == nil {
+				stamp = ScanFileStamp{Modified: stat.ModTime(), Size: stat.Size()}
+				haveStamp = true
+			}
+		}
+		if haveStamp {
+			currentModTime = stamp.Modified
 			haveStat = true
 			if time.Since(currentModTime) < fileStabilityThreshold {
 				slog.Debug("跳过正在写入的文件", "filePath", filePath)
@@ -654,7 +666,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeR
 		// mtime 不一致 → 用户可能修改了内嵌 USLT 等元数据，需要重新提取（内嵌歌词由
 		// shouldApplyScanLyric 决定是否覆盖 DB，manual 源受保护）。
 		if exists && !reimport && info.Duration > 0 && !needsSidecarLyricImport(info, filePath, scanResult.LyricDirs) {
-			if !haveStat || fileModTimeMatches(info.FileModifiedAt, currentModTime) {
+			if !haveStat || scanFileStampMatches(info, stamp) {
 				s.scanProgressManager.UpdateProgress(filePath, ProgressUpdateSkipped)
 				continue
 			}

@@ -27,6 +27,8 @@ import (
 type PlaylistRepository struct {
 	db      sqlc.DBTX
 	queries *sqlc.Queries
+	// Optional test seam for proving unchanged directories never read cover contents.
+	resolveDirectoryCover func(string, []int64, map[int64]*models.Song, string) (string, string, bool)
 }
 
 // NewPlaylistRepository 用 *sql.DB 或 *sql.Tx 构造仓储。
@@ -518,8 +520,27 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 	}
 	allPlaylistSongs := make([]playlistSongEntry, 0)
 
-	changed, unchanged := 0, 0
+	changed, unchanged, skippedDirectories, checkedDirectories := 0, 0, 0, 0
 	err = r.runInTx(ctx, func(dbtx sqlc.DBTX, q *sqlc.Queries) error {
+		checkpointScope := directoryCheckpointScope(playlistMode, musicPath, coverStoragePath, excludeDirs)
+		checkpoints := autoDirectoryCheckpoints{Scope: checkpointScope, Entries: make(map[string]autoDirectoryCheckpoint)}
+		previousCheckpointJSON := ""
+		if saved, err := q.GetConfig(ctx, autoDirectoryCheckpointKey); err == nil {
+			previousCheckpointJSON = saved.Value
+			var stored autoDirectoryCheckpoints
+			if json.Unmarshal([]byte(saved.Value), &stored) == nil && stored.Scope == checkpointScope && stored.Entries != nil {
+				checkpoints = stored
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("load directory checkpoints: %w", err)
+		}
+		nextCheckpoints := autoDirectoryCheckpoints{Scope: checkpointScope, Entries: make(map[string]autoDirectoryCheckpoint)}
+		directoryStamps := make(map[string]checkedDirectoryStamp)
+		cachedCovers := make(map[string]bool)
+		resolveCover := r.resolveDirectoryCover
+		if resolveCover == nil {
+			resolveCover = pickDirCover
+		}
 		// 加载已有的 auto_created 歌单（name -> id），用于按名字复用歌单 ID，
 		// 避免每次扫描都 DELETE+重建导致 ID 变化（外部消费者如 miot 插件会缓存 ID）。
 		existingAutoList, err := q.ListAutoCreatedPlaylists(ctx)
@@ -567,17 +588,25 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 		// upsertPlaylist 复用或新建一个 auto_created 歌单：
 		// 若解析出的 name 命中已有 auto 歌单则 UPDATE 元数据 + 清空旧关联歌曲（保留 ID），
 		// 否则 INSERT 新歌单。两种情况都收集 playlist_songs 并写入 response。
-		upsertPlaylist := func(candidate, desc, coverPath, coverURL string, songIDs []int64) error {
+		upsertPlaylist := func(candidate, desc, dir string, songIDs []int64) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			name := resolveAutoCreatedName(candidate, existingNames)
 			existingNames[name] = struct{}{}
+			stamp, stampValid := readPlaylistDirectoryStamp(ctx, dir, directoryStamps)
+			signature := directoryPlaylistSignature(dir, name, desc, stamp, songIDs, songIDToSong)
+			previous := checkpoints.Entries[name]
+			coverPath, coverURL := "", ""
+			remember := func(id int64, path, url string) {
+				if stampValid {
+					nextCheckpoints.Entries[name] = autoDirectoryCheckpoint{Signature: signature, PlaylistID: id, CoverPath: path, CoverURL: url}
+				}
+			}
 
 			var playlistID int64
 			if existing, ok := existingAutoMap[name]; ok {
 				// 保留已有非空封面（含用户手动上传的），仅在原封面为空时才用新挑的。
-				writeCoverPath, writeCoverURL := coverPath, coverURL
-				if existing.coverPath != "" || existing.coverURL != "" {
-					writeCoverPath, writeCoverURL = existing.coverPath, existing.coverURL
-				}
 				current := byPlaylist[existing.id]
 				sameMembers := len(current) == len(songIDs)
 				if sameMembers {
@@ -588,6 +617,25 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 						}
 					}
 				}
+				cachePresent := coverCachePresent(existing.coverPath, coverStoragePath, cachedCovers)
+				if stampValid && previous.Signature == signature && previous.PlaylistID == existing.id && previous.CoverPath == existing.coverPath && previous.CoverURL == existing.coverURL && sameMembers && existing.description == desc && cachePresent {
+					delete(existingAutoMap, name)
+					response.Playlists = append(response.Playlists, models.PlaylistInfo{PlaylistID: existing.id, Name: name, SongCount: len(songIDs)})
+					remember(existing.id, existing.coverPath, existing.coverURL)
+					unchanged++
+					skippedDirectories++
+					return nil
+				}
+				checkedDirectories++
+				// Existing non-empty artwork is authoritative, including manual uploads.
+				// Do not read/hash an external image merely to discard its result.
+				writeCoverPath, writeCoverURL := existing.coverPath, existing.coverURL
+				if (writeCoverPath == "" && writeCoverURL == "") || !cachePresent {
+					var resolved bool
+					writeCoverPath, writeCoverURL, resolved = resolveCover(dir, songIDs, songIDToSong, coverStoragePath)
+					stampValid = stampValid && resolved
+				}
+				remember(existing.id, writeCoverPath, writeCoverURL)
 				if sameMembers && existing.description == desc && existing.coverPath == writeCoverPath && existing.coverURL == writeCoverURL {
 					delete(existingAutoMap, name)
 					response.Playlists = append(response.Playlists, models.PlaylistInfo{PlaylistID: existing.id, Name: name, SongCount: len(songIDs)})
@@ -609,6 +657,10 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 				delete(existingAutoMap, name) // 标记已匹配，避免最后被误删
 				playlistID = existing.id
 			} else {
+				checkedDirectories++
+				var resolved bool
+				coverPath, coverURL, resolved = resolveCover(dir, songIDs, songIDToSong, coverStoragePath)
+				stampValid = stampValid && resolved
 				newID, err := q.InsertAutoCreatedPlaylist(ctx, sqlc.InsertAutoCreatedPlaylistParams{
 					Type:        models.PlaylistTypeNormal,
 					Name:        name,
@@ -621,6 +673,7 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 					return fmt.Errorf("create playlist %s: %w", name, err)
 				}
 				playlistID = newID
+				remember(newID, coverPath, coverURL)
 			}
 
 			changed++
@@ -653,8 +706,7 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 				return si.CueTrackIndex < sj.CueTrackIndex
 			})
 			cueDir := filepath.Dir(cuePath)
-			coverPath, coverURL := pickDirCover(cueDir, album.songIDs, songIDToSong, coverStoragePath)
-			if err := upsertPlaylist(album.name, album.desc, coverPath, coverURL, album.songIDs); err != nil {
+			if err := upsertPlaylist(album.name, album.desc, cueDir, album.songIDs); err != nil {
 				return err
 			}
 		}
@@ -666,8 +718,7 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 			sort.SliceStable(songIDs, func(i, j int) bool {
 				return lessSongByNumberThenTitle(songIDToSong[songIDs[i]], songIDToSong[songIDs[j]])
 			})
-			coverPath, coverURL := pickDirCover(dir, songIDs, songIDToSong, coverStoragePath)
-			if err := upsertPlaylist(nameMap[dir], descMap[dir], coverPath, coverURL, songIDs); err != nil {
+			if err := upsertPlaylist(nameMap[dir], descMap[dir], dir, songIDs); err != nil {
 				return err
 			}
 		}
@@ -701,6 +752,15 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 				return fmt.Errorf("batch insert playlist songs: %w", err)
 			}
 		}
+		encoded, err := json.Marshal(nextCheckpoints)
+		if err != nil {
+			return err
+		}
+		if string(encoded) != previousCheckpointJSON {
+			if err := q.SetConfig(ctx, sqlc.SetConfigParams{Key: autoDirectoryCheckpointKey, Value: string(encoded)}); err != nil {
+				return fmt.Errorf("save directory checkpoints: %w", err)
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -708,7 +768,7 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 	}
 
 	response.Total = len(response.Playlists)
-	slog.Info("auto playlists synchronized", "songs", len(songs), "changed", changed, "unchanged", unchanged, "elapsed", time.Since(started))
+	slog.Info("auto playlists synchronized", "songs", len(songs), "changed", changed, "unchanged", unchanged, "directory_skipped", skippedDirectories, "directory_checked", checkedDirectories, "elapsed", time.Since(started))
 	return response, nil
 }
 
@@ -1017,15 +1077,22 @@ func resolveAutoCreatedName(candidate string, existing map[string]struct{}) stri
 }
 
 // pickDirCover 优先使用目录下的外部封面图片，找不到再回退到 pickSongCover。
-func pickDirCover(dir string, songIDs []int64, songIDToSong map[int64]*models.Song, coverStoragePath string) (string, string) {
+func pickDirCover(dir string, songIDs []int64, songIDToSong map[int64]*models.Song, coverStoragePath string) (string, string, bool) {
+	valid := true
 	if coverStoragePath != "" {
-		if extPath, err := fileutil.FindExternalCover(dir); err == nil && extPath != "" {
+		extPath, err := fileutil.FindExternalCover(dir)
+		if err != nil {
+			valid = false
+		}
+		if err == nil && extPath != "" {
 			if savedPath, err := fileutil.SaveExternalCover(extPath, coverStoragePath); err == nil && savedPath != "" {
-				return savedPath, ""
+				return savedPath, "", true
 			}
+			valid = false
 		}
 	}
-	return pickSongCover(songIDs, songIDToSong)
+	path, url := pickSongCover(songIDs, songIDToSong)
+	return path, url, valid
 }
 
 // pickSongCover 从歌曲 ID 列表中确定性地选第一首有封面的，

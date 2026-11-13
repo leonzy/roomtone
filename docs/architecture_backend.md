@@ -1,5 +1,15 @@
 # Roomtone 后端架构说明
 
+## 扫描增量检查点（Roomtone）
+
+扫描为每个目录生成时间戳与清单哈希，清单包含条目名称、类型、大小、文件修改时间（纳秒）和软链接目标；父目录 mtime 未变化也继续核对文件元数据，避免漏掉原地改写。清单哈希不读取整首音频或封面内容。扫描阶段的 stat 与签名通过本轮上下文复用，避免歌单阶段再次遍历已有目录。
+
+自动歌单的 `auto_playlist_directory_checkpoints_v1` 保存在 configs，按扫描模式、根目录、排除配置和封面存储位置隔离；同时核对歌单有序成员、描述及封面状态，全部一致时在封面查找之前返回。丢失的受管封面缓存可重建，手动封面继续保留。检查点与歌单更新同事务提交，扫描失败/取消不会发布半份成功检查点。
+
+`scan_negative_cue_directories_v1` 只缓存成功确认“不含内嵌 CUE”的文件，目录签名改变后重新检查。读取/解析错误不记作阴性，显式重新导入始终绕过缓存。检查点随扫描当前文件集合有界替换，不积累已移除路径。
+
+English: Directory checkpoints hash sorted metadata manifests, not audio/artwork bytes. File metadata is checked even with stable parent mtimes, and scan stat results are reused by downstream stages. Durable auto-playlist checkpoints validate configuration, ordered membership and artwork before cover I/O; they commit transactionally. Missing managed cache entries can be repaired without replacing manual artwork. Successful negative embedded-CUE results persist per directory signature; errors/cancellation never become negative detections and explicit reimport bypasses the cache. Current-scan snapshots bound retained paths.
+
 ## 技术栈
 
 - **Go 版本**: 1.26+

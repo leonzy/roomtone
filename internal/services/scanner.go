@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"songloft/internal/fileutil"
 )
 
 // ScanConfig 扫描配置
@@ -96,9 +98,16 @@ func (s *Scanner) ScanFiles(ctx context.Context, onProgress func(count int)) ([]
 
 // ScanResult 扫描结果
 type ScanResult struct {
-	AudioFiles []string
-	CueFiles   []string            // .cue 文件绝对路径
-	LyricDirs  map[string]struct{} // 含 .lrc 文件的目录集合
+	AudioFiles      []string
+	CueFiles        []string            // .cue 文件绝对路径
+	LyricDirs       map[string]struct{} // 含 .lrc 文件的目录集合
+	DirectoryStamps map[string]fileutil.DirectoryStamp
+	FileStamps      map[string]ScanFileStamp
+}
+
+type ScanFileStamp struct {
+	Modified time.Time
+	Size     int64
 }
 
 // ScanFilesWithCue 扫描音频文件和 .cue 文件（整个音乐根目录）。
@@ -116,7 +125,7 @@ func (s *Scanner) ScanFilesWithCueInDirs(ctx context.Context, roots []string, on
 		roots = []string{s.config.MusicPath}
 	}
 
-	result := &ScanResult{LyricDirs: make(map[string]struct{})}
+	result := &ScanResult{LyricDirs: make(map[string]struct{}), DirectoryStamps: make(map[string]fileutil.DirectoryStamp), FileStamps: make(map[string]ScanFileStamp)}
 	visited := make(map[string]bool)
 
 	scanned := 0
@@ -165,6 +174,12 @@ func (s *Scanner) scanDirWithCue(ctx context.Context, dirPath string, visited ma
 	if err != nil {
 		return err
 	}
+	dirInfo, err := os.Stat(dirPath)
+	if err != nil {
+		return err
+	}
+	manifest := make([]fileutil.ManifestEntry, 0, len(entries))
+	complete := true
 
 	for _, entry := range entries {
 		select {
@@ -174,18 +189,41 @@ func (s *Scanner) scanDirWithCue(ctx context.Context, dirPath string, visited ma
 		}
 
 		entryPath := filepath.Join(dirPath, entry.Name())
-		isDir, skip := resolveEntry(entryPath, entry)
-		if skip {
+		info, err := entry.Info()
+		link := ""
+		if err == nil && entry.Type()&os.ModeSymlink != 0 {
+			link, err = os.Readlink(entryPath)
+			if err == nil {
+				info, err = os.Stat(entryPath)
+			}
+		}
+		if err != nil {
+			complete = false
+			// A transient metadata failure must not make an existing regular file
+			// disappear from the scan inventory and get deleted from the library.
+			if entry.Type().IsRegular() {
+				if s.IsAudioFile(entryPath) {
+					result.AudioFiles = append(result.AudioFiles, entryPath)
+				} else if strings.EqualFold(filepath.Ext(entryPath), ".cue") {
+					result.CueFiles = append(result.CueFiles, entryPath)
+				} else if strings.EqualFold(filepath.Ext(entryPath), ".lrc") {
+					result.LyricDirs[dirPath] = struct{}{}
+				}
+			}
 			continue
 		}
+		manifest = append(manifest, fileutil.ManifestEntry{Name: entry.Name(), Info: info, Link: link})
 
-		if isDir {
+		if info.IsDir() {
 			if err := s.scanDirWithCue(ctx, entryPath, visited, result, onProgress); err != nil {
 				return err
 			}
 		} else {
 			if s.IsAudioFile(entryPath) {
 				result.AudioFiles = append(result.AudioFiles, entryPath)
+				if result.FileStamps != nil {
+					result.FileStamps[entryPath] = ScanFileStamp{Modified: info.ModTime(), Size: info.Size()}
+				}
 				if onProgress != nil && len(result.AudioFiles)%scanProgressInterval == 0 {
 					onProgress(len(result.AudioFiles))
 				}
@@ -195,6 +233,13 @@ func (s *Scanner) scanDirWithCue(ctx context.Context, dirPath string, visited ma
 				result.LyricDirs[dirPath] = struct{}{}
 			}
 		}
+	}
+	if complete && result.DirectoryStamps != nil {
+		key := filepath.Clean(dirPath)
+		if absolute, err := filepath.Abs(key); err == nil {
+			key = absolute
+		}
+		result.DirectoryStamps[key] = fileutil.StampDirectory(dirInfo, manifest)
 	}
 
 	return nil

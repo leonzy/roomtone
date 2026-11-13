@@ -1,5 +1,15 @@
 # 开发经验
 
+## CPU-002：跳过判断必须位于内容读取之前
+
+2026-11-13：leonFN 自动扫描结束时仍占满一核。20 秒 CPU 采样的 83.16% 为 AutoCreate，其中外部封面读取/哈希占主要开销；日志连续多轮 changed=0、unchanged=5343。旧 CPU-001 只避免了歌单行重写，pickDirCover 却在 unchanged 判断之前执行，不能用零 SQL 写入证明没有昂贵 I/O。
+
+修复使用目录纳秒时间与排序清单 SHA-256（文件名、类型、大小、文件纳秒时间及链接目标），不每轮对音频/图片内容计算哈希。扫描取得的文件 stat 和目录签名供导入/歌单阶段复用；持久化歌单检查点同时验证配置、成员、描述和封面状态。成功的无内嵌 CUE 结果也按目录签名缓存；失败/取消不标记成功，强制重新导入绕过缓存。父目录时间相同不代表子文件未变。
+
+验证包括纳秒/大小/改名/删除、重启复用、配置变化、封面缓存丢失、读取失败和 CUE 强制导入。禁用提前跳过的破坏检查在“不变目录重复查找封面”断言失败。NAS 真实曲库副本在半核限制的独立容器验证，79,536 个分组输入/5,343 歌单，第二轮目录全跳过、cover_lookups=0；音乐和既有封面只读挂载，生产库不参与写入。Windows 相关 Go 全套、vet/sqlc vet 和 Linux 针对性测试通过。不是零文件系统检查：发现同目录文件改写仍需轻量元数据清单校验。Seen 1×。
+
+English: On 2026-11-13, 83.16% of a live CPU sample came from AutoCreate despite repeated changed=0 logs. Cover lookup/read/hash happened before the SQL no-op check. CPU-001's zero-row-write proof did not cover expensive I/O. Directory nanosecond timestamps plus sorted metadata-manifest hashes now gate work before content reads; scanner stat results are reused. Durable playlist checkpoints validate configuration, membership and artwork; successful negative embedded-CUE detections are cached, while failures/cancellation are not and forced import bypasses them. Tests cover in-place changes under stable parent timestamps, size, rename/delete, restart, configuration, missing cached artwork and errors. The disabled-fast-path mutant fails its cover-lookup assertion. A half-core isolated NAS copy with read-only music/artwork verifies 79,536 grouping inputs and 5,343 unchanged playlists with zero warm cover lookups. Metadata checks remain necessary; this does not claim zero filesystem work. Seen once.
+
 ## CPU-001：自动歌单不能全量读取歌曲载荷并无条件重写
 
 2026-11-11：leonFN 每小时扫描后自动生成歌单；20 秒 CPU 采样的 97.6% 落在 AutoCreate→SongRepository.List，默认排序携带指纹、歌词等大字段，约占满一核（4 核整机约 25%）。改用无分页上限的专用轻量查询，并在事务内比较歌单描述、保留封面与有序成员，只更新有变化的歌单。毒化无关列的真实 SQLite 视图与写入审计回归在旧实现分别失败；曲库副本 79,703 首/5,343 歌单两次同步约 10 秒且 total_changes 增量为零。未关闭用户的扫描或指纹配置，不清系统文件缓存，不以缓存热度或重启后的低 CPU 冒充优化证据。有声书插件的启动扫描也会占用 CPU：应复用成功索引、批量获取元数据并为目录遍历让出执行时间；插件后台 goroutine 加入 pprof plugin 标签，避免把所有空闲高 CPU 归给同一任务。Seen 1×。

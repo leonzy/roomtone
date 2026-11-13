@@ -223,6 +223,7 @@ type LocalPathInfo struct {
 	CueSourcePath  string
 	LyricSource    string
 	FileModifiedAt *time.Time
+	FileSize       int64
 }
 
 // LocalCleanupSong carries only the data needed to validate a local path.
@@ -264,7 +265,7 @@ func (r *SongRepository) ListLocalPaths(ctx context.Context) (map[string]LocalPa
 		if row.CueSourcePath != "" {
 			continue
 		}
-		info := LocalPathInfo{SongID: row.ID, Duration: row.Duration, CueSourcePath: row.CueSourcePath, LyricSource: row.LyricSource}
+		info := LocalPathInfo{SongID: row.ID, Duration: row.Duration, CueSourcePath: row.CueSourcePath, LyricSource: row.LyricSource, FileSize: row.FileSize}
 		if row.FileModifiedAt.Valid {
 			t := row.FileModifiedAt.Time
 			info.FileModifiedAt = &t
