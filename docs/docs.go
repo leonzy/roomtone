@@ -15610,17 +15610,13 @@ const docTemplate = `{
                 "local",
                 "raop",
                 "dlna",
-                "raat",
-                "local",
-                "raop",
-                "raat",
-                "dlna"
+                "raat"
             ],
             "x-enum-varnames": [
                 "KindLocal",
                 "KindRAOP",
-                "KindRAAT",
-                "KindDLNA"
+                "KindDLNA",
+                "KindRAAT"
             ]
         },
         "player.Member": {
