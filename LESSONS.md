@@ -1,5 +1,11 @@
 # 开发经验
 
+## API-001：组合模式请求必须通过真实 handler 验证
+
+2026-11-14：Lynx 以空 action 同时提交 repeat/shuffle，客户端 mock 接受并断言这个载荷，真实 Transport handler 却只接受带 action 的单项修改，队列乱序按钮返回“不支持的 action”。新增组合模式补丁兼容，至少提供一项模式、先校验所有字段再修改，不调用播放/停止/跳转或替换队列。真实 HTTP handler 回归先复现四种模式全部 400，再验证模式生效且歌曲、游标、进度、传输状态及起播记录不变；非法 repeat 或 shuffle 类型不允许部分更新，旧显式 action 继续兼容。Windows handlers/app 与队列模式测试及 vet 通过；不将客户端 mock 正确当作跨仓 API 兼容证据。Seen 1×。
+
+English: Lynx submitted repeat/shuffle together with an empty action, accepted by its mock but rejected by the real transport handler. The handler now validates the entire mode-only patch before applying it, without transport commands or queue replacement. Real-handler regressions first reproduce four HTTP 400 failures, then verify all modes, unchanged playback/queue/history, invalid-patch preservation and legacy explicit actions. Client mocks alone do not establish cross-repository API compatibility. Seen once.
+
 ## CPU-002：跳过判断必须位于内容读取之前
 
 2026-11-13：leonFN 自动扫描结束时仍占满一核。20 秒 CPU 采样的 83.16% 为 AutoCreate，其中外部封面读取/哈希占主要开销；日志连续多轮 changed=0、unchanged=5343。旧 CPU-001 只避免了歌单行重写，pickDirCover 却在 unchanged 判断之前执行，不能用零 SQL 写入证明没有昂贵 I/O。

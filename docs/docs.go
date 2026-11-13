@@ -1988,7 +1988,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "action: play / pause / stop / next / prev / seek（seek 需带 position 秒）。repeat 与 shuffle 也走这里：repeat=off|all|one，shuffle=true|false。",
+                "description": "action: play / pause / stop / next / prev / seek（seek 需带 position 秒）；action=repeat 或 shuffle 修改对应模式。action 留空时可组合提交 repeat=off|all|one 和 shuffle=true|false，至少提供一项，全部校验后生效；模式修改不启动、停止或跳转播放。",
                 "consumes": [
                     "application/json"
                 ],
@@ -15610,13 +15610,17 @@ const docTemplate = `{
                 "local",
                 "raop",
                 "dlna",
-                "raat"
+                "raat",
+                "local",
+                "raop",
+                "raat",
+                "dlna"
             ],
             "x-enum-varnames": [
                 "KindLocal",
                 "KindRAOP",
-                "KindDLNA",
-                "KindRAAT"
+                "KindRAAT",
+                "KindDLNA"
             ]
         },
         "player.Member": {

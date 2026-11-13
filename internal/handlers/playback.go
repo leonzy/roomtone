@@ -713,7 +713,7 @@ type queueReorderRequest struct {
 
 // Transport 传输控制
 // @Summary 播放控制
-// @Description action: play / pause / stop / next / prev / seek（seek 需带 position 秒）。repeat 与 shuffle 也走这里：repeat=off|all|one，shuffle=true|false。
+// @Description action: play / pause / stop / next / prev / seek（seek 需带 position 秒）；action=repeat 或 shuffle 修改对应模式。action 留空时可组合提交 repeat=off|all|one 和 shuffle=true|false，至少提供一项，全部校验后生效；模式修改不启动、停止或跳转播放。
 // @Tags 播放控制
 // @Accept json
 // @Produce json
@@ -737,6 +737,29 @@ func (h *PlaybackHandler) Transport(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	switch req.Action {
+	case "":
+		// Lynx submits repeat and shuffle together when switching queue modes.
+		// Validate the complete patch before mutating either setting; this must
+		// never fall through to a transport command or replace the queue.
+		if req.Repeat == "" && req.Shuffle == nil {
+			respondError(w, http.StatusBadRequest, "需要 action、repeat 或 shuffle", nil)
+			return
+		}
+		var repeat player.RepeatMode
+		if req.Repeat != "" {
+			var verr error
+			repeat, verr = player.ValidateRepeat(req.Repeat)
+			if verr != nil {
+				respondError(w, http.StatusBadRequest, verr.Error(), nil)
+				return
+			}
+		}
+		if req.Repeat != "" {
+			e.SetRepeat(repeat)
+		}
+		if req.Shuffle != nil {
+			e.SetShuffle(*req.Shuffle)
+		}
 	case "play":
 		err = e.Play(ctx)
 	case "pause":

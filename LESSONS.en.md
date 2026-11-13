@@ -1,5 +1,9 @@
 # Development Lessons
 
+## API-001: Validate combined mode requests against the real handler
+
+2026-11-14: Lynx submitted repeat/shuffle together with an empty action. Client mocks accepted that payload, but the real transport handler only supported explicit single-setting actions, returning HTTP 400 for queue shuffle. A mode-only patch now requires at least one setting and validates all fields before applying either, without transport commands or queue replacement. Real-handler regressions first reproduce four HTTP 400 failures, then verify every mode, unchanged song/cursor/position/transport/history, invalid-patch preservation and legacy explicit actions. Windows handler/app and queue-mode tests plus vet pass. Client mocks alone do not establish cross-repository API compatibility. Seen 1×.
+
 ## CPU-002: Skip expensive reads before doing them, and profile each background worker
 
 2026-11-13/14: Despite unchanged-playlist logs, 83.16% of a production CPU sample came from AutoCreate because cover lookup/read/hash preceded its no-op check. Durable directory nanosecond timestamps and sorted metadata-manifest SHA-256 hashes now gate expensive work; scan stat results are shared and successful negative embedded-CUE detections are cached. Errors/cancellation never become successful checkpoints. Tests cover stable-parent in-place edits, rename/delete, missing artwork, configuration and forced reimport. A half-core isolated NAS snapshot verifies 5,343 warm playlists with zero cover lookups. Later profiling found 75.27% in per-source CUE cleanup: batch references once and explicitly satisfy the existing partial-index predicate instead of repeatedly scanning songs. Real-repository counting and failure/scope regressions cover that path.
