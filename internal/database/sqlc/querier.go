@@ -96,6 +96,7 @@ type Querier interface {
 	ListAutoPlaylistMemberships(ctx context.Context) ([]ListAutoPlaylistMembershipsRow, error)
 	ListAutoPlaylistSongs(ctx context.Context) ([]ListAutoPlaylistSongsRow, error)
 	ListCueAudioPaths(ctx context.Context, cueSourcePath string) ([]string, error)
+	ListCueAudioReferences(ctx context.Context) ([]ListCueAudioReferencesRow, error)
 	ListCueSources(ctx context.Context) ([]string, error)
 	ListDuplicateFingerprints(ctx context.Context) ([]ListDuplicateFingerprintsRow, error)
 	ListFailedFingerprints(ctx context.Context) ([]ListFailedFingerprintsRow, error)

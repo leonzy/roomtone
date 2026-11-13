@@ -298,9 +298,39 @@ func (s *SongService) saveCueCover(audioPath string, metadata *Metadata) string 
 
 // cleanStaleCueRecords 清理已删除 CUE 源文件对应的 DB 记录。
 func (s *SongService) cleanStaleCueRecords(ctx context.Context, scopeRoots []string) {
-	sources := s.listCueSourceSet(ctx)
+	var audioBySource map[string][]string
+	sources := make(map[string]bool)
+	bulk, hasBulk := s.songs.(interface {
+		ListCueAudioPathsBySource(context.Context) (map[string][]string, error)
+	})
+	if hasBulk {
+		var err error
+		audioBySource, err = bulk.ListCueAudioPathsBySource(ctx)
+		if err != nil {
+			slog.Warn("bulk CUE reference lookup failed; preserving records", "error", err)
+			return
+		}
+		for source := range audioBySource {
+			sources[source] = true
+		}
+	} else {
+		sources = s.listCueSourceSet(ctx)
+	}
+	missingPaths := make(map[string]bool)
+	isMissing := func(path string) bool {
+		if missing, checked := missingPaths[path]; checked {
+			return missing
+		}
+		_, err := os.Stat(path)
+		missing := os.IsNotExist(err)
+		missingPaths[path] = missing
+		return missing
+	}
 
 	for sourcePath := range sources {
+		if ctx.Err() != nil {
+			return
+		}
 		// 定向扫描：只清理落在本次作用域内的 CUE 源，作用域外一律不动（Issue #262）。
 		if !isUnderScope(sourcePath, scopeRoots) {
 			continue
@@ -308,16 +338,20 @@ func (s *SongService) cleanStaleCueRecords(ctx context.Context, scopeRoots []str
 
 		shouldClean := false
 
-		if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+		if isMissing(sourcePath) {
 			shouldClean = true
 		}
 
 		// 检查该 CUE 来源引用的所有音频文件是否存在
 		if !shouldClean {
-			audioPaths, err := s.songs.ListCueAudioPaths(ctx, sourcePath)
+			audioPaths := audioBySource[sourcePath]
+			var err error
+			if !hasBulk {
+				audioPaths, err = s.songs.ListCueAudioPaths(ctx, sourcePath)
+			}
 			if err == nil {
 				for _, audioPath := range audioPaths {
-					if _, err := os.Stat(audioPath); os.IsNotExist(err) {
+					if isMissing(audioPath) {
 						shouldClean = true
 						break
 					}

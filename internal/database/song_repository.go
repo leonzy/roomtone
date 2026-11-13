@@ -940,6 +940,25 @@ func (r *SongRepository) ListCueAudioPaths(ctx context.Context, cueSourcePath st
 	return r.queries.ListCueAudioPaths(ctx, cueSourcePath)
 }
 
+// ListCueAudioPathsBySource reads every CUE reference once, using the existing
+// partial cue_source_path index rather than scanning the library per source.
+func (r *SongRepository) ListCueAudioPathsBySource(ctx context.Context) (map[string][]string, error) {
+	rows, err := r.queries.ListCueAudioReferences(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bySource := make(map[string][]string)
+	for _, row := range rows {
+		if _, exists := bySource[row.CueSourcePath]; !exists {
+			bySource[row.CueSourcePath] = nil
+		}
+		if row.CueAudioPath != "" {
+			bySource[row.CueSourcePath] = append(bySource[row.CueSourcePath], row.CueAudioPath)
+		}
+	}
+	return bySource, nil
+}
+
 // DeleteByCueSource 按 cue_source_path 批量删除所有 track。
 func (r *SongRepository) DeleteByCueSource(ctx context.Context, cueSourcePath string) (int, error) {
 	n, err := r.queries.DeleteByCueSource(ctx, cueSourcePath)

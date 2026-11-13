@@ -6,9 +6,13 @@
 
 修复使用目录纳秒时间与排序清单 SHA-256（文件名、类型、大小、文件纳秒时间及链接目标），不每轮对音频/图片内容计算哈希。扫描取得的文件 stat 和目录签名供导入/歌单阶段复用；持久化歌单检查点同时验证配置、成员、描述和封面状态。成功的无内嵌 CUE 结果也按目录签名缓存；失败/取消不标记成功，强制重新导入绕过缓存。父目录时间相同不代表子文件未变。
 
+生产扫描的后续采样另发现 75.27% CPU 花在 cleanStaleCueRecords→ListCueAudioPaths：每个 CUE 来源各查一遍 songs，而 `cue_source_path=?` 不足以让 SQLite 使用 `WHERE cue_source_path!=''` 的部分索引。改为一次批量读取来源/音频映射，复用文件存在性检查；单来源查询也显式加非空条件。真实仓储包装计数回归断言一次批量、零逐来源查询，查询失败不清理记录，定向扫描不清作用域外数据。
+
 验证包括纳秒/大小/改名/删除、重启复用、配置变化、封面缓存丢失、读取失败和 CUE 强制导入。禁用提前跳过的破坏检查在“不变目录重复查找封面”断言失败。NAS 真实曲库副本在半核限制的独立容器验证，79,536 个分组输入/5,343 歌单，第二轮目录全跳过、cover_lookups=0；音乐和既有封面只读挂载，生产库不参与写入。Windows 相关 Go 全套、vet/sqlc vet 和 Linux 针对性测试通过。不是零文件系统检查：发现同目录文件改写仍需轻量元数据清单校验。Seen 1×。
 
 English: On 2026-11-13, 83.16% of a live CPU sample came from AutoCreate despite repeated changed=0 logs. Cover lookup/read/hash happened before the SQL no-op check. CPU-001's zero-row-write proof did not cover expensive I/O. Directory nanosecond timestamps plus sorted metadata-manifest hashes now gate work before content reads; scanner stat results are reused. Durable playlist checkpoints validate configuration, membership and artwork; successful negative embedded-CUE detections are cached, while failures/cancellation are not and forced import bypasses them. Tests cover in-place changes under stable parent timestamps, size, rename/delete, restart, configuration, missing cached artwork and errors. The disabled-fast-path mutant fails its cover-lookup assertion. A half-core isolated NAS copy with read-only music/artwork verifies 79,536 grouping inputs and 5,343 unchanged playlists with zero warm cover lookups. Metadata checks remain necessary; this does not claim zero filesystem work. Seen once.
+
+Follow-up production profiling found another 75.27% hotspot in per-source CUE cleanup queries. SQLite cannot infer the nonempty predicate required by its partial cue_source_path index from a parameter equality alone. Cleanup now batches all references once and reuses filesystem checks; the single-source query explicitly includes the index predicate. Regression coverage counts one bulk lookup and zero per-source queries against a real repository, preserving out-of-scope records and all records on lookup failure.
 
 ## CPU-001：自动歌单不能全量读取歌曲载荷并无条件重写
 

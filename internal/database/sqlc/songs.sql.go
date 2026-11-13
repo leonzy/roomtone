@@ -396,7 +396,7 @@ func (q *Queries) ListAllDuplicateSongs(ctx context.Context) ([]ListAllDuplicate
 
 const listCueAudioPaths = `-- name: ListCueAudioPaths :many
 SELECT DISTINCT cue_audio_path
-FROM songs WHERE cue_source_path = ? AND cue_audio_path != ''
+FROM songs WHERE cue_source_path != '' AND cue_source_path = ? AND cue_audio_path != ''
 `
 
 func (q *Queries) ListCueAudioPaths(ctx context.Context, cueSourcePath string) ([]string, error) {
@@ -412,6 +412,39 @@ func (q *Queries) ListCueAudioPaths(ctx context.Context, cueSourcePath string) (
 			return nil, err
 		}
 		items = append(items, cue_audio_path)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCueAudioReferences = `-- name: ListCueAudioReferences :many
+SELECT DISTINCT cue_source_path, cue_audio_path
+FROM songs WHERE cue_source_path != ''
+`
+
+type ListCueAudioReferencesRow struct {
+	CueSourcePath string
+	CueAudioPath  string
+}
+
+func (q *Queries) ListCueAudioReferences(ctx context.Context) ([]ListCueAudioReferencesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCueAudioReferences)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCueAudioReferencesRow{}
+	for rows.Next() {
+		var i ListCueAudioReferencesRow
+		if err := rows.Scan(&i.CueSourcePath, &i.CueAudioPath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

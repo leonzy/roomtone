@@ -215,7 +215,11 @@ FROM songs WHERE cue_source_path != '';
 
 -- name: ListCueAudioPaths :many
 SELECT DISTINCT cue_audio_path
-FROM songs WHERE cue_source_path = ? AND cue_audio_path != '';
+FROM songs WHERE cue_source_path != '' AND cue_source_path = ? AND cue_audio_path != '';
+
+-- name: ListCueAudioReferences :many
+SELECT DISTINCT cue_source_path, cue_audio_path
+FROM songs WHERE cue_source_path != '';
 
 -- name: DeleteByCueSource :execrows
 DELETE FROM songs WHERE cue_source_path = ?;
