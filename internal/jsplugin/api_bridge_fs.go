@@ -46,8 +46,12 @@ func (h *BridgeHandler) resolveFSPath(inputPath string) (string, error) {
 	if inputPath == "" {
 		return "", fmt.Errorf("path cannot be empty")
 	}
-	if strings.Contains(inputPath, "..") {
-		return "", fmt.Errorf("path cannot contain '..'")
+	// Reject parent traversal components, not legitimate names such as
+	// "最好的...金选集". Check both separators on every host platform.
+	for _, component := range strings.FieldsFunc(inputPath, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if component == ".." {
+			return "", fmt.Errorf("path cannot contain '..' components")
+		}
 	}
 
 	sep := string(filepath.Separator)

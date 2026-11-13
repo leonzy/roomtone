@@ -10,6 +10,10 @@
 
 English: Directory checkpoints hash sorted metadata manifests, not audio/artwork bytes. File metadata is checked even with stable parent mtimes, and scan stat results are reused by downstream stages. Durable auto-playlist checkpoints validate configuration, ordered membership and artwork before cover I/O; they commit transactionally. Missing managed cache entries can be repaired without replacing manual artwork. Successful negative embedded-CUE results persist per directory signature; errors/cancellation never become negative detections and explicit reimport bypasses the cache. Current-scan snapshots bound retained paths.
 
+有声书插件独立维护 `audiobook_library_v1.directoryManifests`（插件 storage 文件，而非主库 configs）。完整递归元数据清单一致时复用书籍/章节对象；旧索引逐文件核对后迁移，不重建未变化章节。遍历共用音频统计表，避免每层递归反复复制大表；跳过 NAS 缩略图、回收站和缓存目录。目录、标签或描述读取失败时保留旧书籍且不接受检查点。仍需元数据遍历，不能只看父目录 mtime；不读取音频正文。
+
+The audiobook plugin separately persists exact recursive metadata manifests in its `audiobook_library_v1` storage file. Unchanged books reuse chapter indexes, including after validating legacy caches. Traversal shares one audio-stat accumulator instead of repeatedly copying descendant tables and excludes NAS thumbnail/recycle/cache trees. Failed directory or metadata reads preserve old books without accepting incomplete checkpoints. Metadata traversal remains necessary; neither a parent mtime alone nor full audio-content hashing is used.
+
 ## 技术栈
 
 - **Go 版本**: 1.26+

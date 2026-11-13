@@ -14,6 +14,10 @@ English: On 2026-11-13, 83.16% of a live CPU sample came from AutoCreate despite
 
 Follow-up production profiling found another 75.27% hotspot in per-source CUE cleanup queries. SQLite cannot infer the nonempty predicate required by its partial cue_source_path index from a parameter equality alone. Cleanup now batches all references once and reuses filesystem checks; the single-source query explicitly includes the index predicate. Regression coverage counts one bulk lookup and zero per-source queries against a real repository, preserving out-of-scope records and all records on lookup failure.
 
+同一排查的插件后续：主扫描结束后的 5 秒 CPU 采样有 86.23% 标记为 audiobook。该插件一小时缓存到期后重建约 5.8 万章节，且进入 `@eaDir` 缩略图树。插件新增精确递归元数据清单，持久化后跨重启复用索引；旧缓存逐文件校验后迁移。共享递归统计表、按书计算一次 ID，并排除明确的 NAS 缓存树。读取失败保留旧索引且不发布检查点。10 项回归和禁用缓存的破坏检查覆盖复用、原地修改、增删改名、元数据刷新与失败保护；插件独立 CI 通过。不把主扫描结束误当成所有后台工作已结束。
+
+实库副本还发现 FS 桥接用 `strings.Contains(path, "..")` 错拒“最好的...金选集”等合法目录，导致整本书不能建立成功检查点。只拒绝独立的 `..` 路径段，同时检查两种分隔符并保留允许根目录边界校验。回归验证合法名称的实际批量目录读取，以及相对、绝对、music://、Windows 分隔符的越界拒绝。
+
 ## CPU-001：自动歌单不能全量读取歌曲载荷并无条件重写
 
 2026-11-11：leonFN 每小时扫描后自动生成歌单；20 秒 CPU 采样的 97.6% 落在 AutoCreate→SongRepository.List，默认排序携带指纹、歌词等大字段，约占满一核（4 核整机约 25%）。改用无分页上限的专用轻量查询，并在事务内比较歌单描述、保留封面与有序成员，只更新有变化的歌单。毒化无关列的真实 SQLite 视图与写入审计回归在旧实现分别失败；曲库副本 79,703 首/5,343 歌单两次同步约 10 秒且 total_changes 增量为零。未关闭用户的扫描或指纹配置，不清系统文件缓存，不以缓存热度或重启后的低 CPU 冒充优化证据。有声书插件的启动扫描也会占用 CPU：应复用成功索引、批量获取元数据并为目录遍历让出执行时间；插件后台 goroutine 加入 pprof plugin 标签，避免把所有空闲高 CPU 归给同一任务。Seen 1×。

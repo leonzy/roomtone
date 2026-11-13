@@ -33,9 +33,42 @@ func TestResolveFSPath_EmptyPath(t *testing.T) {
 
 func TestResolveFSPath_PathTraversal(t *testing.T) {
 	h := newTestBridgeHandler(t, []string{PermFS}, "test-plugin")
-	_, err := h.resolveFSPath("../etc/passwd")
-	if err == nil {
-		t.Fatal("expected error for path traversal")
+	for _, path := range []string{"../etc/passwd", "books/../secret", `books\..\secret`, "music://../secret", "/allowed/../secret", `C:\allowed\..\secret`, ".."} {
+		if _, err := h.resolveFSPath(path); err == nil {
+			t.Fatalf("expected traversal rejection for %q", path)
+		}
+	}
+}
+
+func TestResolveFSPath_DotsInsideNames(t *testing.T) {
+	h := newTestBridgeHandler(t, []string{PermFS, PermFSExternal}, "test-plugin")
+	for _, name := range []string{"潘美辰 - 最好的...金选集", "A188.XRCD最动听的...叶倩文Special", "..hidden", "cover..jpg"} {
+		got, err := h.resolveFSPath(filepath.Join(name, "chapter.wav"))
+		want, _ := filepath.Abs(filepath.Join(h.pluginDataDir(), name, "chapter.wav"))
+		if err != nil || got != want {
+			t.Fatalf("legitimate name %q: got %q, err %v; want %q", name, got, err, want)
+		}
+	}
+	extDir := t.TempDir()
+	h.service.plugin.ExternalPaths = []string{extDir}
+	dir := filepath.Join(extDir, "潘美辰 - 最好的...金选集")
+	if err := os.Mkdir(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "chapter.wav"), []byte("audio"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	request, _ := json.Marshal(map[string]any{"path": dir, "withStats": true})
+	response, err := h.fsReaddir(string(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []struct {
+		Name string `json:"name"`
+		Size int64  `json:"size"`
+	}
+	if err := json.Unmarshal([]byte(response), &entries); err != nil || len(entries) != 1 || entries[0].Name != "chapter.wav" || entries[0].Size != 5 {
+		t.Fatalf("directory listing %s, err %v", response, err)
 	}
 }
 
