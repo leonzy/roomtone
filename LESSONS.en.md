@@ -1,5 +1,9 @@
 # Development Lessons
 
+## HOME-001: Select playlist previews before counting their memberships
+
+2026-11-14: Fetching 12 home playlists took ~1.1–1.3 seconds; the single radio playlist also took ~1 second. A global playlist_songs/songs aggregation ran before LIMIT. Select a bounded page first, then compute song/remote counts for those IDs using existing indexes. A real SQLite shadow view throws when unselected metadata is read: the old query fails, new ordinary/random previews pass, and selecting the poisoned page still fails. Random previews use one sample (max 200), soft previous-batch avoidance and hard exclusion; never offset-page random order or empty a small candidate pool. Keep UI cache invalidation compatible with playlist mutations. Seen 1×.
+
 ## API-001: Validate combined mode requests against the real handler
 
 2026-11-14: Lynx submitted repeat/shuffle together with an empty action. Client mocks accepted that payload, but the real transport handler only supported explicit single-setting actions, returning HTTP 400 for queue shuffle. A mode-only patch now requires at least one setting and validates all fields before applying either, without transport commands or queue replacement. Real-handler regressions first reproduce four HTTP 400 failures, then verify every mode, unchanged song/cursor/position/transport/history, invalid-patch preservation and legacy explicit actions. Windows handler/app and queue-mode tests plus vet pass. Client mocks alone do not establish cross-repository API compatibility. Seen 1×.

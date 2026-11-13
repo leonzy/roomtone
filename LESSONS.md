@@ -1,5 +1,11 @@
 # 开发经验
 
+## HOME-001：歌单预览必须先分页再统计成员
+
+2026-11-14：首页只取 12 张歌单也要约 1.1–1.3 秒，只有一个电台歌单的查询同样接近 1 秒。List 的 LEFT JOIN 先对整库 playlist_songs JOIN songs 聚合，再 LIMIT。改为先选择有界歌单子查询，再对选中的 ID 计算 song_count/remote_count，复用现有索引。真实 SQLite 临时 songs 视图在访问未选中歌单歌曲时抛错，旧 GROUP BY 必然失败，新普通/随机预览通过；偏移到故意污染的目标仍会失败，证明不是绕开了计数。随机预览一次抽样、上限200，avoid_ids 只软避让上一批，exclude_ids 真排除；不能按随机排序续页，候选不足也不能返回空。界面批次和失效键需跟现有歌单编辑契约一致。
+
+English: Returning 12 home playlists cost ~1.1–1.3 seconds because List grouped all library memberships before LIMIT; even the single radio playlist paid that cost. Select a bounded page first, then compute metadata for those IDs using existing indexes. A real SQLite shadow view throws when unselected song metadata is read: the old aggregation fails, both new page modes pass, and selecting a poisoned page still fails. Random previews are one bounded sample (max 200), with soft previous-batch avoidance and hard exclusion; never offset-page random order or empty a small pool. Preserve existing playlist cache invalidation. Seen 1×.
+
 ## API-001：组合模式请求必须通过真实 handler 验证
 
 2026-11-14：Lynx 以空 action 同时提交 repeat/shuffle，客户端 mock 接受并断言这个载荷，真实 Transport handler 却只接受带 action 的单项修改，队列乱序按钮返回“不支持的 action”。新增组合模式补丁兼容，至少提供一项模式、先校验所有字段再修改，不调用播放/停止/跳转或替换队列。真实 HTTP handler 回归先复现四种模式全部 400，再验证模式生效且歌曲、游标、进度、传输状态及起播记录不变；非法 repeat 或 shuffle 类型不允许部分更新，旧显式 action 继续兼容。Windows handlers/app 与队列模式测试及 vet 通过；不将客户端 mock 正确当作跨仓 API 兼容证据。Seen 1×。

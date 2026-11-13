@@ -4696,6 +4696,24 @@ const docTemplate = `{
                         "description": "偏移量",
                         "name": "offset",
                         "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "随机预览；最多200条，忽略offset，不改变歌单顺序",
+                        "name": "random",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "随机预览优先避开上一批ID（逗号分隔，最多200个）；候选不足时允许复用",
+                        "name": "avoid_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "始终排除的ID（逗号分隔，最多200个）",
+                        "name": "exclude_ids",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -4707,7 +4725,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "song_source 取值非法",
+                        "description": "song_source、random 或预览歌单ID参数非法",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

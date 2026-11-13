@@ -5450,6 +5450,18 @@ paths:
         in: query
         name: offset
         type: integer
+      - description: 随机预览；最多200条，忽略offset，不改变歌单顺序
+        in: query
+        name: random
+        type: boolean
+      - description: 随机预览优先避开上一批ID（逗号分隔，最多200个）；候选不足时允许复用
+        in: query
+        name: avoid_ids
+        type: string
+      - description: 始终排除的ID（逗号分隔，最多200个）
+        in: query
+        name: exclude_ids
+        type: string
       produces:
       - application/json
       responses:
@@ -5459,7 +5471,7 @@ paths:
             additionalProperties: true
             type: object
         "400":
-          description: song_source 取值非法
+          description: song_source、random 或预览歌单ID参数非法
           schema:
             additionalProperties:
               type: string

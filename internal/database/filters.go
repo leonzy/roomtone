@@ -49,6 +49,9 @@ type SongFilter struct {
 
 // PlaylistFilter 歌单过滤条件
 type PlaylistFilter struct {
+	Random        bool
+	ExcludeIDs    []int64
+	AvoidIDs      []int64
 	Type          string
 	Labels        []string
 	ExcludeLabels []string

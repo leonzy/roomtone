@@ -190,13 +190,13 @@ func (r *PlaylistRepository) List(ctx context.Context, filter *PlaylistFilter) (
 	if filter == nil {
 		filter = &PlaylistFilter{}
 	}
-	sb := playlistSelectBuilder()
-	sb = applyPlaylistFilter(sb, filter, "p.")
-	// 置顶优先级：置顶歌单永远排最前，同为置顶时按置顶时间倒序（最近置顶在前）；
-	// squirrel 的 OrderBy 是累加而非覆盖，故这里先加置顶排序，再叠加下面的原有排序作为 tiebreaker。
-	sb = sb.OrderBy("p.pinned_at IS NULL ASC", "p.pinned_at DESC")
-	sb = applyOrder(sb, filter.OrderBy, filter.Order, "p.position ASC, p.updated_at DESC", playlistOrderWhitelist, "p.")
-	sb = applyPagination(sb, filter.Limit, filter.Offset)
+	// Select the bounded page before calculating song metadata. A full-library
+	// GROUP BY touches every playlist membership even for a tiny home preview.
+	page := applyPlaylistFilter(sq.Select("p.*").From("playlists p"), filter, "p.")
+	page = applyPlaylistListOrder(page, filter)
+	page = applyPagination(page, filter.Limit, filter.Offset)
+	sb := playlistSelectBuilder().FromSelect(page, "p")
+	sb = applyPlaylistListOrder(sb, filter)
 
 	query, args, err := sb.ToSql()
 	if err != nil {
@@ -220,6 +220,24 @@ func (r *PlaylistRepository) List(ctx context.Context, filter *PlaylistFilter) (
 		return nil, fmt.Errorf("iterate playlists: %w", err)
 	}
 	return playlists, nil
+}
+
+func applyPlaylistListOrder(sb sq.SelectBuilder, filter *PlaylistFilter) sq.SelectBuilder {
+	if filter.Random {
+		if len(filter.AvoidIDs) > 0 {
+			args := make([]any, len(filter.AvoidIDs))
+			for i, id := range filter.AvoidIDs {
+				args[i] = id
+			}
+			sb = sb.OrderByClause(sq.Expr("p.id IN ("+sq.Placeholders(len(args))+") ASC", args...))
+		}
+		return sb.OrderBy("RANDOM()")
+	}
+	// 置顶优先级：置顶歌单永远排最前，同为置顶时按置顶时间倒序（最近置顶在前）；
+	// squirrel 的 OrderBy 是累加而非覆盖，故这里先加置顶排序，再叠加下面的原有排序作为 tiebreaker。
+	sb = sb.OrderBy("p.pinned_at IS NULL ASC", "p.pinned_at DESC")
+	sb = applyOrder(sb, filter.OrderBy, filter.Order, "p.position ASC, p.updated_at DESC", playlistOrderWhitelist, "p.")
+	return sb
 }
 
 // Count 与 List 共享过滤条件，返回匹配行数。
@@ -818,19 +836,15 @@ func playlistSelectBuilder() sq.SelectBuilder {
 		"p.cover_path", "p.cover_url", "p.labels",
 		"p.sort_by", "p.sort_order", "p.pinned_at",
 		"p.created_at", "p.updated_at",
-		"COALESCE(cnt.song_count, 0) AS song_count",
-		"COALESCE(cnt.remote_count, 0) AS remote_count",
-	).From("playlists p").
-		// 子查询 JOIN songs 只为多算一个 remote_count（网络歌单徽标用）。
-		// song_count 语义不受影响：foreign_keys(1) 已开 + playlist_songs.song_id
-		// 是 ON DELETE CASCADE 外键，不存在指向已删歌曲的孤儿行。
-		LeftJoin("(SELECT ps.playlist_id, COUNT(*) AS song_count, " +
-			"SUM(CASE WHEN s.type = 'remote' THEN 1 ELSE 0 END) AS remote_count " +
-			"FROM playlist_songs ps JOIN songs s ON s.id = ps.song_id " +
-			"GROUP BY ps.playlist_id) cnt ON p.id = cnt.playlist_id")
+		"(SELECT COUNT(*) FROM playlist_songs ps WHERE ps.playlist_id = p.id) AS song_count",
+		"(SELECT COUNT(*) FROM playlist_songs ps JOIN songs s ON s.id = ps.song_id WHERE ps.playlist_id = p.id AND s.type = 'remote') AS remote_count",
+	).From("playlists p")
 }
 
 func applyPlaylistFilter(sb sq.SelectBuilder, filter *PlaylistFilter, prefix string) sq.SelectBuilder {
+	if len(filter.ExcludeIDs) > 0 {
+		sb = sb.Where(sq.NotEq{prefix + "id": filter.ExcludeIDs})
+	}
 	if filter.Type != "" {
 		sb = sb.Where(sq.Eq{prefix + "type": filter.Type})
 	}

@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -52,8 +53,11 @@ func (h *PlaylistHandler) SetThumbCache(tc *services.CoverThumbCache) {
 // @Param exclude_labels query string false "要排除的标签(逗号分隔), 默认排除 hidden; 传 none 显示全部" default(hidden)
 // @Param limit query int false "每页数量" default(20)
 // @Param offset query int false "偏移量" default(0)
+// @Param random query boolean false "随机预览；最多200条，忽略offset，不改变歌单顺序"
+// @Param avoid_ids query string false "随机预览优先避开上一批ID（逗号分隔，最多200个）；候选不足时允许复用"
+// @Param exclude_ids query string false "始终排除的ID（逗号分隔，最多200个）"
 // @Success 200 {object} map[string]interface{} "成功返回歌单列表"
-// @Failure 400 {object} map[string]string "song_source 取值非法"
+// @Failure 400 {object} map[string]string "song_source、random 或预览歌单ID参数非法"
 // @Failure 500 {object} map[string]string "服务器错误"
 // @Security BearerAuth
 // @Router /playlists [get]
@@ -71,6 +75,31 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 	}
 
 	limit, offset := parsePagination(r, models.DefaultPaginationLimit, 0)
+	random := false
+	if value := r.URL.Query().Get("random"); value != "" {
+		var err error
+		random, err = strconv.ParseBool(value)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "无效的 random", nil)
+			return
+		}
+	}
+	avoidIDs, err := playlistPreviewIDs(r.URL.Query().Get("avoid_ids"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+	excludeIDs, err := playlistPreviewIDs(r.URL.Query().Get("exclude_ids"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+	if random {
+		offset = 0
+		if limit <= 0 || limit > 200 {
+			limit = 200
+		}
+	}
 
 	var excludeLabels []string
 	excludeLabelsStr := r.URL.Query().Get("exclude_labels")
@@ -81,6 +110,7 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 	}
 
 	filter := &database.PlaylistFilter{
+		Random: random, AvoidIDs: avoidIDs, ExcludeIDs: excludeIDs,
 		Type:          playlistType,
 		SongSource:    songSource,
 		Keyword:       keyword,
@@ -96,6 +126,7 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 	}
 
 	countFilter := &database.PlaylistFilter{
+		ExcludeIDs:    excludeIDs,
 		Type:          filter.Type,
 		SongSource:    songSource,
 		Keyword:       keyword,
@@ -113,6 +144,29 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 		"limit":     limit,
 		"offset":    offset,
 	})
+}
+
+func playlistPreviewIDs(value string) ([]int64, error) {
+	if value == "" {
+		return nil, nil
+	}
+	parts := strings.Split(value, ",")
+	if len(parts) > 200 {
+		return nil, fmt.Errorf("歌单ID最多200个")
+	}
+	ids := make([]int64, 0, len(parts))
+	seen := make(map[int64]bool)
+	for _, part := range parts {
+		id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("无效的歌单ID")
+		}
+		if !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
+		}
+	}
+	return ids, nil
 }
 
 // GetPlaylist 获取单个歌单
