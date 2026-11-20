@@ -1,5 +1,11 @@
 # 开发经验
 
+## AUDIO-001：服务健康和源文件可读不等于浏览器可播放
+
+2026-11-20：leonFN 播放 DSF 出错，服务、挂载和源文件均正常。对失败歌曲67059/67063的范围读取返回206和 DSD 原始头；客户端未识别 DSF，未请求转码。不要仅凭音频/歌词404日志推断音乐盘丢失，也不能把原文件200/206当成浏览器解码成功。Lynx补齐DSF/DFF/DSD/DSDIFF判定；服务已有format=mp3链路不改。对同一DSF取得206 audio/mpeg，前64KiB实际解码成功。只读取/解码，不向音箱发送transport/play命令。
+
+English: On 2026-11-20 the NAS service, music mount and failing DSF files were healthy. Range probes returned raw DSD bytes because Lynx did not recognize DSD containers and omitted the transcode parameter. Neither adjacent lyric/audio 404 logs nor successful source-file HTTP responses establish the root cause or browser decoding. The client now recognizes DSF/DFF/DSD/DSDIFF; the existing server MP3 path produces a decodable 206 audio/mpeg probe from the same file. No speaker transport/play commands were sent. Seen 1×.
+
 ## HOME-001：歌单预览必须先分页再统计成员
 
 2026-11-14：首页只取 12 张歌单也要约 1.1–1.3 秒，只有一个电台歌单的查询同样接近 1 秒。List 的 LEFT JOIN 先对整库 playlist_songs JOIN songs 聚合，再 LIMIT。改为先选择有界歌单子查询，再对选中的 ID 计算 song_count/remote_count，复用现有索引。真实 SQLite 临时 songs 视图在访问未选中歌单歌曲时抛错，旧 GROUP BY 必然失败，新普通/随机预览通过；偏移到故意污染的目标仍会失败，证明不是绕开了计数。随机预览一次抽样、上限200，avoid_ids 只软避让上一批，exclude_ids 真排除；不能按随机排序续页，候选不足也不能返回空。界面批次和失效键需跟现有歌单编辑契约一致。

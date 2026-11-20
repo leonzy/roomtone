@@ -1,5 +1,9 @@
 # Development Lessons
 
+## AUDIO-001: Healthy service and readable source files do not establish browser playback
+
+2026-11-20: The NAS service, mount and failing DSF sources were healthy. Range probes returned raw DSD because Lynx did not recognize DSD containers and omitted the transcode parameter. Do not infer a missing mount from adjacent lyric/audio 404 logs or browser decoding from source-file HTTP 200/206. Lynx now recognizes DSF/DFF/DSD/DSDIFF; the existing server MP3 path returns 206 audio/mpeg and its first 64 KiB decodes successfully from the same failing source. No speaker transport/play commands were sent. Seen 1×.
+
 ## HOME-001: Select playlist previews before counting their memberships
 
 2026-11-14: Fetching 12 home playlists took ~1.1–1.3 seconds; the single radio playlist also took ~1 second. A global playlist_songs/songs aggregation ran before LIMIT. Select a bounded page first, then compute song/remote counts for those IDs using existing indexes. A real SQLite shadow view throws when unselected metadata is read: the old query fails, new ordinary/random previews pass, and selecting the poisoned page still fails. Random previews use one sample (max 200), soft previous-batch avoidance and hard exclusion; never offset-page random order or empty a small candidate pool. Keep UI cache invalidation compatible with playlist mutations. Seen 1×.
