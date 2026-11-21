@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"embed"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"songloft/internal/httputil"
 	"songloft/internal/jsplugin"
 	"songloft/internal/logging"
+	"songloft/internal/mcpserver"
 	"songloft/internal/models"
 	"songloft/internal/player"
 	"songloft/internal/player/discovery"
@@ -47,6 +49,10 @@ type App struct {
 	songService         *services.SongService
 	playlistService     *services.PlaylistService
 	playHistoryService  *services.PlayHistoryService
+	listeningHistory    *services.ListeningHistoryService
+	recommendation      *services.RecommendationService
+	metadataUpdate      *services.MetadataUpdateService
+	mcpServer           *mcpserver.Server
 	songTagService      *services.SongTagService
 	themePackService    *services.ThemePackService
 	authService         *services.AuthService
@@ -294,6 +300,9 @@ func (a *App) Init() error {
 	a.songService = services.NewSongService(db.SongRepository(), db, a.metadataExtractor, a.scanner, a.configService, db.PlaylistRepository())
 	a.backupService = services.NewBackupService(db)
 	a.playHistoryService = services.NewPlayHistoryService(db)
+	a.listeningHistory = services.NewListeningHistoryService(db)
+	a.recommendation = services.NewRecommendationService(db)
+	a.metadataUpdate = services.NewMetadataUpdateService(db)
 	a.songTagService = services.NewSongTagService(db.SongTagRepository())
 	a.songService.SetSongTagService(a.songTagService)
 	a.themePackService = services.NewThemePackService(db.ThemePackRepository(), a.configService)
@@ -516,6 +525,11 @@ func (a *App) Init() error {
 
 	// 播放控制与音箱输出（失败只让该功能不可用，不阻塞启动）
 	a.initPlayback()
+	if a.config.MCPEnabled {
+		if err := a.initMCP(); err != nil {
+			return fmt.Errorf("初始化 MCP 服务失败: %w", err)
+		}
+	}
 
 	a.setupRouter()
 
@@ -695,6 +709,9 @@ func (a *App) showHelp() {
 	fmt.Println("  DB_PATH         - 数据库文件路径（默认: data/songloft.db，可通过 -db 参数指定）")
 	fmt.Println("  BASE_PATH       - URL 基础路径，用于反向代理子路径部署（如 /songloft，可通过 -base-path 参数指定）")
 	fmt.Println("  MUSIC_DIR       - 音乐目录（非空时覆盖 DB 中的默认值，可通过 -music 参数指定）")
+	fmt.Println("  MCP_ENABLED     - 是否启用 /mcp（true/false，默认 false）")
+	fmt.Println("  MCP_TOKEN       - 独立 MCP Bearer Token（启用时必填）")
+	fmt.Println("  MCP_SCOPES      - 逗号分隔 read,playback,speakers,metadata,automation（默认 read）")
 	fmt.Println()
 	fmt.Println("注意: 其他配置（扫描配置等）存储在数据库 config 表中")
 }
@@ -808,6 +825,21 @@ func ParseConfig() (*config.AppConfig, error) {
 			finalMusicDir = envMusicDir
 		}
 	}
+	mcpEnabled := false
+	if raw := strings.TrimSpace(os.Getenv("MCP_ENABLED")); raw != "" {
+		mcpEnabled, err = strconv.ParseBool(raw)
+		if err != nil {
+			return nil, fmt.Errorf("MCP_ENABLED 必须是 true 或 false: %w", err)
+		}
+	}
+	mcpToken := os.Getenv("MCP_TOKEN")
+	if mcpEnabled && mcpToken == "" {
+		return nil, errors.New("启用 MCP 时必须设置 MCP_TOKEN")
+	}
+	mcpScopes := []string{mcpserver.ScopeRead}
+	if raw := os.Getenv("MCP_SCOPES"); strings.TrimSpace(raw) != "" {
+		mcpScopes = strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ' ' })
+	}
 	return &config.AppConfig{
 		Port:                    listenPort,
 		DBPath:                  finalDBPath,
@@ -816,5 +848,8 @@ func ParseConfig() (*config.AppConfig, error) {
 		BasePath:                normalizedBasePath,
 		UsingDefaultCredentials: usingDefaultCredentials,
 		MusicDir:                finalMusicDir,
+		MCPEnabled:              mcpEnabled,
+		MCPToken:                mcpToken,
+		MCPScopes:               mcpScopes,
 	}, nil
 }

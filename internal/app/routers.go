@@ -22,6 +22,11 @@ func (a *App) setupRouter() {
 	// 设置基础路由（含中间件注册）
 	a.setupBaseRouter()
 
+	// MCP 与 REST API 并列，使用独立 Token，不进入 /api/v1 JWT 中间件。
+	if a.mcpServer != nil {
+		a.router.Handle("/mcp", a.mcpServer)
+	}
+
 	// API v1 路由组
 	a.setupAPIV1Router()
 
@@ -57,6 +62,7 @@ func (a *App) setupAPIV1Router() {
 	songHandler.SetConfigService(a.configService)
 	songHandler.SetURLResolver(a.urlResolver)
 	songHandler.SetPlayHistoryRecorder(a.playHistoryService)
+	songHandler.SetListeningHistoryRecorder(a.listeningHistory)
 	thumbCache := services.NewCoverThumbCache(filepath.Dir(a.config.DBPath))
 	songHandler.SetThumbCache(thumbCache)
 	playlistHandler := handlers.NewPlaylistHandler(a.playlistService, a.songService)

@@ -25,6 +25,8 @@ type Track struct {
 	Format     string
 	SampleRate int
 	BitRate    int
+	OwnerKind  string
+	OwnerID    string
 	// Artist / Album / ArtworkPath 设备屏显元数据（RAOP DMAP / RAAT
 	// update_transport）。仅元数据推送用，不参与解码与协商。
 	Artist      string
@@ -106,6 +108,8 @@ type EngineDeps struct {
 	//
 	// 支持连续传输的 sink 保持会话；下一曲解码器从实际重叠位置重新打开。
 	Crossfade func() time.Duration
+	// OnTrackStarted reports a newly started track once per engine.
+	OnTrackStarted func(Track)
 	// OnTrackFinished reports a natural completion once per engine, not per speaker.
 	// Pause, seek, stop and decoder failures must not invoke it.
 	OnTrackFinished func(Track)
@@ -138,6 +142,7 @@ type Engine struct {
 	delegated     bool // active loop has no PCM producer; must change when first push target joins
 	release       func()
 	underruns     int64
+	historyKey    string
 	preload       Decoder
 	preloadID     int64
 	preloadFormat Format
@@ -467,6 +472,7 @@ func (e *Engine) loadWithProgress(ctx context.Context, songIDs []int64, index in
 	}
 	e.mu.Lock()
 	e.stopLocked()
+	e.historyKey = ""
 	e.queue.Replace(songIDs, index)
 	e.queue.SetStarted(started)
 	release, err := e.acquireLocked()
@@ -594,6 +600,7 @@ func (e *Engine) Pause() error {
 func (e *Engine) Stop() {
 	e.mu.Lock()
 	waitControls := e.dispatchControls("stop", append([]sink.Sink(nil), e.controls...), func(s sink.Sink) error { return s.Stop() })
+	e.historyKey = ""
 	e.stopLocked()
 	e.transport.Stop()
 	e.sourceFormat = ""
@@ -822,6 +829,17 @@ func (e *Engine) pushMetadata(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (e *Engine) markHistoryStarted(songID int64) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	key := fmt.Sprintf("%d:%d", e.queue.Current(), songID)
+	if e.historyKey == key {
+		return false
+	}
+	e.historyKey = key
+	return true
 }
 
 func (e *Engine) stopLocked() {
@@ -1150,6 +1168,10 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 				src = xf
 			}
 		}
+		if e.markHistoryStarted(track.SongID) && e.deps.OnTrackStarted != nil {
+			track.OwnerKind, track.OwnerID = e.ownerKind, e.ownerID
+			e.deps.OnTrackStarted(track)
+		}
 		frames, runErr := runner.Run(ctx, src)
 		cancelSync()
 		if state, ok := runner.(interface {
@@ -1182,6 +1204,7 @@ func (e *Engine) run(ctx context.Context, startAt time.Duration) {
 		}
 		_ = state
 		if e.deps.OnTrackFinished != nil {
+			track.OwnerKind, track.OwnerID = e.ownerKind, e.ownerID
 			e.deps.OnTrackFinished(track)
 		}
 
@@ -1324,15 +1347,21 @@ func (e *Engine) runDelegated(ctx context.Context, startAt time.Duration) {
 		_ = e.transport.Load(track.SongID, position)
 		_ = e.transport.MarkBuffering()
 		_ = e.transport.Play()
-		e.queue.MarkStarted(track.SongID)
+		_ = e.queue.MarkStarted(track.SongID)
+		historyStarted := e.markHistoryStarted(track.SongID)
 		e.mu.Unlock()
 		e.persistState()
 		e.emitState()
+		if historyStarted && e.deps.OnTrackStarted != nil {
+			track.OwnerKind, track.OwnerID = e.ownerKind, e.ownerID
+			e.deps.OnTrackStarted(track)
+		}
 
 		if !e.waitDelegated(ctx, track.Duration) {
 			return
 		}
 		if e.deps.OnTrackFinished != nil {
+			track.OwnerKind, track.OwnerID = e.ownerKind, e.ownerID
 			e.deps.OnTrackFinished(track)
 		}
 
@@ -1440,14 +1469,19 @@ func (e *Engine) MirrorReport(songID int64, state string, position time.Duration
 	case "paused":
 		e.transport.Mirror(songID, position, false)
 	case "idle":
+		e.historyKey = ""
 		e.transport.Stop()
 	default:
 		e.mu.Unlock()
 		return
 	}
 	started := state == "playing" && e.queue.MarkStarted(songID)
+	historyStarted := state == "playing" && e.markHistoryStarted(songID)
 	changed := e.transport.State() != prev
 	e.mu.Unlock()
+	if historyStarted && e.deps.OnTrackStarted != nil {
+		e.deps.OnTrackStarted(Track{SongID: songID, OwnerKind: e.ownerKind, OwnerID: e.ownerID})
+	}
 	if started || changed {
 		e.persistState()
 	}

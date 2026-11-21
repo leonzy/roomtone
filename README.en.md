@@ -50,6 +50,7 @@
 - 🎵 **Local music management** — Scans local directories and automatically extracts covers and metadata from MP3/FLAC/WAV/APE/OGG/Opus/M4A/M4B/WMA/AIF/AIFF/MKA/DSF (DSD) and other formats
 - 🎬 **Video support** — Scans video containers such as MP4/MOV/M4V/MKV/WebM/AVI/TS/MPG/MPEG/FLV/WMV/RM/RMVB/3GP, detects real video tracks, and renders the picture in-app
 - 🔊 **Server-side playback & multi-room sync (fork addition)** — The server owns the queue and progress and pushes audio straight to AirPlay (RAOP) and DLNA/UPnP speakers; precise sync groups run a drift-correction loop (target ±20ms, automatically degraded with a UI hint when a DLNA member joins), party mode plays one song across groups, each speaker gets its own 10-band EQ, plus ReplayGain, crossfade, and scheduled alarms
+- 🤖 **MCP agent control** — Built-in Streamable HTTP MCP service for library search, playback, speakers and groups, volume/EQ, parties, alarms, listening history, explainable recommendations, and song tag editing; dedicated token and granular scopes, disabled by default. See the [MCP guide](docs/en/mcp.md)
 - 🧩 **JS plugin system** — Runs on a QuickJS sandbox with a permission model, health checks, and hot reload; freely extend audio sources / metadata / device control and more
 - 📱 **Cross-platform clients** — The Flutter client supports six platforms: Android, iOS, macOS, Windows, Linux, and Web
 - 📦 **Bundle local mode** — The client embeds the Go backend, so no server deployment is needed — play your local music directly on your phone or computer
@@ -412,6 +413,9 @@ Roomtone relies on only a few startup-time settings (credentials, port, database
 | `DB_PATH` | 💾 Database file path | data/songloft.db |
 | `BASE_PATH` | 🔗 URL base path (for reverse-proxy subpath deployment, e.g. `/songloft`) | empty (root path) |
 | `MUSIC_DIR` | 🎵 Music directory (overrides the database default when non-empty; equivalent to `-music`) | empty |
+| `MCP_ENABLED` | 🤖 Enables the `/mcp` agent-control endpoint | false |
+| `MCP_TOKEN` | 🔐 Dedicated MCP Bearer token; required when MCP is enabled | empty |
+| `MCP_SCOPES` | 🔑 Comma-separated `read,playback,speakers,metadata,automation` scopes | read |
 | `PUID` | 👤 **(Docker only)** When set, runs the main process as this non-root uid; unset keeps the default root startup | empty (root) |
 | `PGID` | 👤 **(Docker only)** When set, runs the main process as this non-root gid; unset keeps the default root startup | empty (root) |
 | `FIX_MUSIC_PERMISSIONS` | 🔧 **(Docker only)** When `true`, recursively fixes ownership of every file under `/app/music` to `PUID:PGID` (by default only the top-level directory is fixed; recursive fixup can take a while for large libraries, and is usually only needed once after switching to non-root) | false |

@@ -49,6 +49,7 @@
 - 🎵 **本地音乐管理** — 扫描本地目录，自动提取 MP3/FLAC/WAV/APE/OGG/Opus/M4A/M4B/WMA/AIF/AIFF/MKA/DSF（DSD）等格式的封面和元数据
 - 🎬 **视频支持** — 扫描 MP4/MOV/M4V/MKV/WebM/AVI/TS/MPG/MPEG/FLV/WMV/RM/RMVB/3GP 等视频容器并探测真实视频轨，客户端内渲染画面
 - 🔊 **服务端播放与多房间同步（本 fork 新增）** — 服务端持有播放队列与进度，直接推送到 AirPlay（RAOP）与 DLNA/UPnP 音箱；精确同步组带漂移校正环（目标 ±20ms，含 DLNA 成员时自动降级并提示），派对模式多组同播，每台音箱独立 10 段 EQ，另有 ReplayGain 响度均衡、交叉淡化与定时闹钟
+- 🤖 **MCP Agent 控制** — 内置 Streamable HTTP MCP 服务，支持曲库搜索、播放、音箱与分组、音量/EQ、派对、闹钟、听歌历史、可解释推荐及歌曲标签修改；独立 Token 与细粒度 Scope，默认关闭，详见 [MCP 文档](docs/mcp.md)
 - 🧩 **JS 插件体系** — 基于 QuickJS 沙箱运行，支持权限模型、健康检查、热更新，可自由扩展音源 / 元数据 / 设备控制等能力
 - 📱 **跨平台客户端** — Flutter 客户端支持 Android、iOS、macOS、Windows、Linux、Web 六端
 - 📦 **Bundle 本地模式** — 客户端内嵌 Go 后端，无需部署服务器，手机/电脑直接播放本地音乐
@@ -411,6 +412,9 @@ Roomtone 仅依赖少量启动期配置（凭证、端口、数据库路径）�
 | `DB_PATH` | 💾 数据库文件路径 | data/songloft.db |
 | `BASE_PATH` | 🔗 URL 基础路径（反向代理子路径部署用，如 `/songloft`） | 空（根路径） |
 | `MUSIC_DIR` | 🎵 音乐目录（非空时覆盖数据库中的默认值，等价于 `-music` 参数） | 空 |
+| `MCP_ENABLED` | 🤖 是否启用 `/mcp` Agent 控制端点 | false |
+| `MCP_TOKEN` | 🔐 独立 MCP Bearer Token，启用 MCP 时必填 | 空 |
+| `MCP_SCOPES` | 🔑 逗号分隔的 `read,playback,speakers,metadata,automation` 权限 | read |
 | `PUID` | 👤 **（仅 Docker）** 设置后以该 uid 非 root 运行主程序，未设置时保持 root 运行 | 空（root） |
 | `PGID` | 👤 **（仅 Docker）** 设置后以该 gid 非 root 运行主程序，未设置时保持 root 运行 | 空（root） |
 | `FIX_MUSIC_PERMISSIONS` | 🔧 **（仅 Docker）** 设为 `true` 时递归修复 `/app/music` 下所有文件的属主为 `PUID:PGID`（默认仅修复顶层目录，音乐库较大时递归修复可能耗时较长，一般只在升级为非 root 运行后需要用一次） | false |

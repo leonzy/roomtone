@@ -1,5 +1,11 @@
 # 开发经验
 
+## MCP-001：收听事件去重不能复用持久化队列进度
+
+2026-11-21：leonFN 实际恢复一个历史上已标记 started 的队列时，播放和暂停正常，但新增 listening_events 没有记录。队列 started_indices 用于跨重启续播，可能早已为 true；新收听事件必须在当前进程内按队列出现位置独立去重，并在停止后重置，不能用持久化标记兼任会话事件闸门。同一曲目 seek/恢复不重复记录，停止后重播及重复歌曲的另一队列出现仍记录。回归覆盖预标记 started、同项去重、重复歌曲下一项和停止后重播；leonFN 最终镜像实测恢复播放、暂停与历史查询通过，测试后恢复原 15 项队列及音量 29。Seen 1×。
+
+English: On 2026-11-21, resuming a previously started queue on leonFN played and paused correctly but produced no listening event. Persisted queue started indices implement resume progress and may already be true; listening-event deduplication must use a process-local queue-occurrence key, reset after stop. Seeks do not duplicate an event, while replay after stop and another occurrence of the same song do. Regression coverage includes a pre-marked queue, same-item deduplication, duplicate-song advancement and replay after stop. Hardware verification is recorded separately. Seen once.
+
 ## AUDIO-001：服务健康和源文件可读不等于浏览器可播放
 
 2026-11-20：leonFN 播放 DSF 出错，服务、挂载和源文件均正常。对失败歌曲67059/67063的范围读取返回206和 DSD 原始头；客户端未识别 DSF，未请求转码。不要仅凭音频/歌词404日志推断音乐盘丢失，也不能把原文件200/206当成浏览器解码成功。Lynx补齐DSF/DFF/DSD/DSDIFF判定；服务已有format=mp3链路不改。对同一DSF取得206 audio/mpeg，前64KiB实际解码成功。只读取/解码，不向音箱发送transport/play命令。

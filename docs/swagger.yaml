@@ -4652,6 +4652,35 @@ paths:
       summary: 导出后端日志
       tags:
       - 设置
+  /mcp:
+    post:
+      description: 使用 MCP Streamable HTTP 提供曲库、播放、音箱、分组、自动化、历史、推荐与元数据工具。协议请求和响应 schema
+        由 MCP SDK 动态协商，不由 OpenAPI 静态描述。需要独立 MCP Bearer Token，权限由 MCP_SCOPES 控制。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: MCP JSON-RPC 响应
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Token 缺失或无效
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 跨源请求被拒绝
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: MCP Agent 控制入口
+      tags:
+      - 系统管理
   /play-history:
     delete:
       description: 删除指定播放上下文内的全部播放记录，返回实际删除条数。上下文不存在或本就没有记录时返回 deleted=0，不视为错误。

@@ -152,7 +152,26 @@ func (a *App) initPlayback() {
 		PartyDriftToleranceMs: output.PartyDriftToleranceMs,
 		ReplayGain:            replayGain,
 		Crossfade:             crossfade,
+		OnTrackStarted: func(track player.Track) {
+			if a.listeningHistory == nil {
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := a.listeningHistory.Start(ctx, services.ListeningStart{
+				SongID: track.SongID, ZoneID: track.OwnerID, Source: "server", StartedAt: time.Now(),
+			}); err != nil {
+				slog.Warn("记录服务端听歌开始事件失败", "song_id", track.SongID, "error", err)
+			}
+		},
 		OnTrackFinished: func(track player.Track) {
+			if a.listeningHistory != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := a.listeningHistory.FinishLatest(ctx, track.SongID, "server", track.Duration.Seconds(), track.Duration.Seconds(), time.Now()); err != nil {
+					slog.Warn("记录服务端听歌完成事件失败", "song_id", track.SongID, "error", err)
+				}
+				cancel()
+			}
 			if a.jsPluginManager != nil {
 				broadcaster := &playEventBroadcastAdapter{m: a.jsPluginManager}
 				broadcaster.BroadcastPlayEvent(track.SongID, track.Title, track.Artist, "finish", "roomtone-server")

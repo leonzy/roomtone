@@ -9,6 +9,9 @@ type AppConfig struct {
 	BasePath                string
 	UsingDefaultCredentials bool
 	MusicDir                string // 移动端传入的音乐目录（非空时覆盖 DB 中的 music_path 默认值）
+	MCPEnabled              bool
+	MCPToken                string
+	MCPScopes               []string
 }
 
 // NewAppConfig 创建 AppConfig（供 mobile 包等非 CLI 入口使用，不依赖 flag.Parse）

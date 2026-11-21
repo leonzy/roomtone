@@ -77,6 +77,23 @@ type JsPlugin struct {
 	RenderEngine   string
 }
 
+type ListeningEvent struct {
+	ID              int64
+	PlaySessionID   string
+	SongID          int64
+	ZoneID          string
+	ContextType     string
+	ContextKey      string
+	ClientID        string
+	Source          string
+	StartedAt       time.Time
+	EndedAt         sql.NullTime
+	PlayedSeconds   float64
+	CompletionRatio float64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 type PartySession struct {
 	ID            string
 	Name          string

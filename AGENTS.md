@@ -19,7 +19,7 @@
 
 ### Fork 独有能力：服务端播放控制与多房间输出
 
-上游是「客户端权威」的媒体服务器；fork 增加了服务端持有播放状态、直接推送到局域网音箱的能力，这部分上游没有。迁移：`0040_players`、`0041_group_member_position`、`0042_alarms`。
+上游是「客户端权威」的媒体服务器；fork 增加了服务端持有播放状态、直接推送到局域网音箱的能力，这部分上游没有。迁移：`0040_players`、`0041_group_member_position`、`0042_alarms`；MCP 全局听歌流水使用 `0050_listening_events`。
 
 | 能力 | 代码 / 端点 | 说明 |
 |---|---|---|
@@ -52,6 +52,7 @@
 | API 响应格式 / Swagger UI | [docs/api_response.md](docs/api_response.md) / 开发模式 `/swagger/index.html` |
 | 前端踩坑 / UI 验证 | [docs/frontend_gotchas.md](docs/frontend_gotchas.md) |
 | 播放控制 / 音箱输出（架构 + 交互 + 计划 + 对照） | [架构](docs/architecture_playback.md)、[交互](docs/architecture_playback_ui.md)、[开发计划](docs/playback_development_plan.md)、[SlimServer 对照矩阵](docs/playback_compat_matrix.md) |
+| MCP Agent 控制（工具、Scope、Docker、历史与推荐） | [MCP 指南](docs/mcp.md) |
 | Fork 身份 / 改名范围 / 上游同步 | 上方[Fork 说明](#fork-说明roomtone) |
 | 文档站维护 | [docs/development.md](docs/development.md) |
 | JS 插件 / 插件源 | [插件开发指南](docs/js-plugin-development-guide.md)、[插件源制作](docs/plugin_registry.md)、`plugins/toolchain/README.md` |

@@ -190,6 +190,11 @@ func (s *SQLiteDB) AlarmRepository() *AlarmRepository {
 	return NewAlarmRepository(s.db)
 }
 
+// ListeningEventRepository 返回全局听歌事件仓储。
+func (s *SQLiteDB) ListeningEventRepository() *ListeningEventRepository {
+	return NewListeningEventRepository(s.db)
+}
+
 // SongTagRepository 返回自定义标签仓储
 func (s *SQLiteDB) SongTagRepository() *SongTagRepository {
 	return NewSongTagRepository(s.db)

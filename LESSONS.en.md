@@ -1,5 +1,9 @@
 # Development Lessons
 
+## MCP-001: Listening-event deduplication must not reuse persisted queue progress
+
+2026-11-21: Resuming a previously started queue on leonFN played and paused correctly but produced no listening event. Persisted queue started indices implement resume progress and may already be true. Deduplicate listening events with a process-local queue-occurrence key and reset it after stop. Seeks do not duplicate events, while replay after stop and another occurrence of the same song do. Regression coverage includes a pre-marked queue, same-item deduplication, duplicate-song advancement and replay after stop. The final leonFN image passed real resume, pause and history-query verification, restoring the original 15-item queue and volume 29 afterward. Seen once.
+
 ## AUDIO-001: Healthy service and readable source files do not establish browser playback
 
 2026-11-20: The NAS service, mount and failing DSF sources were healthy. Range probes returned raw DSD because Lynx did not recognize DSD containers and omitted the transcode parameter. Do not infer a missing mount from adjacent lyric/audio 404 logs or browser decoding from source-file HTTP 200/206. Lynx now recognizes DSF/DFF/DSD/DSDIFF; the existing server MP3 path returns 206 audio/mpeg and its first 64 KiB decodes successfully from the same failing source. No speaker transport/play commands were sent. Seen 1×.

@@ -19,6 +19,7 @@ import (
 
 	"songloft/internal/database"
 	"songloft/internal/httputil"
+	appmiddleware "songloft/internal/middleware"
 	"songloft/internal/models"
 	"songloft/internal/services"
 	"songloft/internal/services/playactivity"
@@ -57,8 +58,9 @@ type SongHandler struct {
 	getMusicPath      func() string          // 获取 music_path（由 scanner.GetMusicPath 注入）
 	playBroadcaster   PlayEventBroadcaster   // JS 插件播放事件广播（可选，nil 安全）
 	playHistory       PlayHistoryRecorder    // 播放历史落库（可选，nil 安全）
-	lyricSearcher     LyricSearcher          // 歌词提供者搜索（可选，nil 安全）
-	coverSearcher     CoverSearcher          // 封面提供者搜索（可选，nil 安全）
+	listeningHistory  *services.ListeningHistoryService
+	lyricSearcher     LyricSearcher // 歌词提供者搜索（可选，nil 安全）
+	coverSearcher     CoverSearcher // 封面提供者搜索（可选，nil 安全）
 	metadataRefresher *services.MetadataRefresher
 	configService     *services.ConfigService
 	urlResolver       *services.InternalURLResolver // 把插件相对路径解析为本机绝对 URL + access_token（封面代理用）
@@ -102,6 +104,10 @@ func (h *SongHandler) SetPlayBroadcaster(b PlayEventBroadcaster) {
 // SetPlayHistoryRecorder 注入播放历史记录器。
 func (h *SongHandler) SetPlayHistoryRecorder(r PlayHistoryRecorder) {
 	h.playHistory = r
+}
+
+func (h *SongHandler) SetListeningHistoryRecorder(r *services.ListeningHistoryService) {
+	h.listeningHistory = r
 }
 
 // SetLyricSearcher 注入歌词搜索器（由 JS 插件管理器实现）。
@@ -3126,6 +3132,30 @@ func (h *SongHandler) SongPlayed(w http.ResponseWriter, r *http.Request) {
 				slog.Warn("记录播放历史失败",
 					"song_id", song.ID, "context_type", contextType, "context_key", contextKey, "error", err)
 			}
+		}
+	}
+	if h.listeningHistory != nil {
+		source := r.URL.Query().Get("source")
+		if source == "" {
+			source = "other"
+		}
+		var err error
+		if eventType == "play" {
+			_, err = h.listeningHistory.Start(r.Context(), services.ListeningStart{
+				SessionID: r.URL.Query().Get("play_session_id"), SongID: song.ID,
+				ZoneID: r.URL.Query().Get("zone_id"), ContextType: r.URL.Query().Get("context_type"),
+				ContextKey: r.URL.Query().Get("context_key"), ClientID: appmiddleware.ClientIDFromContext(r.Context()),
+				Source: source, StartedAt: time.Now(),
+			})
+		} else {
+			playedSeconds := 0.0
+			if eventType == "finish" {
+				playedSeconds = song.Duration
+			}
+			err = h.listeningHistory.FinishLatest(r.Context(), song.ID, source, playedSeconds, song.Duration, time.Now())
+		}
+		if err != nil {
+			slog.Warn("记录全局听歌事件失败", "song_id", song.ID, "type", eventType, "error", err)
 		}
 	}
 

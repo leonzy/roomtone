@@ -125,97 +125,78 @@ func (h *PlaybackHandler) AddPlayer(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
 		return
 	}
-	kind := player.Kind(strings.ToLower(strings.TrimSpace(req.Kind)))
-	if kind != player.KindRAOP && kind != player.KindDLNA {
-		respondError(w, http.StatusBadRequest, "kind 只支持 raop / dlna", nil)
+	saved, err := h.AddSpeaker(r.Context(), req.Kind, req.Name, req.Address, req.DeviceID, req.PublicKey)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, errNetworkSinkDisabled) {
+			status = http.StatusForbidden
+		}
+		respondError(w, status, err.Error(), err)
 		return
 	}
-	if strings.TrimSpace(req.Address) == "" {
-		respondError(w, http.StatusBadRequest, "address 不能为空", nil)
-		return
+	respondJSON(w, http.StatusCreated, saved)
+}
+
+// AddSpeaker 手动添加音箱的领域入口，供 REST 与 MCP 共用地址和能力校验。
+func (h *PlaybackHandler) AddSpeaker(ctx context.Context, kindValue, name, address, deviceID, publicKey string) (player.Player, error) {
+	kind := player.Kind(strings.ToLower(strings.TrimSpace(kindValue)))
+	if kind != player.KindRAOP && kind != player.KindDLNA {
+		return player.Player{}, fmt.Errorf("kind 只支持 raop / dlna")
+	}
+	if strings.TrimSpace(address) == "" {
+		return player.Player{}, fmt.Errorf("address 不能为空")
 	}
 	if err := h.networkSinkCheck(); err != nil {
-		respondError(w, http.StatusForbidden, err.Error(), nil)
-		return
+		return player.Player{}, err
 	}
-	if err := h.checkAddress(r.Context(), kind, req.Address); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error(), nil)
-		return
+	if err := h.checkAddress(ctx, kind, address); err != nil {
+		return player.Player{}, err
 	}
 
 	var p player.Player
 	switch kind {
 	case player.KindDLNA:
 		cl := dlna.NewClient()
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		fetchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		// 裸 IP / host 补齐 scheme 与端口：dlna.Fetch 只认 host:port 或完整 URL，
 		// 裸 IPv6 也靠 JoinHostPort 补上方括号。
-		dev, err := dlna.Fetch(ctx, cl, withDefaultPort(req.Address, 80))
+		dev, err := dlna.Fetch(fetchCtx, cl, withDefaultPort(address, 80))
 		if err != nil {
-			respondError(w, http.StatusBadRequest, "设备不可达或不是 DLNA 音箱", err)
-			return
+			return player.Player{}, fmt.Errorf("设备不可达或不是 DLNA 音箱: %w", err)
 		}
 		id := dev.UUID()
 		if id == "" {
-			id = hostOfAddress(req.Address)
+			id = hostOfAddress(address)
 		}
-		name := req.Name
 		if name == "" {
 			name = dev.FriendlyName
 		}
 		if name == "" {
 			name = id
 		}
-		p = player.Player{
-			ID:      "dlna:" + id,
-			Kind:    player.KindDLNA,
-			Name:    name,
-			Model:   dev.ModelName,
-			Address: dev.Location.String(),
-			Caps:    dlna.CapsFor(dev),
-		}
+		p = player.Player{ID: "dlna:" + id, Kind: player.KindDLNA, Name: name,
+			Model: dev.ModelName, Address: dev.Location.String(), Caps: dlna.CapsFor(dev)}
 	case player.KindRAOP:
-		deviceID := strings.TrimSpace(req.DeviceID)
+		deviceID = strings.TrimSpace(deviceID)
 		if deviceID == "" {
-			respondError(w, http.StatusBadRequest, "RAOP 设备需要 device_id（AirPlay 的 MAC）；也可以用 POST /players/discover 自动发现", nil)
-			return
+			return player.Player{}, fmt.Errorf("RAOP 设备需要 device_id（AirPlay 的 MAC）；也可以使用设备发现")
 		}
 		caps := player.Caps{
-			Codecs:         []player.Codec{player.CodecL16},
-			MaxSampleRate:  44100,
-			Channels:       2,
-			BitDepth:       16,
-			SupportsVolume: true,
-			SupportsSeek:   true,
-			LatencyMs:      2000,
-			SyncTier:       player.SyncExact,
-			DeviceID:       normalizeMAC(deviceID),
-			PublicKey:      raop.NormalizePublicKey(req.PublicKey),
+			Codecs: []player.Codec{player.CodecL16}, MaxSampleRate: 44100, Channels: 2, BitDepth: 16,
+			SupportsVolume: true, SupportsSeek: true, LatencyMs: 2000, SyncTier: player.SyncExact,
+			DeviceID: normalizeMAC(deviceID), PublicKey: raop.NormalizePublicKey(publicKey),
 		}
-		name := req.Name
 		if name == "" {
 			name = caps.DeviceID
 		}
-		p = player.Player{
-			ID:      "raop:" + colonizeMAC(caps.DeviceID),
-			Kind:    player.KindRAOP,
-			Name:    name,
-			Address: withDefaultPort(req.Address, 5000),
-			Caps:    caps,
-		}
+		p = player.Player{ID: "raop:" + colonizeMAC(caps.DeviceID), Kind: player.KindRAOP,
+			Name: name, Address: withDefaultPort(address, 5000), Caps: caps}
 	}
-
-	if err := h.mgr.RegisterPlayer(r.Context(), p); err != nil {
-		playbackFail(w, err)
-		return
+	if err := h.mgr.RegisterPlayer(ctx, p); err != nil {
+		return player.Player{}, err
 	}
-	saved, err := h.mgr.GetPlayer(p.ID)
-	if err != nil {
-		playbackFail(w, err)
-		return
-	}
-	respondJSON(w, http.StatusCreated, saved)
+	return h.mgr.GetPlayer(p.ID)
 }
 
 // ReconnectPlayer 重连设备
@@ -230,20 +211,23 @@ func (h *PlaybackHandler) AddPlayer(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /players/{id}/reconnect [post]
 func (h *PlaybackHandler) ReconnectPlayer(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	// 只对网络音箱做模式校验；本机设备在任何模式下都可用。
-	if p, err := h.mgr.GetPlayer(id); err == nil && p.Kind != player.KindLocal {
-		if err := h.networkSinkCheck(); err != nil {
-			respondError(w, http.StatusForbidden, err.Error(), nil)
-			return
-		}
-	}
-	p, err := h.mgr.Reconnect(r.Context(), id)
+	p, err := h.ReconnectSpeaker(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		playbackFail(w, err)
 		return
 	}
 	respondJSON(w, http.StatusOK, p)
+}
+
+// ReconnectSpeaker 重连设备，供 REST 与 MCP 共用运行模式校验。
+func (h *PlaybackHandler) ReconnectSpeaker(ctx context.Context, id string) (player.Player, error) {
+	// 只对网络音箱做模式校验；本机设备在任何模式下都可用。
+	if p, err := h.mgr.GetPlayer(id); err == nil && p.Kind != player.KindLocal {
+		if err := h.networkSinkCheck(); err != nil {
+			return player.Player{}, err
+		}
+	}
+	return h.mgr.Reconnect(ctx, id)
 }
 
 // checkAddress 校验手动添加的地址：结构 + 私网策略。

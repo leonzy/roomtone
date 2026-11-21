@@ -19,7 +19,7 @@ This repository is a fork of [songloft-org/songloft](https://github.com/songloft
 
 ### Fork-only capability: server-side playback and multi-room output
 
-Upstream is a client-authoritative media server; the fork adds server-held playback state that pushes audio to LAN speakers. Upstream has none of this code. Migrations: `0040_players`, `0041_group_member_position`, `0042_alarms`.
+Upstream is a client-authoritative media server; the fork adds server-held playback state that pushes audio to LAN speakers. Upstream has none of this code. Migrations: `0040_players`, `0041_group_member_position`, `0042_alarms`; MCP global listening events use `0050_listening_events`.
 
 | Capability | Code / endpoints | Notes |
 |---|---|---|
@@ -52,6 +52,7 @@ Upstream is a client-authoritative media server; the fork adds server-held playb
 | API response format / Swagger UI | [docs/en/api_response.md](docs/en/api_response.md) / `/swagger/index.html` in dev mode |
 | Frontend gotchas / UI verification | [docs/en/frontend_gotchas.md](docs/en/frontend_gotchas.md) |
 | Playback control / speaker output (architecture + interaction + plan + comparison) | [Architecture](docs/en/architecture_playback.md), [Interaction](docs/en/architecture_playback_ui.md), [Development plan](docs/en/playback_development_plan.md), [SlimServer comparison](docs/en/playback_compat_matrix.md) |
+| MCP agent control (tools, scopes, Docker, history, recommendations) | [MCP guide](docs/en/mcp.md) |
 | Fork identity / rename scope / upstream sync | [Fork Notes](#fork-notes-roomtone) above |
 | Docs site maintenance | [docs/en/development.md](docs/en/development.md) |
 | JS plugins / plugin registry | [Plugin development guide](docs/en/js-plugin-development-guide.md), [Plugin registry authoring](docs/en/plugin_registry.md), `plugins/toolchain/README.md` |

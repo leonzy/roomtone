@@ -343,6 +343,7 @@ func (m *Manager) ensurePartyEngine(ctx context.Context, p Party) {
 		Latency:         m.deps.Latency,
 		ReplayGain:      m.deps.ReplayGain,
 		Crossfade:       m.deps.Crossfade,
+		OnTrackStarted:  m.deps.OnTrackStarted,
 		OnTrackFinished: m.deps.OnTrackFinished,
 	})
 	m.engines[key] = e

@@ -122,7 +122,8 @@ type ManagerDeps struct {
 	// ReplayGain 每首歌的增益来源；nil 表示不启用。
 	ReplayGain ReplayGainSource
 	// Crossfade 交叉淡化时长；返回 0 表示关闭，支持的 sink 保持连续传输。
-	Crossfade func() time.Duration
+	Crossfade      func() time.Duration
+	OnTrackStarted func(Track)
 	// OnTrackFinished reports a natural completion once per engine, not per speaker.
 	// Pause, seek, stop and decoder failures must not invoke it.
 	OnTrackFinished func(Track)
@@ -1492,6 +1493,7 @@ func (m *Manager) ensureEngine(ctx context.Context, g Group) {
 		Metrics:             m.metrics,
 		ReplayGain:          m.deps.ReplayGain,
 		Crossfade:           m.deps.Crossfade,
+		OnTrackStarted:      m.deps.OnTrackStarted,
 		OnTrackFinished:     m.deps.OnTrackFinished,
 		SleepSongsRemaining: func() int { n, _ := m.SleepSongs(g.ID); return n },
 		OnSongSleep:         func(ctx context.Context, at time.Time) bool { return m.completeSleepSong(ctx, g.ID, at) },
