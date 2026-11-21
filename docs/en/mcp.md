@@ -26,6 +26,10 @@ Available scopes:
 
 If `MCP_SCOPES` is unset, it defaults to `read` only.
 
+### Settings Page
+
+The Lynx client's **Settings → MCP Agent** page provides a runtime switch, scopes, token regeneration, and copyable agent configuration. For deployments not managed by environment variables, settings are stored in the database `mcp` entry and take effect immediately without a restart. Instances managed by `MCP_ENABLED` / `MCP_TOKEN` show a read-only notice and must be changed in the deployment configuration.
+
 ## Tools
 
 - Library: `search_songs`, `get_songs`, `list_playlists`, `get_playlist_songs`, `update_song_tags`.

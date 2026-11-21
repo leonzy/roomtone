@@ -26,6 +26,10 @@ Scope 可单独授予：
 
 未设置 `MCP_SCOPES` 时默认仅 `read`。
 
+### 设置页配置
+
+Lynx 客户端的「设置 → MCP Agent」提供运行时开关、权限范围、Token 重建及 Agent 配置复制。非环境变量部署的设置保存在数据库 `mcp` 中，修改后立即生效，无需重启。若实例由 `MCP_ENABLED` / `MCP_TOKEN` 管理，页面显示只读提示，需修改部署配置。
+
 ## 工具
 
 - 曲库：`search_songs`、`get_songs`、`list_playlists`、`get_playlist_songs`、`update_song_tags`。

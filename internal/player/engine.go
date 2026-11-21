@@ -834,6 +834,10 @@ func (e *Engine) pushMetadata(ctx context.Context) {
 func (e *Engine) markHistoryStarted(songID int64) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	return e.markHistoryStartedLocked(songID)
+}
+
+func (e *Engine) markHistoryStartedLocked(songID int64) bool {
 	key := fmt.Sprintf("%d:%d", e.queue.Current(), songID)
 	if e.historyKey == key {
 		return false
@@ -1348,7 +1352,7 @@ func (e *Engine) runDelegated(ctx context.Context, startAt time.Duration) {
 		_ = e.transport.MarkBuffering()
 		_ = e.transport.Play()
 		_ = e.queue.MarkStarted(track.SongID)
-		historyStarted := e.markHistoryStarted(track.SongID)
+		historyStarted := e.markHistoryStartedLocked(track.SongID)
 		e.mu.Unlock()
 		e.persistState()
 		e.emitState()
@@ -1476,7 +1480,7 @@ func (e *Engine) MirrorReport(songID int64, state string, position time.Duration
 		return
 	}
 	started := state == "playing" && e.queue.MarkStarted(songID)
-	historyStarted := state == "playing" && e.markHistoryStarted(songID)
+	historyStarted := state == "playing" && e.markHistoryStartedLocked(songID)
 	changed := e.transport.State() != prev
 	e.mu.Unlock()
 	if historyStarted && e.deps.OnTrackStarted != nil {

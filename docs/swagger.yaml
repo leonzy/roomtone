@@ -474,6 +474,35 @@ definitions:
       player_id:
         type: string
     type: object
+  handlers.mcpSettingsResponse:
+    properties:
+      config_example:
+        additionalProperties: {}
+        type: object
+      enabled:
+        type: boolean
+      endpoint:
+        type: string
+      managed_by_environment:
+        type: boolean
+      scopes:
+        items:
+          type: string
+        type: array
+      token:
+        type: string
+    type: object
+  handlers.mcpSettingsUpdateRequest:
+    properties:
+      enabled:
+        type: boolean
+      regenerate_token:
+        type: boolean
+      scopes:
+        items:
+          type: string
+        type: array
+    type: object
   handlers.memberOrderRequest:
     properties:
       player_ids:
@@ -1726,12 +1755,16 @@ definitions:
     - raop
     - dlna
     - raat
+    - local
+    - raop
+    - raat
+    - dlna
     type: string
     x-enum-varnames:
     - KindLocal
     - KindRAOP
-    - KindDLNA
     - KindRAAT
+    - KindDLNA
   player.Member:
     properties:
       channel_mode:
@@ -7455,6 +7488,58 @@ paths:
       security:
       - BearerAuth: []
       summary: 更新日志等级
+      tags:
+      - 设置
+  /settings/mcp:
+    get:
+      description: 返回启用状态、权限、Token、端点及可复制的 Agent 配置。仅认证管理员可读取；managed_by_environment=true
+        时由 Docker 环境变量管理，不能通过 PUT 修改。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: MCP 设置与配置示例
+          schema:
+            $ref: '#/definitions/handlers.mcpSettingsResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取 MCP 设置
+      tags:
+      - 设置
+    put:
+      consumes:
+      - application/json
+      description: 支持运行时启用/停用、修改 scopes 和重新生成 Token，无需重启。scopes 支持 read/playback/speakers/metadata/automation；空数组表示保留原值。regenerate_token=true
+        会使旧 Token 立即失效。
+      parameters:
+      - description: MCP 更新内容
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.mcpSettingsUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的设置与配置示例
+          schema:
+            $ref: '#/definitions/handlers.mcpSettingsResponse'
+        "400":
+          description: 权限或配置无效
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 配置由环境变量管理
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新 MCP 设置
       tags:
       - 设置
   /settings/music-path:

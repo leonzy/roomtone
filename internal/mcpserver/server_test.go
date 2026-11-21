@@ -31,7 +31,7 @@ func (t bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func TestMCPAuthenticationAndProtocol(t *testing.T) {
-	server, err := New(Config{Token: "secret", Scopes: []string{ScopeRead}}, Deps{})
+	server, err := New(Config{Enabled: true, Token: "secret", Scopes: []string{ScopeRead}}, Deps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestMCPAuthenticationAndProtocol(t *testing.T) {
 }
 
 func TestMCPRejectsCrossOrigin(t *testing.T) {
-	server, err := New(Config{Token: "secret", Scopes: []string{ScopeRead}}, Deps{})
+	server, err := New(Config{Enabled: true, Token: "secret", Scopes: []string{ScopeRead}}, Deps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestMCPZoneAndVolumeControl(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	server, err := New(Config{Token: "secret", Scopes: []string{ScopeRead, ScopeSpeakers}}, Deps{Players: manager})
+	server, err := New(Config{Enabled: true, Token: "secret", Scopes: []string{ScopeRead, ScopeSpeakers}}, Deps{Players: manager})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,5 +131,34 @@ func TestMCPZoneAndVolumeControl(t *testing.T) {
 	living, _ := manager.GetPlayer("living")
 	if living.Volume != 80 {
 		t.Fatalf("max_volume must clamp actual volume to 80, got %d", living.Volume)
+	}
+}
+
+func TestMCPRuntimeEnableDisable(t *testing.T) {
+	server, err := New(Config{Scopes: []string{ScopeRead}}, Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("disabled MCP returned %d", response.Code)
+	}
+	if err := server.UpdateConfig(Config{Enabled: true, Token: "secret", Scopes: []string{ScopeRead}}); err != nil {
+		t.Fatal(err)
+	}
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("enabled MCP should require token, got %d", response.Code)
+	}
+	if err := server.UpdateConfig(Config{Token: "secret", Scopes: []string{ScopeRead}}); err != nil {
+		t.Fatal(err)
+	}
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("disabled MCP returned %d", response.Code)
 	}
 }

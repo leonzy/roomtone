@@ -7766,6 +7766,86 @@ const docTemplate = `{
                 }
             }
         },
+        "/settings/mcp": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回启用状态、权限、Token、端点及可复制的 Agent 配置。仅认证管理员可读取；managed_by_environment=true 时由 Docker 环境变量管理，不能通过 PUT 修改。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "获取 MCP 设置",
+                "responses": {
+                    "200": {
+                        "description": "MCP 设置与配置示例",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.mcpSettingsResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "支持运行时启用/停用、修改 scopes 和重新生成 Token，无需重启。scopes 支持 read/playback/speakers/metadata/automation；空数组表示保留原值。regenerate_token=true 会使旧 Token 立即失效。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "更新 MCP 设置",
+                "parameters": [
+                    {
+                        "description": "MCP 更新内容",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.mcpSettingsUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的设置与配置示例",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.mcpSettingsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "权限或配置无效",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "配置由环境变量管理",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/settings/music-path": {
             "get": {
                 "security": [
@@ -13926,6 +14006,50 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.mcpSettingsResponse": {
+            "type": "object",
+            "properties": {
+                "config_example": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "endpoint": {
+                    "type": "string"
+                },
+                "managed_by_environment": {
+                    "type": "boolean"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.mcpSettingsUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "regenerate_token": {
+                    "type": "boolean"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "handlers.memberOrderRequest": {
             "type": "object",
             "properties": {
@@ -15672,13 +15796,17 @@ const docTemplate = `{
                 "local",
                 "raop",
                 "dlna",
-                "raat"
+                "raat",
+                "local",
+                "raop",
+                "raat",
+                "dlna"
             ],
             "x-enum-varnames": [
                 "KindLocal",
                 "KindRAOP",
-                "KindDLNA",
-                "KindRAAT"
+                "KindRAAT",
+                "KindDLNA"
             ]
         },
         "player.Member": {

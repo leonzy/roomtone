@@ -5,6 +5,7 @@ import (
 
 	"songloft/internal/handlers"
 	"songloft/internal/mcpserver"
+	"songloft/internal/models"
 	"songloft/internal/player"
 )
 
@@ -21,7 +22,16 @@ func (a mcpSpeakerAdmin) ReconnectSpeaker(ctx context.Context, id string) (playe
 }
 
 func (a *App) initMCP() error {
-	server, err := mcpserver.New(mcpserver.Config{Token: a.config.MCPToken, Scopes: a.config.MCPScopes}, mcpserver.Deps{
+	settings := models.MCPSettings{Scopes: []string{mcpserver.ScopeRead}}
+	_ = a.configService.GetJSON("mcp", &settings)
+	if a.config.MCPEnabled {
+		settings.Enabled = true
+		settings.Scopes = a.config.MCPScopes
+	}
+	if a.config.MCPToken != "" {
+		settings.Token = a.config.MCPToken
+	}
+	server, err := mcpserver.New(mcpserver.Config{Enabled: settings.Enabled, Token: settings.Token, Scopes: settings.Scopes}, mcpserver.Deps{
 		Songs: a.songService, Playlists: a.playlistService, Players: a.playerManager,
 		Discovery: a.playerDiscovery, SpeakerAdmin: mcpSpeakerAdmin{handler: a.playbackHandler},
 		Alarms: a.db.AlarmRepository(), TriggerAlarm: a.alarmRunner.Trigger, Configs: a.configService,
@@ -32,4 +42,13 @@ func (a *App) initMCP() error {
 	}
 	a.mcpServer = server
 	return nil
+}
+
+func (a *App) currentMCPSettings() models.MCPSettings {
+	cfg := a.mcpServer.CurrentConfig()
+	return models.MCPSettings{Enabled: cfg.Enabled, Token: cfg.Token, Scopes: cfg.Scopes}
+}
+
+func (a *App) applyMCPSettings(settings models.MCPSettings) error {
+	return a.mcpServer.UpdateConfig(mcpserver.Config{Enabled: settings.Enabled, Token: settings.Token, Scopes: settings.Scopes})
 }

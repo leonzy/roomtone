@@ -1,6 +1,9 @@
 package player
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestHistoryStartIndependentOfPersistedQueueProgress(t *testing.T) {
 	e := NewEngine("group", "living", EngineDeps{})
@@ -26,5 +29,20 @@ func TestHistoryStartIndependentOfPersistedQueueProgress(t *testing.T) {
 	e.Stop()
 	if !e.markHistoryStarted(42) {
 		t.Fatal("a new playback session after stop must emit")
+	}
+}
+
+func TestMirrorReportHistoryDoesNotDeadlock(t *testing.T) {
+	e := NewEngine("group", "living", EngineDeps{})
+	e.queue.Replace([]int64{42}, 0)
+	done := make(chan struct{})
+	go func() {
+		e.MirrorReport(42, "playing", 0)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("MirrorReport must not deadlock while recording history")
 	}
 }

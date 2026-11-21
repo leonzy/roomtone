@@ -1,5 +1,9 @@
 # Development Lessons
 
+## MCP-002: Held-lock history paths must use the locked inner implementation
+
+On 2026-11-21, the first history-deduplication fix caused DLNA transfer timeouts on leonFN and piled up device and playback requests; goroutines fell from 271 to 43 after the fix. `MirrorReport` and `runDelegated` already held `Engine.mu` and self-deadlocked by calling the locking `markHistoryStarted`. Keep the locking wrapper for unlocked callers and call `markHistoryStartedLocked` on held-lock paths; a bounded-completion `MirrorReport` regression covers this. A healthy container or resumed playback alone does not validate a concurrency fix: rerun the original transfer and check for request pileups. Seen once.
+
 ## MCP-001: Listening-event deduplication must not reuse persisted queue progress
 
 2026-11-21: Resuming a previously started queue on leonFN played and paused correctly but produced no listening event. Persisted queue started indices implement resume progress and may already be true. Deduplicate listening events with a process-local queue-occurrence key and reset it after stop. Seeks do not duplicate events, while replay after stop and another occurrence of the same song do. Regression coverage includes a pre-marked queue, same-item deduplication, duplicate-song advancement and replay after stop. The final leonFN image passed real resume, pause and history-query verification, restoring the original 15-item queue and volume 29 afterward. Seen once.

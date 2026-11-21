@@ -525,10 +525,8 @@ func (a *App) Init() error {
 
 	// 播放控制与音箱输出（失败只让该功能不可用，不阻塞启动）
 	a.initPlayback()
-	if a.config.MCPEnabled {
-		if err := a.initMCP(); err != nil {
-			return fmt.Errorf("初始化 MCP 服务失败: %w", err)
-		}
+	if err := a.initMCP(); err != nil {
+		return fmt.Errorf("初始化 MCP 服务失败: %w", err)
 	}
 
 	a.setupRouter()

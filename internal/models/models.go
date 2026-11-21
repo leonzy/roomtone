@@ -584,6 +584,13 @@ type TokenInfo struct {
 	RevokedReason string    `json:"revoked_reason,omitempty" example:"用户主动登出"`              // 撤销原因
 }
 
+// MCPSettings MCP 运行时配置。Token 只在管理员设置接口中返回，不写访问日志。
+type MCPSettings struct {
+	Enabled bool     `json:"enabled"`
+	Token   string   `json:"token"`
+	Scopes  []string `json:"scopes"`
+}
+
 // AuthToken 认证令牌结构体
 type AuthToken struct {
 	ID            int64     `json:"id" example:"1"`                                         // 记录 ID

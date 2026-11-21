@@ -70,6 +70,8 @@ func (a *App) setupAPIV1Router() {
 	playHistoryHandler := handlers.NewPlayHistoryHandler(a.playHistoryService)
 	themePackHandler := handlers.NewThemePackHandler(a.themePackService, a.configService)
 	configHandler := handlers.NewConfigHandler(a.configService, a.db.JSPluginRepository())
+	mcpSettingsHandler := handlers.NewMCPSettingsHandler(a.configService, a.currentMCPSettings, a.applyMCPSettings,
+		a.config.MCPEnabled || a.config.MCPToken != "", a.config.BasePath)
 	scanHandler := handlers.NewScanHandler(a.songService, a.scanner, a.configService)
 	fingerprintService := services.NewFingerprintService(a.db.SongRepository())
 	scanHandler.SetFingerprintService(fingerprintService)
@@ -297,6 +299,8 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/alarms/{id}", al.UpdateAlarm)
 			r.Delete("/alarms/{id}", al.DeleteAlarm)
 			r.Post("/alarms/{id}/test", al.TriggerAlarm)
+			r.Get("/settings/mcp", mcpSettingsHandler.GetMCPSettings)
+			r.Put("/settings/mcp", mcpSettingsHandler.UpdateMCPSettings)
 			r.Get("/settings/player-discovery", configHandler.GetPlayerDiscoverySetting)
 			r.Put("/settings/player-discovery", configHandler.UpdatePlayerDiscoverySetting)
 			r.Get("/settings/player-output-allowlist", configHandler.GetPlayerOutputAllowlistSetting)

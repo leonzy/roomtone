@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
+	"sync"
 
 	"songloft/internal/database"
 	"songloft/internal/player"
@@ -29,8 +31,9 @@ const (
 )
 
 type Config struct {
-	Token  string
-	Scopes []string
+	Enabled bool
+	Token   string
+	Scopes  []string
 }
 
 type DiscoveryRunner interface {
@@ -52,32 +55,21 @@ type Deps struct {
 }
 
 type Server struct {
-	deps    Deps
-	token   string
-	scopes  map[string]bool
-	mcp     *sdkmcp.Server
-	handler http.Handler
+	deps     Deps
+	configMu sync.RWMutex
+	enabled  bool
+	token    string
+	scopes   map[string]bool
+	mcp      *sdkmcp.Server
+	handler  http.Handler
 }
 
 func New(cfg Config, deps Deps) (*Server, error) {
-	if cfg.Token == "" {
-		return nil, errors.New("MCP_TOKEN 不能为空")
+	scopes, err := validateConfig(cfg)
+	if err != nil {
+		return nil, err
 	}
-	scopes := make(map[string]bool)
-	for _, scope := range cfg.Scopes {
-		scope = strings.TrimSpace(scope)
-		switch scope {
-		case ScopeRead, ScopePlayback, ScopeSpeakers, ScopeMetadata, ScopeAutomation:
-			scopes[scope] = true
-		case "":
-		default:
-			return nil, fmt.Errorf("未知 MCP scope %q", scope)
-		}
-	}
-	if len(scopes) == 0 {
-		return nil, errors.New("MCP_SCOPES 至少需要一个权限")
-	}
-	s := &Server{deps: deps, token: cfg.Token, scopes: scopes}
+	s := &Server{deps: deps, enabled: cfg.Enabled, token: cfg.Token, scopes: scopes}
 	s.mcp = sdkmcp.NewServer(&sdkmcp.Implementation{
 		Name: "roomtone", Version: version.GetVersion(),
 	}, &sdkmcp.ServerOptions{Instructions: "控制 Roomtone 曲库、播放和音箱。自然语言指代由 Agent 解析为明确 ID。搜索或读取状态后再操作；推荐不会自动播放；修改工具需要对应 scope。"})
@@ -92,6 +84,49 @@ func New(cfg Config, deps Deps) (*Server, error) {
 	return s, nil
 }
 
+func validateConfig(cfg Config) (map[string]bool, error) {
+	if cfg.Enabled && cfg.Token == "" {
+		return nil, errors.New("启用 MCP 时必须设置 Token")
+	}
+	scopes := make(map[string]bool)
+	for _, scope := range cfg.Scopes {
+		scope = strings.TrimSpace(scope)
+		switch scope {
+		case ScopeRead, ScopePlayback, ScopeSpeakers, ScopeMetadata, ScopeAutomation:
+			scopes[scope] = true
+		case "":
+		default:
+			return nil, fmt.Errorf("未知 MCP scope %q", scope)
+		}
+	}
+	if len(scopes) == 0 {
+		return nil, errors.New("MCP 至少需要一个权限")
+	}
+	return scopes, nil
+}
+
+func (s *Server) UpdateConfig(cfg Config) error {
+	scopes, err := validateConfig(cfg)
+	if err != nil {
+		return err
+	}
+	s.configMu.Lock()
+	s.enabled, s.token, s.scopes = cfg.Enabled, cfg.Token, scopes
+	s.configMu.Unlock()
+	return nil
+}
+
+func (s *Server) CurrentConfig() Config {
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
+	scopes := make([]string, 0, len(s.scopes))
+	for scope := range s.scopes {
+		scopes = append(scopes, scope)
+	}
+	sort.Strings(scopes)
+	return Config{Enabled: s.enabled, Token: s.token, Scopes: scopes}
+}
+
 // ServeHTTP 处理 MCP Streamable HTTP 请求。
 // @Summary MCP Agent 控制入口
 // @Description 使用 MCP Streamable HTTP 提供曲库、播放、音箱、分组、自动化、历史、推荐与元数据工具。协议请求和响应 schema 由 MCP SDK 动态协商，不由 OpenAPI 静态描述。需要独立 MCP Bearer Token，权限由 MCP_SCOPES 控制。
@@ -103,13 +138,18 @@ func New(cfg Config, deps Deps) (*Server, error) {
 // @Security BearerAuth
 // @Router /mcp [post]
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	cfg := s.CurrentConfig()
+	if !cfg.Enabled {
+		http.Error(w, "MCP is disabled", http.StatusServiceUnavailable)
+		return
+	}
 	if !sameOrigin(r) {
 		http.Error(w, "cross-origin MCP request rejected", http.StatusForbidden)
 		return
 	}
 	auth := r.Header.Get("Authorization")
 	token, ok := strings.CutPrefix(auth, "Bearer ")
-	if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) != 1 {
+	if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(cfg.Token)) != 1 {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="roomtone-mcp"`)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -132,7 +172,13 @@ func sameOrigin(r *http.Request) bool {
 type scopeKey struct{}
 
 func (s *Server) withScopes(ctx context.Context) context.Context {
-	return context.WithValue(ctx, scopeKey{}, s.scopes)
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
+	scopes := make(map[string]bool, len(s.scopes))
+	for scope := range s.scopes {
+		scopes[scope] = true
+	}
+	return context.WithValue(ctx, scopeKey{}, scopes)
 }
 
 func scopesFrom(ctx context.Context) map[string]bool {

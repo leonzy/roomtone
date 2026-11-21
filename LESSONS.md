@@ -1,5 +1,11 @@
 # 开发经验
 
+## MCP-002：持锁路径调用历史记录必须复用内层实现
+
+2026-11-21：leonFN 首次修复历史去重后，DLNA 转移请求超时，设备列表和播放状态请求随之堆积，goroutine 从 271 降至修复后的 43。`MirrorReport` 和 `runDelegated` 已持有 `Engine.mu`，再调用带锁的 `markHistoryStarted` 形成自死锁。锁包装只供未持锁调用方使用，持锁路径调用 `markHistoryStartedLocked`；新增 `MirrorReport` 有界完成回归。不能只凭容器健康或播放恢复判断并发修复完成，还要复测原转移请求并检查请求是否积压。Seen 1×。
+
+English: On 2026-11-21, the first history-deduplication fix caused DLNA transfer timeouts on leonFN and piled up device and playback requests; goroutines fell from 271 to 43 after the fix. `MirrorReport` and `runDelegated` already held `Engine.mu` and self-deadlocked by calling the locking `markHistoryStarted`. Keep the locking wrapper for unlocked callers and call `markHistoryStartedLocked` on held-lock paths; a bounded-completion `MirrorReport` regression covers this. A healthy container or resumed playback alone does not validate a concurrency fix: rerun the original transfer and check for request pileups. Seen once.
+
 ## MCP-001：收听事件去重不能复用持久化队列进度
 
 2026-11-21：leonFN 实际恢复一个历史上已标记 started 的队列时，播放和暂停正常，但新增 listening_events 没有记录。队列 started_indices 用于跨重启续播，可能早已为 true；新收听事件必须在当前进程内按队列出现位置独立去重，并在停止后重置，不能用持久化标记兼任会话事件闸门。同一曲目 seek/恢复不重复记录，停止后重播及重复歌曲的另一队列出现仍记录。回归覆盖预标记 started、同项去重、重复歌曲下一项和停止后重播；leonFN 最终镜像实测恢复播放、暂停与历史查询通过，测试后恢复原 15 项队列及音量 29。Seen 1×。
