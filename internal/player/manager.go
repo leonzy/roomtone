@@ -448,9 +448,9 @@ func (m *Manager) UpdatePlayer(ctx context.Context, id string, upd PlayerUpdate)
 	p = &copy
 	if upd.DLNASyncDelayMs != nil {
 		value := *upd.DLNASyncDelayMs
-		if p.Kind != KindDLNA || value < 0 || value > 2000 {
+		if p.Kind != KindDLNA || value < -2000 || value > 2000 {
 			m.mu.Unlock()
-			return Player{}, invalidArg("dlna_sync_delay_ms 只适用于 DLNA，范围为 0-2000 毫秒")
+			return Player{}, invalidArg("dlna_sync_delay_ms 只适用于 DLNA，范围为 -2000 到 2000 毫秒")
 		}
 		p.DLNASyncDelayMs = value
 	}
@@ -1163,17 +1163,7 @@ func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, de
 		m.mu.Unlock()
 		return GroupView{}, ErrGroupNotFound
 	}
-	if len(channelMode) > 0 && channelMode[0] != "" && channelMode[0] != "stereo" {
-		p := m.players[playerID]
-		if p == nil {
-			m.mu.Unlock()
-			return GroupView{}, ErrPlayerNotFound
-		}
-		if p.Kind == KindDLNA || p.Kind == KindLocal {
-			m.mu.Unlock()
-			return GroupView{}, invalidArg("该设备暂不支持声道分配，请使用 AirPlay 或 RAAT 音箱")
-		}
-	}
+	channelChanged := false
 	found := false
 	for i := range g.Members {
 		if g.Members[i].PlayerID == playerID {
@@ -1193,6 +1183,7 @@ func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, de
 			}
 			g.Members[i].DelayMs = delayMs
 			g.Members[i].VolumeOffset = volumeOffset
+			channelChanged = g.Members[i].ChannelMode != member.ChannelMode
 			g.Members[i].ChannelMode = member.ChannelMode
 			found = true
 		}
@@ -1204,6 +1195,19 @@ func (m *Manager) UpdateMember(ctx context.Context, groupID, playerID string, de
 	// 延迟补偿要立刻生效：重建目标时把新 Delay 带进 sink.Target。
 	if err := m.rebuildSinks(ctx, groupID); err != nil {
 		return GroupView{}, fmt.Errorf("calibration saved but applying failed: %w", err)
+	}
+	if channelChanged {
+		m.mu.RLock()
+		e := m.engines["group:"+groupID]
+		m.mu.RUnlock()
+		if e != nil {
+			status := e.Status()
+			if status.State == StatePlaying || status.State == StateBuffering || status.State == StateLoading {
+				if err := e.Seek(ctx, time.Duration(status.Position*float64(time.Second))); err != nil {
+					return GroupView{}, fmt.Errorf("channel saved but applying failed: %w", err)
+				}
+			}
+		}
 	}
 	if m.deps.Bus != nil {
 		m.deps.Bus.Publish(Event{Type: EventMemberChanged, GroupID: groupID, PlayerID: playerID, Action: "update"})
@@ -1556,6 +1560,9 @@ func (m *Manager) rebuildSinks(ctx context.Context, groupID string) error {
 		if !ok {
 			// 但必须交给引擎：服务端要给它下发 load/play 指令，否则
 			// 客户端永远收不到播放命令，组里只有它时还会误报 no sinks。
+			if setter, ok := s.(interface{ SetChannelMode(string) }); ok {
+				setter.SetChannelMode(memberChannel(members, p.ID))
+			}
 			controls = append(controls, s)
 			controlDelays[p.ID] = delays[p.ID]
 			continue

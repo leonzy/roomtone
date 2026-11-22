@@ -21,6 +21,7 @@ var ErrRadioTranscodeUnavailable = errors.New("radio transcode unavailable")
 
 // RadioTranscodeOptions 电台实时转码参数。
 type RadioTranscodeOptions struct {
+	ChannelMode string
 	UpstreamURL string // 上游电台 URL，直接交给 ffmpeg 拉取（支持 HLS .m3u8 与裸 ICY/HTTP 流）
 	Format      string // 目标格式（已标准化：mp3/ogg/m4a/flac/wav）
 	Bitrate     int    // 目标码率 kbps，0 表示编码器默认
@@ -66,6 +67,11 @@ func (c *CacheService) StreamTranscodedRadio(ctx context.Context, w io.Writer, o
 		args = append(args, "-http_proxy", proxyURL)
 	}
 	args = append(args, "-i", opts.UpstreamURL, "-vn", "-codec:a", encoder)
+	if filter, err := ChannelRouteFilter(opts.ChannelMode); err != nil {
+		return fmt.Errorf("%w: %v", ErrRadioTranscodeUnavailable, err)
+	} else if filter != "" {
+		args = append(args, "-af", filter)
+	}
 	args = append(args, qualityArgs...)
 	args = append(args, "-f", muxer, "pipe:1")
 

@@ -9,7 +9,7 @@ import "time"
 func (m *Manager) groupDelaysLocked(g *Group) map[string]time.Duration {
 	result := make(map[string]time.Duration)
 	active := make([]*Player, 0, len(g.Members))
-	maxDelay, hasDLNA := 0, false
+	maxDelay, hasDLNA := -2000, false
 	for _, member := range g.Members {
 		p := m.players[member.PlayerID]
 		if p == nil || p.Standby {
@@ -19,6 +19,8 @@ func (m *Manager) groupDelaysLocked(g *Group) map[string]time.Duration {
 		if p.Kind == KindDLNA {
 			hasDLNA = true
 			maxDelay = max(maxDelay, p.DLNASyncDelayMs)
+		} else {
+			maxDelay = max(maxDelay, 0)
 		}
 	}
 	if len(active) < 2 {

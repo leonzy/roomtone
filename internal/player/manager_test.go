@@ -50,7 +50,7 @@ func TestDLNADeviceCalibrationRestoreRediscoveryAndSaveFailure(t *testing.T) {
 	if err := m.RegisterPlayer(ctx, p); err != nil {
 		t.Fatal(err)
 	}
-	value := 1000
+	value := -500
 	if _, err := m.UpdatePlayer(ctx, "d", player.PlayerUpdate{DLNASyncDelayMs: &value}); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestDLNADeviceCalibrationRestoreRediscoveryAndSaveFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := m.GetPlayer("d")
-	if got.DLNASyncDelayMs != 1000 {
+	if got.DLNASyncDelayMs != -500 {
 		t.Fatal("rediscovery reset calibration")
 	}
 	restored := player.NewManager(player.ManagerDeps{Store: store})
@@ -66,7 +66,7 @@ func TestDLNADeviceCalibrationRestoreRediscoveryAndSaveFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ = restored.GetPlayer("d")
-	if got.DLNASyncDelayMs != 1000 {
+	if got.DLNASyncDelayMs != -500 {
 		t.Fatal("restore reset calibration")
 	}
 	store.fail = true
@@ -75,11 +75,11 @@ func TestDLNADeviceCalibrationRestoreRediscoveryAndSaveFailure(t *testing.T) {
 		t.Fatal("save failure hidden")
 	}
 	got, _ = m.GetPlayer("d")
-	if got.DLNASyncDelayMs != 1000 {
+	if got.DLNASyncDelayMs != -500 {
 		t.Fatal("failed save mutated calibration")
 	}
 	store.fail = false
-	for _, bad := range []int{-1, 2001} {
+	for _, bad := range []int{-2001, 2001} {
 		if _, err := m.UpdatePlayer(ctx, "d", player.PlayerUpdate{DLNASyncDelayMs: &bad}); err == nil {
 			t.Fatalf("accepted %d", bad)
 		}

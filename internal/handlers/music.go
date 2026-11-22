@@ -1461,6 +1461,7 @@ func (h *SongHandler) UpdateSongLyrics(w http.ResponseWriter, r *http.Request) {
 // @Produce application/octet-stream
 // @Param id path int true "歌曲 ID"
 // @Param format query string false "目标转码格式（如 mp3、ogg），用于平台兼容性转码"
+// @Param channel_mode query string false "组内设备声道：stereo（默认）、left、right、mono 或离散环绕声道。只处理响应音频，不改源文件"
 // @Param quality query string false "目标音质码率（128/192/320），不传或不合法值表示原始音质。指定后默认转码为 mp3（除非同时指定了 format）"
 // @Param track query int false "抽取指定音频流播放（audio-relative 0-based，对应 ffmpeg -map 0:a:N）。用于 Web 端双音轨（原唱/伴奏 mka）切轨：后端抽出单条音轨，AAC 编码时无损 remux 成 m4a、否则转 mp3。缺省/负数=不抽轨；与 media=video 互斥"
 // @Param prefetch query string false "传 1 时异步预热缓存/转码，立即返回 202"
@@ -1502,7 +1503,22 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mode := dlnaChannel(r)
+	if mode == "" {
+		mode = r.URL.Query().Get("channel_mode")
+	}
+	if _, err := services.ChannelRouteFilter(mode); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid channel mode", err)
+		return
+	}
+	if mode == "stereo" {
+		mode = ""
+	}
+	r = WithDLNAChannel(r, mode)
 	targetFormat := r.URL.Query().Get("format")
+	if mode != "" && targetFormat == "" {
+		targetFormat = "mp3"
+	}
 	bitrate := services.ParseBitrate(r.URL.Query().Get("quality"))
 	if bitrate > 0 && targetFormat == "" {
 		targetFormat = "mp3"
@@ -1581,6 +1597,7 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 
 	opts := servePlayOptions{
 		dlna:         r.Context().Value(dlnaPlaybackKey{}) == true,
+		channelMode:  dlnaChannel(r),
 		targetFormat: targetFormat,
 		bitrate:      bitrate,
 		videoIntent:  videoIntent,
@@ -1606,6 +1623,7 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 // servePlayOptions 是 serveLocal / serveRemote / serveCachedFile 共用的播放参数。
 // 收成结构体而非位置参数：这些字段里相邻的 int/bool/float64 用位置传参极易调错且编译器不报。
 type servePlayOptions struct {
+	channelMode  string
 	dlna         bool    // renderer requires complete content length and byte seeking
 	targetFormat string  // 目标转码格式（format 参数，已含 quality/normalize 推导出的默认值）
 	bitrate      int     // 目标码率 kbps，0=原始音质
@@ -2246,7 +2264,7 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 		sk := playactivity.SessionFromContext(r.Context())
 		trackedCtx, release := h.trackActivity(tcCtx, sk, song.ID, playactivity.CatTranscode)
 		defer release()
-		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize)
+		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize, opts.channelMode)
 		if err != nil {
 			slog.Warn("CUE track extraction failed", "songId", song.ID, "error", err)
 			respondError(w, http.StatusInternalServerError, "CUE track extraction failed", nil)
@@ -2264,21 +2282,21 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 		sk := playactivity.SessionFromContext(r.Context())
 		trackedCtx, release := h.trackActivity(tcCtx, sk, song.ID, playactivity.CatTranscode)
 		defer release()
-		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, trackIndex, normalize)
+		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, trackIndex, normalize, opts.channelMode)
 		if err != nil {
 			slog.Warn("track extraction failed, serving original", "songId", song.ID, "trackIndex", trackIndex, "error", err)
-			if opts.dlna {
+			if opts.dlna || opts.channelMode != "" {
 				respondError(w, http.StatusBadGateway, "DLNA track extraction failed", err)
 				return
 			}
 		} else {
 			srcPath = path
 		}
-	} else if services.NeedsTranscodeForServe(song, srcPath, targetFormat) || bitrate > 0 || normalize {
+	} else if services.NeedsTranscodeForServe(song, srcPath, targetFormat) || bitrate > 0 || normalize || opts.channelMode != "" {
 		// 转码产物还没落盘时先试边转边发，避免整首转码把这个请求挂住数秒到 20+ 秒
 		// （无损转 mp3：songloft-org/songloft#442；整首 loudnorm：songloft-plugin-miot#61）。
 		// 它内部已把 seek 一起做掉，接管成功就不再走下面的 trySeekStream。
-		if h.tryLiveTranscodeStream(w, r, song, srcPath, opts) {
+		if opts.channelMode == "" && h.tryLiveTranscodeStream(w, r, song, srcPath, opts) {
 			return
 		}
 		tcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -2286,10 +2304,10 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 		sk := playactivity.SessionFromContext(r.Context())
 		trackedCtx, release := h.trackActivity(tcCtx, sk, song.ID, playactivity.CatTranscode)
 		defer release()
-		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize)
+		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize, opts.channelMode)
 		if err != nil {
 			slog.Warn("transcode failed, serving original", "songId", song.ID, "format", targetFormat, "bitrate", bitrate, "error", err)
-			if opts.dlna {
+			if opts.dlna || opts.channelMode != "" {
 				respondError(w, http.StatusBadGateway, "DLNA transcode failed", err)
 				return
 			}
@@ -2377,7 +2395,11 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 	// 浏览器/桌面自带解码能力，不传此参数以保留原码最高音质。
 	// 与 format 参数刻意分离：format 面向本地/网络歌曲的通用转码，电台侧一律忽略 format，
 	// 只认 radio_transcode，避免「统一转 MP3」开关误连带影响电台。
-	if transcodeFmt := services.NormalizeFormat(r.URL.Query().Get("radio_transcode")); transcodeFmt != "" && h.cacheService != nil {
+	transcodeFmt := services.NormalizeFormat(r.URL.Query().Get("radio_transcode"))
+	if dlnaChannel(r) != "" && transcodeFmt == "" {
+		transcodeFmt = "mp3"
+	}
+	if transcodeFmt != "" && h.cacheService != nil {
 		w.Header().Set("Content-Type", radioTranscodeContentType(transcodeFmt))
 		w.Header().Set("Cache-Control", "no-cache, no-store")
 		var referer string
@@ -2386,11 +2408,16 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 		}
 		err := h.cacheService.StreamTranscodedRadio(r.Context(), w, services.RadioTranscodeOptions{
 			UpstreamURL: song.URL,
+			ChannelMode: dlnaChannel(r),
 			Format:      transcodeFmt,
 			UserAgent:   radioStreamUserAgent,
 			Referer:     referer,
 		})
 		if err == nil {
+			return
+		}
+		if dlnaChannel(r) != "" && errors.Is(err, services.ErrRadioTranscodeUnavailable) {
+			respondError(w, http.StatusBadGateway, "DLNA channel routing failed", err)
 			return
 		}
 		if !errors.Is(err, services.ErrRadioTranscodeUnavailable) {
@@ -2646,9 +2673,9 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 // serveCachedFile 从缓存文件提供服务,支持转码。
 func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, song *models.Song, cachedPath string, opts servePlayOptions) {
 	targetFormat, bitrate, normalize := opts.targetFormat, opts.bitrate, opts.normalize
-	if services.NeedsTranscodeForServe(song, cachedPath, targetFormat) || bitrate > 0 || normalize {
+	if services.NeedsTranscodeForServe(song, cachedPath, targetFormat) || bitrate > 0 || normalize || opts.channelMode != "" {
 		// 同 serveLocal：转码产物未就绪时先边转边发，不让整首转码挂住这个请求。
-		if h.tryLiveTranscodeStream(w, r, song, cachedPath, opts) {
+		if opts.channelMode == "" && h.tryLiveTranscodeStream(w, r, song, cachedPath, opts) {
 			return
 		}
 		sk := playactivity.SessionFromContext(r.Context())
@@ -2656,10 +2683,10 @@ func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, so
 		defer cancel()
 		trackedCtx, releaseTc := h.trackActivity(tcCtx, sk, song.ID, playactivity.CatTranscode)
 		defer releaseTc()
-		path, err := h.cacheService.GetOrTranscode(trackedCtx, cachedPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize)
+		path, err := h.cacheService.GetOrTranscode(trackedCtx, cachedPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize, opts.channelMode)
 		if err != nil {
 			slog.Warn("transcode failed, serving original", "songId", song.ID, "format", targetFormat, "bitrate", bitrate, "error", err)
-			if opts.dlna {
+			if opts.dlna || opts.channelMode != "" {
 				respondError(w, http.StatusBadGateway, "DLNA transcode failed", err)
 				return
 			}

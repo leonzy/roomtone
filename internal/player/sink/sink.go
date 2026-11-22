@@ -162,6 +162,8 @@ type EQSettings struct {
 
 // StreamPlan 下发给 sink 的播放计划。
 type StreamPlan struct {
+	// ChannelMode is an opt-in group member route; empty/stereo preserves the source.
+	ChannelMode string
 	// SampleIndex is the absolute PCM timeline origin, independent of track position.
 	// nil preserves the legacy position-derived origin for external callers.
 	SampleIndex *int64

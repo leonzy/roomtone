@@ -98,3 +98,38 @@ func TestDLNACompleteTranscodeSupportsHeadAndByteRanges(t *testing.T) {
 		t.Fatalf("unsupported source silently served as audio: %d %s", failed.Code, failed.Body.String())
 	}
 }
+
+func TestDLNAChannelHTTPResponseIsRoutedAndSeekable(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "stereo.wav")
+	if out, err := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "aevalsrc=0.25|-0.5:s=44100:d=0.1:c=stereo", "-c:a", "pcm_s16le", src).CombinedOutput(); err != nil {
+		t.Fatalf("fixture %v %s", err, out)
+	}
+	h, repo, _ := newSeekTestHandler(t, ffmpeg)
+	id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, FilePath: src, Format: "wav", Duration: 0.1})
+	paths := map[string][]byte{}
+	for _, mode := range []string{"left", "right", "stereo"} {
+		r := httptest.NewRequest("GET", "/play?format=wav&channel_mode="+mode, nil)
+		route := chi.NewRouteContext()
+		route.URLParams.Add("id", strconv.FormatInt(id, 10))
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, route))
+		w := httptest.NewRecorder()
+		h.GetSongPlay(w, WithDLNAPlayback(r))
+		if w.Code != 200 {
+			t.Fatalf("%s %d %s", mode, w.Code, w.Body.String())
+		}
+		paths[mode] = w.Body.Bytes()
+		r.Header.Set("Range", "bytes=100-199")
+		w = httptest.NewRecorder()
+		h.GetSongPlay(w, WithDLNAPlayback(r))
+		if w.Code != 206 || !bytes.Equal(w.Body.Bytes(), paths[mode][100:200]) {
+			t.Fatalf("range changed routed representation: %s %d", mode, w.Code)
+		}
+	}
+	if bytes.Equal(paths["left"], paths["right"]) || bytes.Equal(paths["left"], paths["stereo"]) {
+		t.Fatal("channel request served original audio")
+	}
+}

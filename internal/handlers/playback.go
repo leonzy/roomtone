@@ -86,7 +86,7 @@ func (h *PlaybackHandler) ListPlayers(w http.ResponseWriter, r *http.Request) {
 
 // UpdatePlayer 更新设备
 // @Summary 更新播放设备配置
-// @Description 修改设备名称、接管行为、音量模式或音量上限。takeover_behavior 只对 local 设备生效：pause（默认，被切走后立即暂停并提示）或 follow（静默转为纯控制器）。volume_mode 支持 device（默认，直接下发设备）/ fixed（固定音量，忽略音量设置）/ dsp（服务端 DSP 音量）；max_volume 为 0-100 的硬上限，调低时当前音量一并钳位。dlna_sync_delay_ms 仅用于 DLNA：0-2000 毫秒，表示相对 AirPlay 的额外出声延迟，组内按最慢成员自动补偿，单独播放不加延迟。未传的字段保持不变。
+// @Description 修改设备名称、接管行为、音量模式或音量上限。takeover_behavior 只对 local 设备生效：pause（默认，被切走后立即暂停并提示）或 follow（静默转为纯控制器）。volume_mode 支持 device（默认，直接下发设备）/ fixed（固定音量，忽略音量设置）/ dsp（服务端 DSP 音量）；max_volume 为 0-100 的硬上限，调低时当前音量一并钳位。dlna_sync_delay_ms 仅用于 DLNA：-2000 到 2000 毫秒，正数表示比 AirPlay 慢，负数表示比 AirPlay 快，组内按最慢成员自动补偿，单独播放不加延迟。未传的字段保持不变。
 // @Tags 播放控制
 // @Accept json
 // @Produce json

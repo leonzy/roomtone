@@ -256,3 +256,23 @@ func TestAlignmentCannotSeekDifferentSongOrUnreadySession(t *testing.T) {
 		t.Fatal("guard still sent SOAP")
 	}
 }
+
+func TestDLNALoadUsesItsOwnChannelRoute(t *testing.T) {
+	renderer := newFakeRenderer(t)
+	var modes []string
+	s := New("d", renderer.device(t), nil, Options{PollInterval: time.Hour, ResolveStream: func(ctx context.Context, plan sink.StreamPlan) (sink.StreamPlan, error) {
+		modes = append(modes, plan.ChannelMode)
+		plan.StreamURL = "http://example.invalid/test.wav"
+		return plan, nil
+	}})
+	defer s.Close()
+	for _, mode := range []string{"right", "center", "stereo"} {
+		s.SetChannelMode(mode)
+		if err := s.Open(context.Background(), sink.StreamPlan{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if strings.Join(modes, ",") != "right,center,stereo" {
+		t.Fatal(modes)
+	}
+}

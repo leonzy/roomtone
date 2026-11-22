@@ -103,3 +103,17 @@ func TestValidateCommandAcceptsEQ(t *testing.T) {
 		t.Fatal("未知指令必须报错")
 	}
 }
+
+func TestLocalLoadIncludesIndependentChannelAndResetsToStereo(t *testing.T) {
+	ctl := &recCtl{}
+	s := New("web", ctl, sink.Caps{})
+	for _, mode := range []string{"left", "right", "stereo"} {
+		s.SetChannelMode(mode)
+		if err := s.Open(context.Background(), sink.StreamPlan{SongID: 1}); err != nil {
+			t.Fatal(err)
+		}
+		if got := ctl.cmds[len(ctl.cmds)-1].ChannelMode; got != mode {
+			t.Fatalf("got %s want %s", got, mode)
+		}
+	}
+}

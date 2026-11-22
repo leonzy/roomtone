@@ -12,6 +12,10 @@ func TestDLNAAutoCompensationPolicy(t *testing.T) {
 		legacy  int
 		want    map[string]int
 	}{
+		{"DLNA faster", []Player{{ID: "d", Kind: KindDLNA, DLNASyncDelayMs: -500}, {ID: "a", Kind: KindRAOP}}, 0, map[string]int{"d": 500, "a": 0}},
+		{"opposing offsets", []Player{{ID: "d", Kind: KindDLNA, DLNASyncDelayMs: -2000}, {ID: "e", Kind: KindDLNA, DLNASyncDelayMs: 2000}, {ID: "a", Kind: KindRAOP}}, 0, map[string]int{"d": 4000, "e": 0, "a": 2000}},
+		{"all negative DLNA", []Player{{ID: "d", Kind: KindDLNA, DLNASyncDelayMs: -1000}, {ID: "e", Kind: KindDLNA, DLNASyncDelayMs: -500}}, 0, map[string]int{"d": 500, "e": 0}},
+		{"solo negative", []Player{{ID: "d", Kind: KindDLNA, DLNASyncDelayMs: -500}}, 0, map[string]int{"d": 0}},
 		{"solo dlna", []Player{{ID: "d", Kind: KindDLNA, DLNASyncDelayMs: 1000}}, 0, map[string]int{"d": 0}},
 		{"solo airplay ignores legacy", []Player{{ID: "a", Kind: KindRAOP}}, 1000, map[string]int{"a": 0}},
 		{"exact only ignores legacy", []Player{{ID: "a", Kind: KindRAOP}, {ID: "b", Kind: KindRAOP}}, 1000, map[string]int{"a": 0, "b": 0}},

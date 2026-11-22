@@ -70,6 +70,7 @@ func (s *dlnaStreams) protect(next http.HandlerFunc) http.HandlerFunc {
 		u := *r.URL
 		live := strings.HasPrefix(format, "live:")
 		mediaFormat := strings.TrimPrefix(format, "live:")
+		mediaFormat, channelMode, _ := strings.Cut(mediaFormat, ";channel=")
 		original := strings.HasPrefix(mediaFormat, "original:")
 		if original {
 			u.RawQuery = ""
@@ -78,6 +79,12 @@ func (s *dlnaStreams) protect(next http.HandlerFunc) http.HandlerFunc {
 		}
 		cloned.URL = &u
 		cloned = handlers.WithDLNAPlayback(cloned)
+		cloned = handlers.WithDLNAChannel(cloned, channelMode)
+		if live && !original {
+			q := cloned.URL.Query()
+			q.Set("radio_transcode", mediaFormat)
+			cloned.URL.RawQuery = q.Encode()
+		}
 		w.Header().Set("transferMode.dlna.org", "Streaming")
 		if r.Header.Get("getcontentFeatures.dlna.org") == "1" {
 			w.Header().Set("contentFeatures.dlna.org", dlna.ContentFeatures(!original, live))
@@ -110,7 +117,11 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 	plan.Title, plan.Artist, plan.Album = song.Title, song.Artist, song.Album
 	plan.Live = song.Type == models.TypeRadio || song.IsLive
 	normalize := a.configService.GetBool("volume_normalize", false)
-	if normalize || song.CueSourcePath != "" {
+	routed := plan.ChannelMode != "" && plan.ChannelMode != "stereo"
+	if _, err := services.ChannelRouteFilter(plan.ChannelMode); err != nil {
+		return plan, err
+	}
+	if normalize || song.CueSourcePath != "" || routed {
 		switch format {
 		case "flac", "wav", "l16", "mp3", "m4a", "adts", "ogg":
 		default:
@@ -120,7 +131,7 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 			}
 		}
 	}
-	native := strings.EqualFold(format, sourceFormat) && !normalize && song.CueSourcePath == ""
+	native := strings.EqualFold(format, sourceFormat) && !normalize && song.CueSourcePath == "" && !routed
 	preparedPath := song.FilePath
 	// Prepare before SetAVTransportURI/Play so a slow conversion does not leave
 	// the renderer waiting on an HTTP response, and errors reach the zone UI.
@@ -133,7 +144,7 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 			}
 		}
 		if !native {
-			if preparedPath, err = a.cacheService.GetOrTranscode(ctx, source, song, format, 0, -1, normalize); err != nil {
+			if preparedPath, err = a.cacheService.GetOrTranscode(ctx, source, song, format, 0, -1, normalize, plan.ChannelMode); err != nil {
 				return plan, fmt.Errorf("dlna: prepare %s output: %w", format, err)
 			}
 		} else {
@@ -149,6 +160,9 @@ func (a *App) dlnaStreamPlan(ctx context.Context, target string, plan sink.Strea
 	ticketFormat := format
 	if native {
 		ticketFormat = "original:" + sourceFormat
+	}
+	if routed {
+		ticketFormat += ";channel=" + plan.ChannelMode
 	}
 	if plan.Live {
 		ticketFormat = "live:" + ticketFormat

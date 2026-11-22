@@ -87,3 +87,39 @@ func TestDLNAHTTPFeaturesMatchRepresentation(t *testing.T) {
 		}
 	}
 }
+
+func TestDLNAChannelCapabilityCannotBeChangedByRenderer(t *testing.T) {
+	s := newDLNAStreams()
+	for _, tc := range []struct {
+		format, extra, want string
+		code                int
+	}{
+		{"wav;channel=left", "&channel_mode=right", "format=wav", 200},
+		{"live:mp3;channel=right", "&radio_transcode=wav", "format=mp3&radio_transcode=mp3", 200},
+	} {
+		ticket := s.query(42, tc.format, time.Minute)
+		request := httptest.NewRequest("GET", "/stream?"+ticket+tc.extra, nil)
+		route := chi.NewRouteContext()
+		route.URLParams.Add("id", "42")
+		request = request.WithContext(context.WithValue(request.Context(), chi.RouteCtxKey, route))
+		recorder := httptest.NewRecorder()
+		s.protect(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.RawQuery != tc.want {
+				t.Fatal(r.URL.RawQuery)
+			}
+			w.WriteHeader(200)
+		})(recorder, request)
+		if recorder.Code != tc.code {
+			t.Fatal(recorder.Code)
+		}
+		tampered := strings.Replace(ticket, "channel%3Dleft", "channel%3Dright", 1)
+		if tampered != ticket {
+			request.URL.RawQuery = tampered
+			recorder = httptest.NewRecorder()
+			s.protect(func(w http.ResponseWriter, r *http.Request) { t.Fatal("tampered channel reached handler") })(recorder, request)
+			if recorder.Code != 403 {
+				t.Fatal(recorder.Code)
+			}
+		}
+	}
+}

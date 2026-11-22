@@ -4246,7 +4246,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "修改设备名称、接管行为、音量模式或音量上限。takeover_behavior 只对 local 设备生效：pause（默认，被切走后立即暂停并提示）或 follow（静默转为纯控制器）。volume_mode 支持 device（默认，直接下发设备）/ fixed（固定音量，忽略音量设置）/ dsp（服务端 DSP 音量）；max_volume 为 0-100 的硬上限，调低时当前音量一并钳位。dlna_sync_delay_ms 仅用于 DLNA：0-2000 毫秒，表示相对 AirPlay 的额外出声延迟，组内按最慢成员自动补偿，单独播放不加延迟。未传的字段保持不变。",
+                "description": "修改设备名称、接管行为、音量模式或音量上限。takeover_behavior 只对 local 设备生效：pause（默认，被切走后立即暂停并提示）或 follow（静默转为纯控制器）。volume_mode 支持 device（默认，直接下发设备）/ fixed（固定音量，忽略音量设置）/ dsp（服务端 DSP 音量）；max_volume 为 0-100 的硬上限，调低时当前音量一并钳位。dlna_sync_delay_ms 仅用于 DLNA：-2000 到 2000 毫秒，正数表示比 AirPlay 慢，负数表示比 AirPlay 快，组内按最慢成员自动补偿，单独播放不加延迟。未传的字段保持不变。",
                 "consumes": [
                     "application/json"
                 ],
@@ -11996,6 +11996,12 @@
                     },
                     {
                         "type": "string",
+                        "description": "组内设备声道：stereo（默认）、left、right、mono 或离散环绕声道。只处理响应音频，不改源文件",
+                        "name": "channel_mode",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "目标音质码率（128/192/320），不传或不合法值表示原始音质。指定后默认转码为 mp3（除非同时指定了 format）",
                         "name": "quality",
                         "in": "query"
@@ -12110,6 +12116,12 @@
                         "type": "string",
                         "description": "目标转码格式（如 mp3、ogg），用于平台兼容性转码",
                         "name": "format",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "组内设备声道：stereo（默认）、left、right、mono 或离散环绕声道。只处理响应音频，不改源文件",
+                        "name": "channel_mode",
                         "in": "query"
                     },
                     {
@@ -15790,17 +15802,13 @@
                 "local",
                 "raop",
                 "dlna",
-                "raat",
-                "local",
-                "raop",
-                "raat",
-                "dlna"
+                "raat"
             ],
             "x-enum-varnames": [
                 "KindLocal",
                 "KindRAOP",
-                "KindRAAT",
-                "KindDLNA"
+                "KindDLNA",
+                "KindRAAT"
             ]
         },
         "player.Member": {

@@ -42,6 +42,7 @@ type Sink struct {
 
 	mu                 sync.Mutex
 	plan               sink.StreamPlan
+	channelMode        string
 	url                string
 	started            bool
 	playing            bool
@@ -127,6 +128,9 @@ func (s *Sink) StreamURL(plan sink.StreamPlan) (string, error) {
 func (s *Sink) Open(ctx context.Context, plan sink.StreamPlan) error {
 	s.openMu.Lock()
 	defer s.openMu.Unlock()
+	s.mu.Lock()
+	plan.ChannelMode = s.channelMode
+	s.mu.Unlock()
 	plan.AcceptedCodecs = s.dev.Codecs
 	if s.opts.ResolveStream != nil {
 		if s.patch.SeekWithWAV && plan.Position > 0 && !plan.Live {
@@ -953,3 +957,6 @@ func MIMEType(c sink.Codec) string {
 		return "application/octet-stream"
 	}
 }
+
+// SetChannelMode configures the next media load independently of other members.
+func (s *Sink) SetChannelMode(mode string) { s.mu.Lock(); s.channelMode = mode; s.mu.Unlock() }

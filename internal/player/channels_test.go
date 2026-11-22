@@ -122,3 +122,33 @@ func TestChannelAssignmentUngroupAndRegroupDefaults(t *testing.T) {
 		}
 	}
 }
+
+type routedControl struct {
+	*ctrlSink
+	mode string
+}
+
+func (c *routedControl) SetChannelMode(mode string) { c.mode = mode }
+func TestGroupChannelsReachEveryPullMemberIncludingMaster(t *testing.T) {
+	a, b := &routedControl{ctrlSink: newCtrlSink("a")}, &routedControl{ctrlSink: newCtrlSink("b")}
+	group := &Group{ID: "g", MasterID: "a", Members: []Member{{PlayerID: "a", ChannelMode: "stereo"}, {PlayerID: "b", ChannelMode: "stereo"}}}
+	e := NewEngine("group", "g", EngineDeps{Logger: slog.Default()})
+	m := &Manager{deps: ManagerDeps{Logger: slog.Default()}, players: map[string]*Player{"a": {ID: "a", Name: "DLNA", Kind: KindDLNA, Caps: sink.Caps{Codecs: []sink.Codec{sink.CodecMP3}, MaxSampleRate: 44100, Channels: 2, BitDepth: 16}}, "b": {ID: "b", Name: "Web", Kind: KindLocal, Caps: sink.Caps{Codecs: []sink.Codec{sink.CodecMP3}, MaxSampleRate: 44100, Channels: 2, BitDepth: 16}}}, groups: map[string]*Group{"g": group}, engines: map[string]*Engine{"group:g": e}, sinks: map[string]sink.Sink{"a": a, "b": b}, eqChains: map[string]*dsp.EQ{}}
+	for _, pair := range []struct{ id, mode string }{{"a", "left"}, {"b", "right"}} {
+		if _, err := m.UpdateMember(context.Background(), "g", pair.id, 0, 0, pair.mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if a.mode != "left" || b.mode != "right" {
+		t.Fatalf("independent routes lost: %s %s", a.mode, b.mode)
+	}
+	m.mu.Lock()
+	group.Members = group.Members[:1]
+	m.mu.Unlock()
+	if err := m.rebuildSinks(context.Background(), "g"); err != nil {
+		t.Fatal(err)
+	}
+	if a.mode != "stereo" {
+		t.Fatal("solo retained group route", a.mode)
+	}
+}

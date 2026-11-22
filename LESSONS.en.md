@@ -371,3 +371,7 @@ Status: lesson / promotion candidate / promoted (authoritative destination)
 ### JS-TEST-001: Assert asynchronous registration after observing registry state
 
 2026-11-02: Release checks exposed an immediate post-reload registration assertion. Public lyrics/covers helpers dispatch bridge calls without returning the Promise; plugin load or HTTP completion is not a side-effect barrier. Lifecycle tests should wait within a bounded deadline for both real provider states while retaining registration, unregister, reload and disable assertions. Do not replace the assertions with fixed sleeps. Twenty repetitions pass on Windows and in the Linux container; plugin runtime code is unchanged. Seen 1×.
+
+### OUTPUT-CHANNEL-002: Verify actual channel representations for pull outputs
+
+2026-11-22: Mixed-group routing originally exposed choices only for push outputs; DLNA/Web pull streams bypass the PCM distributor. Fix the complete member setting, load command/signed URL, route-isolated cache and HTTP Range path, rather than only removing UI/API restrictions. Verify distinct multichannel sample values, silent absent channels and unchanged stereo; Web must bypass existing stereo offline caches. Signed delay calibration requires coordinated database/UI/API changes and nonnegative group compensation while preserving uncompensated solo playback. Seen 1×.

@@ -14,7 +14,7 @@ func TestDLNASyncDelayPersistsAndDiscoveryPreservesIt(t *testing.T) {
 	if err := repo.UpsertPlayer(ctx, row); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.UpdatePlayerConfig(ctx, row.ID, row.Name, "pause", "device", 100, "", 1000); err != nil {
+	if err := repo.UpdatePlayerConfig(ctx, row.ID, row.Name, "pause", "device", 100, "", -500); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.UpsertPlayer(ctx, row); err != nil {
@@ -28,10 +28,10 @@ func TestDLNASyncDelayPersistsAndDiscoveryPreservesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DLNASyncDelayMs != 1000 {
+	if got.DLNASyncDelayMs != -500 {
 		t.Fatalf("delay overwritten: %+v", got)
 	}
-	for _, bad := range []int{-1, 2001} {
+	for _, bad := range []int{-2001, 2001} {
 		if err := repo.UpdatePlayerConfig(ctx, row.ID, row.Name, "pause", "device", 100, "", bad); err == nil {
 			t.Fatalf("schema accepted %d", bad)
 		}

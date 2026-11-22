@@ -141,9 +141,12 @@ func ParseBitrate(s string) int {
 // songloft-org/songloft#298）；< 0 表示不抽轨、保持原有行为。指定时强制走 ffmpeg，
 // 且缓存文件名含 track 维度，不同轨缓存互不覆盖。
 // normalize 为 true 时使用 EBU R128 loudnorm 滤镜均衡音量（songloft-org/songloft#315）。
-func (c *CacheService) GetOrTranscode(ctx context.Context, srcPath string, song *models.Song, targetFormat string, bitrate, trackIndex int, normalize bool) (string, error) {
+func (c *CacheService) GetOrTranscode(ctx context.Context, srcPath string, song *models.Song, targetFormat string, bitrate, trackIndex int, normalize bool, channelMode ...string) (string, error) {
 	if song == nil {
 		return "", errors.New("song is nil")
+	}
+	if _, err := ChannelRouteFilter(channelRoute(channelMode)); err != nil {
+		return "", err
 	}
 	srcFmt := EffectiveSourceFormat(song, srcPath)
 	if strings.EqualFold(filepath.Ext(srcPath), ".aac") {
@@ -152,7 +155,7 @@ func (c *CacheService) GetOrTranscode(ctx context.Context, srcPath string, song 
 	isCue := song.CueSourcePath != ""
 	// 抽轨（trackIndex >= 0）必须走 ffmpeg：即使容器/编码相同也要 -map 出单条音轨。
 	// CUE track 必须走 ffmpeg 提取对应时间段。
-	needsTranscode := NeedsTranscode(srcFmt, targetFormat) || bitrate > 0 || trackIndex >= 0 || isCue || normalize
+	needsTranscode := NeedsTranscode(srcFmt, targetFormat) || bitrate > 0 || trackIndex >= 0 || isCue || normalize || channelRoute(channelMode) != ""
 	if !needsTranscode {
 		slog.Debug("transcode skipped: same format",
 			"songId", song.ID, "songFormat", song.Format,
@@ -164,7 +167,7 @@ func (c *CacheService) GetOrTranscode(ctx context.Context, srcPath string, song 
 		"srcFmt", srcFmt, "targetFormat", targetFormat, "bitrate", bitrate, "trackIndex", trackIndex, "srcPath", srcPath)
 
 	// 1. 缓存命中
-	if p, ok := c.FindTranscodedFile(song, targetFormat, bitrate, trackIndex, normalize); ok {
+	if p, ok := c.FindTranscodedFile(song, targetFormat, bitrate, trackIndex, normalize, channelMode...); ok {
 		return p, nil
 	}
 
@@ -174,7 +177,7 @@ func (c *CacheService) GetOrTranscode(ctx context.Context, srcPath string, song 
 	if normalize {
 		normFlag = "_norm" + c.normalizeLoudnessTag()
 	}
-	inflightKey := fmt.Sprintf("tc_%d_%s_%d_t%d%s", song.ID, targetFormat, bitrate, trackIndex, normFlag)
+	inflightKey := fmt.Sprintf("tc_%d_%s_%d_t%d%s", song.ID, targetFormat, bitrate, trackIndex, normFlag+channelRoute(channelMode))
 	state := getSongState()
 	state.transcodeInflightMu.Lock()
 	if dl, ok := state.transcodeInflight[inflightKey]; ok {
@@ -187,7 +190,7 @@ func (c *CacheService) GetOrTranscode(ctx context.Context, srcPath string, song 
 		if dl.err != nil {
 			return "", dl.err
 		}
-		if p, ok := c.FindTranscodedFile(song, targetFormat, bitrate, trackIndex, normalize); ok {
+		if p, ok := c.FindTranscodedFile(song, targetFormat, bitrate, trackIndex, normalize, channelMode...); ok {
 			return p, nil
 		}
 		return "", fmt.Errorf("transcoded file not found after wait")
@@ -203,7 +206,7 @@ func (c *CacheService) GetOrTranscode(ctx context.Context, srcPath string, song 
 	}()
 
 	// 3. 转码
-	finalPath, err := c.doTranscode(ctx, srcPath, song, targetFormat, bitrate, trackIndex, normalize)
+	finalPath, err := c.doTranscode(ctx, srcPath, song, targetFormat, bitrate, trackIndex, normalize, channelMode...)
 	if err != nil {
 		dl.err = err
 		return "", err
@@ -216,11 +219,11 @@ func (c *CacheService) GetOrTranscode(ctx context.Context, srcPath string, song 
 // FindTranscodedFile 查找已转码的缓存文件。
 // 文件名形如 "{id}.{key}.tc.{format}"、"{id}.tc.{format}"、含码率的 "{id}.tc.{N}k.{format}"，
 // 或含抽轨标记的 "{id}.tc.a{idx}.{format}"（songloft-org/songloft#298）。
-func (c *CacheService) FindTranscodedFile(song *models.Song, targetFormat string, bitrate, trackIndex int, normalize bool) (string, bool) {
+func (c *CacheService) FindTranscodedFile(song *models.Song, targetFormat string, bitrate, trackIndex int, normalize bool, channelMode ...string) (string, bool) {
 	if song == nil {
 		return "", false
 	}
-	name := c.transcodedFileName(song, targetFormat, bitrate, trackIndex, normalize)
+	name := c.transcodedFileName(song, targetFormat, bitrate, trackIndex, normalize, channelMode...)
 	dir, _ := c.getCachePath(song.ID, "")
 	path := filepath.Join(dir, name)
 	if _, err := os.Stat(path); err == nil {
@@ -230,7 +233,7 @@ func (c *CacheService) FindTranscodedFile(song *models.Song, targetFormat string
 }
 
 // doTranscode 执行 ffmpeg 转码并写入缓存。
-func (c *CacheService) doTranscode(ctx context.Context, srcPath string, song *models.Song, targetFormat string, bitrate, trackIndex int, normalize bool) (string, error) {
+func (c *CacheService) doTranscode(ctx context.Context, srcPath string, song *models.Song, targetFormat string, bitrate, trackIndex int, normalize bool, channelMode ...string) (string, error) {
 	dir, _ := c.getCachePath(song.ID, "")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("mkdir transcode cache dir: %w", err)
@@ -244,12 +247,12 @@ func (c *CacheService) doTranscode(ctx context.Context, srcPath string, song *mo
 	tmpPath := tmp.Name()
 	tmp.Close()
 
-	if err := c.runFFmpeg(ctx, srcPath, tmpPath, song, targetFormat, bitrate, trackIndex, normalize); err != nil {
+	if err := c.runFFmpeg(ctx, srcPath, tmpPath, song, targetFormat, bitrate, trackIndex, normalize, channelMode...); err != nil {
 		os.Remove(tmpPath)
 		return "", fmt.Errorf("ffmpeg transcode: %w", err)
 	}
 
-	finalName := c.transcodedFileName(song, targetFormat, bitrate, trackIndex, normalize)
+	finalName := c.transcodedFileName(song, targetFormat, bitrate, trackIndex, normalize, channelMode...)
 	finalPath := filepath.Join(dir, finalName)
 	if _, err := os.Stat(finalPath); err == nil {
 		os.Remove(finalPath)
@@ -268,7 +271,7 @@ func (c *CacheService) doTranscode(ctx context.Context, srcPath string, song *mo
 // CUE track（song.CueStartSeconds/CueEndSeconds > 0）时使用 input seek（-ss 在 -i 之前）
 // 提取对应时间段，同格式时 stream copy 免重编码。
 // normalize 为 true 时插入 -af loudnorm 滤镜均衡音量（songloft-org/songloft#315）。
-func (c *CacheService) runFFmpeg(ctx context.Context, srcPath, dstPath string, song *models.Song, targetFormat string, bitrate, trackIndex int, normalize bool) error {
+func (c *CacheService) runFFmpeg(ctx context.Context, srcPath, dstPath string, song *models.Song, targetFormat string, bitrate, trackIndex int, normalize bool, channelMode ...string) error {
 	isCue := song != nil && song.CueSourcePath != ""
 	hasCueTiming := isCue && (song.CueStartSeconds > 0 || song.CueEndSeconds > 0)
 
@@ -279,7 +282,7 @@ func (c *CacheService) runFFmpeg(ctx context.Context, srcPath, dstPath string, s
 		args = append(args, "-ss", fmt.Sprintf("%.3f", song.CueStartSeconds))
 	}
 
-	if (trackIndex >= 0 || strings.EqualFold(filepath.Ext(srcPath), ".aac")) && NormalizeFormat(targetFormat) == "m4a" && !normalize {
+	if (trackIndex >= 0 || strings.EqualFold(filepath.Ext(srcPath), ".aac")) && NormalizeFormat(targetFormat) == "m4a" && !normalize && channelRoute(channelMode) == "" {
 		args = append(args, "-i", srcPath)
 		if hasCueTiming && song.CueEndSeconds > song.CueStartSeconds {
 			args = append(args, "-t", fmt.Sprintf("%.3f", song.CueEndSeconds-song.CueStartSeconds))
@@ -293,7 +296,7 @@ func (c *CacheService) runFFmpeg(ctx context.Context, srcPath, dstPath string, s
 		// CUE 同格式提取使用 stream copy 免重编码；APE 源已在上游转为 flac targetFormat
 		// normalize 需要重编码，不能使用 stream copy
 		srcFmt := NormalizeFormat(filepath.Ext(srcPath))
-		useCopy := isCue && !NeedsTranscode(srcFmt, targetFormat) && bitrate <= 0 && trackIndex < 0 && !normalize
+		useCopy := isCue && !NeedsTranscode(srcFmt, targetFormat) && bitrate <= 0 && trackIndex < 0 && !normalize && channelRoute(channelMode) == ""
 
 		var encoder string
 		var qualityArgs []string
@@ -330,8 +333,19 @@ func (c *CacheService) runFFmpeg(ctx context.Context, srcPath, dstPath string, s
 			args = append(args, "-map", fmt.Sprintf("0:a:%d", trackIndex))
 		}
 		args = append(args, "-vn", "-codec:a", encoder)
+		filters := []string{}
+		if route := channelRoute(channelMode); route != "" {
+			filter, err := ChannelRouteFilter(route)
+			if err != nil {
+				return err
+			}
+			filters = append(filters, filter)
+		}
 		if normalize && encoder != "copy" {
-			args = append(args, "-af", c.normalizeLoudnessFilter())
+			filters = append(filters, c.normalizeLoudnessFilter())
+		}
+		if len(filters) > 0 {
+			args = append(args, "-af", strings.Join(filters, ","))
 		}
 		args = append(args, qualityArgs...)
 		args = append(args, "-f", muxer, "-y", dstPath)
@@ -365,7 +379,7 @@ func (c *CacheService) runFFmpeg(ctx context.Context, srcPath, dstPath string, s
 // bitrate > 0 时文件名含码率标记，如 "42.tc.128k.mp3"。
 // trackIndex >= 0 时文件名含抽轨标记，如 "42.tc.a1.m4a"（songloft-org/songloft#298），
 // 保证不同音轨的缓存互不覆盖。
-func (c *CacheService) transcodedFileName(song *models.Song, targetFormat string, bitrate, trackIndex int, normalize bool) string {
+func (c *CacheService) transcodedFileName(song *models.Song, targetFormat string, bitrate, trackIndex int, normalize bool, channelMode ...string) string {
 	idStr := strconv.FormatInt(song.ID, 10)
 	key := cacheKeyOf(song)
 	var base string
@@ -382,6 +396,9 @@ func (c *CacheService) transcodedFileName(song *models.Song, targetFormat string
 	}
 	if trackIndex >= 0 {
 		base += "a" + strconv.Itoa(trackIndex) + "."
+	}
+	if route := channelRoute(channelMode); route != "" {
+		base += "ch-" + route + "."
 	}
 	return base + targetFormat
 }

@@ -28,6 +28,7 @@ type Controller interface {
 // Command 下发给客户端的一条指令。
 type Command struct {
 	Cmd             string `json:"cmd"`
+	ChannelMode     string `json:"channel_mode,omitempty"`
 	Songs           *int   `json:"songs,omitempty"`
 	SleepGeneration uint64 `json:"sleep_generation,omitempty"`
 	SongID          int64  `json:"song_id,omitempty"`
@@ -56,17 +57,18 @@ type Report struct {
 
 // Sink local 输出端。
 type Sink struct {
-	id      string
-	caps    sink.Caps
-	ctl     Controller
-	events  chan sink.Event
-	mu      sync.Mutex
-	plan    sink.StreamPlan
-	volume  int
-	muted   bool
-	eq      sink.EQSettings
-	started time.Time
-	closed  bool
+	id          string
+	caps        sink.Caps
+	ctl         Controller
+	events      chan sink.Event
+	mu          sync.Mutex
+	plan        sink.StreamPlan
+	channelMode string
+	volume      int
+	muted       bool
+	eq          sink.EQSettings
+	started     time.Time
+	closed      bool
 	// offset 服务端与客户端时钟的偏移估计（客户端时间 - 服务端时间）。
 	offset time.Duration
 	rtt    time.Duration
@@ -117,12 +119,14 @@ func (s *Sink) Open(_ context.Context, plan sink.StreamPlan) error {
 	}
 	s.mu.Lock()
 	eq := s.eq
+	mode := s.channelMode
 	s.mu.Unlock()
 	cmd := Command{
-		Cmd:        "load",
-		SongID:     plan.SongID,
-		PositionMs: plan.Position.Milliseconds(),
-		Format:     string(plan.Format.Codec),
+		Cmd:         "load",
+		ChannelMode: mode,
+		SongID:      plan.SongID,
+		PositionMs:  plan.Position.Milliseconds(),
+		Format:      string(plan.Format.Codec),
 	}
 	if eq.AppliedBy != "" {
 		cmd.EQ = &eq
@@ -293,3 +297,5 @@ func ValidateCommand(cmd string) error {
 func (s *Sink) SetSleepAfterSongs(songs int, generation uint64) error {
 	return s.ctl.SendCommand(Command{Cmd: "sleep_after_songs", Songs: &songs, SleepGeneration: generation})
 }
+
+func (s *Sink) SetChannelMode(mode string) { s.mu.Lock(); s.channelMode = mode; s.mu.Unlock() }
